@@ -37,6 +37,18 @@ const ENTITY_INVALIDATIONS: Record<string, string[][]> = {
     ["workspace-roles"],
     ["workspace-invites"],
   ],
+  member: [
+    ["active-workspace-users"],
+    ["workspace"],
+    ["workspace-roles"],
+    ["workspace-invites"],
+  ],
+  invitation: [
+    ["workspace-invites"],
+    ["invitations"],
+    ["user-invitations"],
+    ["active-workspace-users"],
+  ],
 };
 
 /**

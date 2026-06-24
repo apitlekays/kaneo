@@ -81,6 +81,7 @@ import {
   initializeWebSocketAdapter,
   removeConnection,
   shutdownWebSocketAdapter,
+  userChannel,
   workspaceChannel,
 } from "./ws";
 
@@ -579,6 +580,38 @@ export function createApp() {
         "",
       ),
     ),
+  );
+
+  api.get(
+    "/ws/user",
+    upgradeWebSocket(async (c) => {
+      try {
+        await authenticateApiRequest(c);
+      } catch (error) {
+        if (error instanceof HTTPException) {
+          throw error;
+        }
+        console.error("API authentication failed:", error);
+        throw new HTTPException(500, { message: "Internal Server Error" });
+      }
+
+      const userId = c.get("userId");
+      const windowId = c.req.query("windowId");
+      const initiatorId = windowId ? `${userId}:${windowId}` : userId;
+      const channel = userChannel(userId);
+      let conn: ReturnType<typeof addConnection> | null = null;
+
+      return {
+        onOpen(_evt, ws) {
+          conn = addConnection(channel, ws, userId, initiatorId);
+        },
+        onClose() {
+          if (conn) {
+            removeConnection(channel, conn);
+          }
+        },
+      };
+    }),
   );
 
   api.get(

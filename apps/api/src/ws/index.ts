@@ -189,40 +189,72 @@ export function workspaceChannel(workspaceId: string) {
   return `workspace:${workspaceId}`;
 }
 
+export function userChannel(userId: string) {
+  return `user:${userId}`;
+}
+
+/**
+ * Publish a sync signal to a channel immediately (no batching). Shared by the
+ * workspace- and user-scoped broadcasts below. `entity` tells the client which
+ * query caches to invalidate.
+ */
+function publishSync(
+  channel: string,
+  message: ProjectBroadcastMessage,
+  excludeInitiatorId?: string,
+) {
+  if (!adapter) {
+    console.warn("publishSync called before adapter initialization");
+    return;
+  }
+
+  void adapter
+    .publish({ projectId: channel, message, excludeInitiatorId })
+    .catch((err) => {
+      console.error(`Failed to publish sync for ${channel}:`, err);
+    });
+}
+
 /**
  * Broadcast a coarse "something changed in this workspace" signal to every
- * client connected to the workspace channel. `entity` tells the client which
- * query caches to invalidate. Unlike task broadcasts these are infrequent, so
- * they are published immediately rather than batched.
+ * client connected to the workspace channel.
  */
 export function broadcastToWorkspace(
   workspaceId: string,
   payload: { entity: string; projectId?: string },
   excludeInitiatorId?: string,
 ) {
-  if (!adapter) {
-    console.warn("broadcastToWorkspace called before adapter initialization");
-    return;
-  }
+  publishSync(
+    workspaceChannel(workspaceId),
+    {
+      type: "WORKSPACE_SYNC",
+      projectId: payload.projectId ?? "",
+      workspaceId,
+      entity: payload.entity,
+    },
+    excludeInitiatorId,
+  );
+}
 
-  const channel = workspaceChannel(workspaceId);
-  void adapter
-    .publish({
-      projectId: channel,
-      message: {
-        type: "WORKSPACE_SYNC",
-        projectId: payload.projectId ?? "",
-        workspaceId,
-        entity: payload.entity,
-      },
-      excludeInitiatorId,
-    })
-    .catch((err) => {
-      console.error(
-        `Failed to publish workspace sync for ${workspaceId}:`,
-        err,
-      );
-    });
+/**
+ * Broadcast a sync signal to a single user across all their connections —
+ * used for cross-workspace events such as receiving an invitation, where the
+ * recipient is not (yet) a member of the originating workspace channel.
+ */
+export function broadcastToUser(
+  userId: string,
+  payload: { entity: string },
+  excludeInitiatorId?: string,
+) {
+  publishSync(
+    userChannel(userId),
+    {
+      type: "USER_SYNC",
+      projectId: "",
+      entity: payload.entity,
+    },
+    excludeInitiatorId,
+  );
 }
 
 type TaskEvent = {
