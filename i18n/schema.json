@@ -3509,6 +3509,75 @@
 						"draft",
 						"open"
 					]
+				},
+				"connections": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"title": {
+							"type": "string"
+						},
+						"subtitle": {
+							"type": "string"
+						},
+						"toastConnected": {
+							"type": "string"
+						},
+						"toastError": {
+							"type": "string"
+						},
+						"toastDisconnected": {
+							"type": "string"
+						},
+						"toastDisconnectError": {
+							"type": "string"
+						},
+						"googleCalendar": {
+							"type": "object",
+							"additionalProperties": false,
+							"properties": {
+								"title": {
+									"type": "string"
+								},
+								"description": {
+									"type": "string"
+								},
+								"connect": {
+									"type": "string"
+								},
+								"disconnect": {
+									"type": "string"
+								},
+								"connected": {
+									"type": "string"
+								},
+								"connectedAs": {
+									"type": "string"
+								},
+								"notConfigured": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"title",
+								"description",
+								"connect",
+								"disconnect",
+								"connected",
+								"connectedAs",
+								"notConfigured"
+							]
+						}
+					},
+					"required": [
+						"title",
+						"subtitle",
+						"toastConnected",
+						"toastError",
+						"toastDisconnected",
+						"toastDisconnectError",
+						"googleCalendar"
+					]
 				}
 			},
 			"required": [

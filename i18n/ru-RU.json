@@ -1017,6 +1017,23 @@
 			"merged": "Влит",
 			"draft": "Черновик",
 			"open": "Открыт"
+		},
+		"connections": {
+			"title": "Connections",
+			"subtitle": "Connect external services to Kaneo.",
+			"toastConnected": "Google Calendar connected",
+			"toastError": "Couldn’t connect Google Calendar",
+			"toastDisconnected": "Google Calendar disconnected",
+			"toastDisconnectError": "Couldn’t disconnect Google Calendar",
+			"googleCalendar": {
+				"title": "Google Calendar",
+				"description": "Sync your assigned tasks’ due dates to your Google Calendar.",
+				"connect": "Connect",
+				"disconnect": "Disconnect",
+				"connected": "Connected",
+				"connectedAs": "Connected as {{email}}",
+				"notConfigured": "Google integration isn’t configured on this instance."
+			}
 		}
 	},
 	"navigation": {

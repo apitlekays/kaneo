@@ -1013,3 +1013,59 @@ export const organizationRoleRelations = relations(
     }),
   }),
 );
+
+/**
+ * Per-user Google Calendar connection (one-way Kaneo → Calendar sync).
+ * Stores the OAuth refresh token so we can mint access tokens server-side.
+ */
+export const googleCalendarConnectionTable = pgTable(
+  "google_calendar_connection",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    googleEmail: text("google_email"),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token").notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date" }),
+    calendarId: text("calendar_id").notNull().default("primary"),
+    scope: text("scope"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+);
+
+/**
+ * Maps a task to the Google Calendar event mirroring it, and which user's
+ * calendar holds it (the assignee at sync time).
+ */
+export const taskCalendarEventTable = pgTable(
+  "task_calendar_event",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .unique()
+      .references(() => taskTable.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    eventId: text("event_id").notNull(),
+    calendarId: text("calendar_id").notNull().default("primary"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("task_calendar_event_userId_idx").on(table.userId)],
+);

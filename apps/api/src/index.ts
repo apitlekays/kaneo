@@ -31,6 +31,8 @@ import giteaIntegration, { handleGiteaWebhookRoute } from "./gitea-integration";
 import githubIntegration, {
   handleGithubWebhookRoute,
 } from "./github-integration";
+import googleCalendar from "./google-calendar";
+import { registerGoogleCalendarSync } from "./google-calendar/events";
 import getInstanceStatus from "./instance/controllers/get-instance-status";
 import invitation from "./invitation";
 import label from "./label";
@@ -480,7 +482,11 @@ export function createApp() {
 
   api.use("*", async (c, next) => {
     const path = c.req.path;
-    if (path.startsWith("/api/mcp") || path.startsWith("/api/.well-known/")) {
+    if (
+      path.startsWith("/api/mcp") ||
+      path.startsWith("/api/.well-known/") ||
+      path === "/api/google-calendar/callback"
+    ) {
       return next();
     }
     try {
@@ -571,6 +577,7 @@ export function createApp() {
   const workflowRuleApi = api.route("/workflow-rule", workflowRule);
   const invitationApi = api.route("/invitation", invitation);
   const workspaceApi = api.route("/workspace", workspace);
+  api.route("/google-calendar", googleCalendar);
 
   app.route(
     "/",
@@ -773,6 +780,7 @@ export async function runStartupTasks() {
 
   initializePlugins();
   initializeScheduler();
+  registerGoogleCalendarSync();
   await initializeWebSocketAdapter();
 }
 
