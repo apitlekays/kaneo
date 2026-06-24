@@ -1669,6 +1669,15 @@
 			"searchActions": "Rechercher des actions...",
 			"noActionsFound": "Aucune action trouvée.",
 			"changeStatus": "Changer le statut"
+		},
+		"driveAttachments": {
+			"title": "Attachments",
+			"attach": "Attach from Drive",
+			"addSuccess": "File attached",
+			"addError": "Couldn’t attach file",
+			"removeError": "Couldn’t remove attachment",
+			"openInDrive": "Open in Google Drive",
+			"remove": "Remove attachment"
 		}
 	},
 	"invitations": {

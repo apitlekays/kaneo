@@ -1069,3 +1069,32 @@ export const taskCalendarEventTable = pgTable(
   },
   (table) => [index("task_calendar_event_userId_idx").on(table.userId)],
 );
+
+/** A Google Drive file attached to a task via the Google Picker (link only). */
+export const taskDriveAttachmentTable = pgTable(
+  "task_drive_attachment",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => taskTable.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    fileId: text("file_id").notNull(),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    iconUrl: text("icon_url"),
+    mimeType: text("mime_type"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("task_drive_attachment_taskId_idx").on(table.taskId),
+    unique("task_drive_attachment_task_file_unique").on(
+      table.taskId,
+      table.fileId,
+    ),
+  ],
+);

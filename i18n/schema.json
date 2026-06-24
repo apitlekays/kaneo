@@ -6040,6 +6040,42 @@
 						"noActionsFound",
 						"changeStatus"
 					]
+				},
+				"driveAttachments": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"title": {
+							"type": "string"
+						},
+						"attach": {
+							"type": "string"
+						},
+						"addSuccess": {
+							"type": "string"
+						},
+						"addError": {
+							"type": "string"
+						},
+						"removeError": {
+							"type": "string"
+						},
+						"openInDrive": {
+							"type": "string"
+						},
+						"remove": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"title",
+						"attach",
+						"addSuccess",
+						"addError",
+						"removeError",
+						"openInDrive",
+						"remove"
+					]
 				}
 			},
 			"required": [

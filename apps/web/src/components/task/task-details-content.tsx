@@ -13,6 +13,7 @@ import useGetProject from "@/hooks/queries/project/use-get-project";
 import useGetTask from "@/hooks/queries/task/use-get-task";
 import useGetTaskRelations from "@/hooks/queries/task-relation/use-get-task-relations";
 import type { ExternalLink } from "@/types/external-link";
+import DriveAttachments from "./drive-attachments";
 import TaskDescription from "./task-description";
 import TaskRelations from "./task-relations";
 import TaskSubtasks from "./task-subtasks";
@@ -100,6 +101,9 @@ export default function TaskDetailsContent({
           projectId={projectId}
           workspaceId={workspaceId}
         />
+      </div>
+      <div className="mt-2">
+        <DriveAttachments taskId={taskId} />
       </div>
       <span className="text-sm font-medium text-muted-foreground h-[1px] bg-border w-full block shrink-0" />
       <div className="flex flex-col gap-4">

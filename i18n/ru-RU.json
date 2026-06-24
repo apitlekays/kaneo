@@ -1710,6 +1710,15 @@
 			"searchActions": "Поиск действий...",
 			"noActionsFound": "Действия не найдены.",
 			"changeStatus": "Изменить статус"
+		},
+		"driveAttachments": {
+			"title": "Attachments",
+			"attach": "Attach from Drive",
+			"addSuccess": "File attached",
+			"addError": "Couldn’t attach file",
+			"removeError": "Couldn’t remove attachment",
+			"openInDrive": "Open in Google Drive",
+			"remove": "Remove attachment"
 		}
 	},
 	"invitations": {

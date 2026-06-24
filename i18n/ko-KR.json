@@ -1671,6 +1671,15 @@
 			"searchActions": "작업 검색...",
 			"noActionsFound": "작업을 찾을 수 없습니다.",
 			"changeStatus": "상태 변경"
+		},
+		"driveAttachments": {
+			"title": "Attachments",
+			"attach": "Attach from Drive",
+			"addSuccess": "File attached",
+			"addError": "Couldn’t attach file",
+			"removeError": "Couldn’t remove attachment",
+			"openInDrive": "Open in Google Drive",
+			"remove": "Remove attachment"
 		}
 	},
 	"invitations": {

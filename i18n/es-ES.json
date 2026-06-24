@@ -1443,6 +1443,15 @@
 			"searchActions": "Buscar acciones...",
 			"noActionsFound": "No se han encontrado acciones.",
 			"changeStatus": "Cambiar estado"
+		},
+		"driveAttachments": {
+			"title": "Attachments",
+			"attach": "Attach from Drive",
+			"addSuccess": "File attached",
+			"addError": "Couldn’t attach file",
+			"removeError": "Couldn’t remove attachment",
+			"openInDrive": "Open in Google Drive",
+			"remove": "Remove attachment"
 		}
 	},
 	"invitations": {
