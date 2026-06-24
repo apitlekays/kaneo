@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import db from "../../database";
 import {
+  columnTable,
   labelTable,
   projectTable,
   taskTable,
@@ -16,9 +17,9 @@ const priorityCaseExpr = sql<number>`CASE
 END`;
 
 /**
- * List every task assigned to a given user within a single workspace,
- * grouped by project. Archived tasks are excluded so the view reflects an
- * actionable personal work queue.
+ * List the pending tasks assigned to a given user within a single workspace,
+ * grouped by project. Archived tasks and tasks in a final/done column are
+ * excluded so the view reflects an actionable personal work queue.
  */
 async function getMyTasks(workspaceId: string, userId: string) {
   const tasks = await db
@@ -45,11 +46,21 @@ async function getMyTasks(workspaceId: string, userId: string) {
     .from(taskTable)
     .innerJoin(projectTable, eq(taskTable.projectId, projectTable.id))
     .leftJoin(userTable, eq(taskTable.userId, userTable.id))
+    .leftJoin(
+      columnTable,
+      and(
+        eq(columnTable.projectId, taskTable.projectId),
+        eq(columnTable.slug, taskTable.status),
+      ),
+    )
     .where(
       and(
         eq(taskTable.userId, userId),
         eq(projectTable.workspaceId, workspaceId),
         ne(taskTable.status, "archived"),
+        // Exclude tasks sitting in a final/done column. IS NOT TRUE also keeps
+        // tasks whose status doesn't map to a column (NULL isFinal).
+        sql`${columnTable.isFinal} IS NOT TRUE`,
       ),
     )
     .orderBy(
