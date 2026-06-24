@@ -1042,7 +1042,8 @@
 			"members": "멤버",
 			"invitations": "초대",
 			"more": "더 보기",
-			"backToBoard": "보드로 돌아가기"
+			"backToBoard": "보드로 돌아가기",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "프로젝트 보기",
@@ -1802,6 +1803,14 @@
 		},
 		"branding": {
 			"poweredBy": "제공"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

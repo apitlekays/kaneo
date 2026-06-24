@@ -826,7 +826,8 @@
 			"members": "Leden",
 			"invitations": "Uitnodigingen",
 			"more": "Meer",
-			"backToBoard": "Terug naar bord"
+			"backToBoard": "Terug naar bord",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "Project bekijken",
@@ -1575,6 +1576,14 @@
 		},
 		"branding": {
 			"poweredBy": "Mogelijk gemaakt door"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

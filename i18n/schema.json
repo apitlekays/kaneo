@@ -3638,9 +3638,19 @@
 						},
 						"more": {
 							"type": "string"
+						},
+						"home": {
+							"type": "string"
 						}
 					},
-					"required": ["overview", "projects", "members", "invitations", "more"]
+					"required": [
+						"overview",
+						"projects",
+						"members",
+						"invitations",
+						"more",
+						"home"
+					]
 				},
 				"projectList": {
 					"type": "object",
@@ -6561,6 +6571,32 @@
 				"copyUrl",
 				"branding"
 			]
+		},
+		"home": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"title": {
+					"type": "string"
+				},
+				"header": {
+					"type": "string"
+				},
+				"empty": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"title": {
+							"type": "string"
+						},
+						"description": {
+							"type": "string"
+						}
+					},
+					"required": ["title", "description"]
+				}
+			},
+			"required": ["title", "header", "empty"]
 		}
 	},
 	"required": [

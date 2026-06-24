@@ -1040,7 +1040,8 @@
 			"members": "Μέλη",
 			"invitations": "Προσκλήσεις",
 			"more": "Περισσότερα",
-			"backToBoard": "Επιστροφή στον πίνακα"
+			"backToBoard": "Επιστροφή στον πίνακα",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "Προβολή έργου",
@@ -1800,6 +1801,14 @@
 		},
 		"branding": {
 			"poweredBy": "Υποστηρίζεται από"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

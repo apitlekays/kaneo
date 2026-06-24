@@ -826,7 +826,8 @@
 			"members": "Miembros",
 			"invitations": "Invitaciones",
 			"more": "Más",
-			"backToBoard": "Volver al tablero"
+			"backToBoard": "Volver al tablero",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "Ver Proyecto",
@@ -1574,6 +1575,14 @@
 		},
 		"branding": {
 			"poweredBy": "Powered by"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

@@ -1042,7 +1042,8 @@
 			"members": "Mitglieder",
 			"invitations": "Einladungen",
 			"more": "Mehr",
-			"backToBoard": "Zurück zum Board"
+			"backToBoard": "Zurück zum Board",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "Projekt ansehen",
@@ -1802,6 +1803,14 @@
 		},
 		"branding": {
 			"poweredBy": "Bereitgestellt von"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

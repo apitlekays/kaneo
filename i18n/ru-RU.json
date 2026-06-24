@@ -1045,7 +1045,8 @@
 			"projects": "Проекты",
 			"members": "Участники",
 			"invitations": "Приглашения",
-			"more": "Ещё"
+			"more": "Ещё",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "Открыть проект",
@@ -1843,6 +1844,14 @@
 		},
 		"branding": {
 			"poweredBy": "Работает на"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

@@ -1040,7 +1040,8 @@
 			"members": "Членови",
 			"invitations": "Покани",
 			"more": "Повеќе",
-			"backToBoard": "Назад на табла"
+			"backToBoard": "Назад на табла",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "Погледни проект",
@@ -1800,6 +1801,14 @@
 		},
 		"branding": {
 			"poweredBy": "Овозможено од"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }
