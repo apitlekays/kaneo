@@ -21,10 +21,7 @@ export const Route = createFileRoute("/_layout/_authenticated/dashboard/")({
         activeWorkspaceId &&
         workspaces.some((ws) => ws.id === activeWorkspaceId)
       ) {
-        throw redirect({
-          to: "/dashboard/workspace/$workspaceId",
-          params: { workspaceId: activeWorkspaceId },
-        });
+        throw redirect({ to: "/dashboard/home" });
       }
 
       const firstWorkspace = workspaces[0];
@@ -33,10 +30,7 @@ export const Route = createFileRoute("/_layout/_authenticated/dashboard/")({
         organizationId: firstWorkspace.id,
       });
 
-      throw redirect({
-        to: "/dashboard/workspace/$workspaceId",
-        params: { workspaceId: firstWorkspace.id },
-      });
+      throw redirect({ to: "/dashboard/home" });
     }
     throw redirect({ to: "/onboarding" });
   },

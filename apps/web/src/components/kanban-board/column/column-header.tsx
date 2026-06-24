@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 import CreateTaskModal from "@/components/shared/modals/create-task-modal";
 import { useUpdateTask } from "@/hooks/mutations/task/use-update-task";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
+import { cn } from "@/lib/cn";
 import { getColumnIcon } from "@/lib/column";
+import { getColumnDotClass } from "@/lib/column-colors";
 import { toast } from "@/lib/toast";
 import useProjectStore from "@/store/project";
 import type { ProjectWithTasks } from "@/types/project";
@@ -52,6 +54,12 @@ export function ColumnHeader({ column }: ColumnHeaderProps) {
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="flex min-w-0 items-center gap-2">
+        <span
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            getColumnDotClass(column.slug, column.color),
+          )}
+        />
         <span className="text-muted-foreground">
           {getColumnIcon(column.id, column.isFinal, column.icon)}
         </span>

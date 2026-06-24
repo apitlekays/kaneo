@@ -62,13 +62,13 @@ function HomePage() {
                   icons[project.icon as keyof typeof icons] || icons.Layout;
 
                 return (
-                  <section key={project.id} className="space-y-2">
-                    <div className="flex items-center gap-2 px-1">
-                      <ProjectIcon className="h-4 w-4 text-muted-foreground" />
-                      <h2 className="text-sm font-semibold text-foreground">
+                  <section key={project.id} className="space-y-3">
+                    <div className="flex min-w-0 items-center gap-2 px-1">
+                      <ProjectIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <h2 className="truncate text-sm font-medium text-foreground/95">
                         {project.name}
                       </h2>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
                         {project.tasks.length}
                       </span>
                     </div>

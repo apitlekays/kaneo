@@ -651,7 +651,9 @@
 			"on": "Ενεργό",
 			"off": "Ανενεργό",
 			"newColumnPlaceholder": "Όνομα νέας στήλης...",
-			"add": "Προσθήκη"
+			"add": "Προσθήκη",
+			"pickColorTitle": "Pick column color",
+			"toastColorUpdated": "Column color updated"
 		},
 		"githubIntegration": {
 			"validation": {

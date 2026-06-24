@@ -651,7 +651,9 @@
 			"on": "켜짐",
 			"off": "꺼짐",
 			"newColumnPlaceholder": "새 컬럼 이름...",
-			"add": "추가"
+			"add": "추가",
+			"pickColorTitle": "Pick column color",
+			"toastColorUpdated": "Column color updated"
 		},
 		"githubIntegration": {
 			"validation": {

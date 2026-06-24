@@ -2526,6 +2526,12 @@
 						},
 						"add": {
 							"type": "string"
+						},
+						"pickColorTitle": {
+							"type": "string"
+						},
+						"toastColorUpdated": {
+							"type": "string"
 						}
 					},
 					"required": [
@@ -2545,7 +2551,9 @@
 						"on",
 						"off",
 						"newColumnPlaceholder",
-						"add"
+						"add",
+						"pickColorTitle",
+						"toastColorUpdated"
 					]
 				},
 				"githubIntegration": {
