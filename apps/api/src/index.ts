@@ -77,9 +77,11 @@ import workflowRule from "./workflow-rule";
 import workspace from "./workspace";
 import {
   addConnection,
+  broadcastToWorkspace,
   initializeWebSocketAdapter,
   removeConnection,
   shutdownWebSocketAdapter,
+  workspaceChannel,
 } from "./ws";
 
 type ApiKey = {
@@ -104,6 +106,7 @@ type ApiVariables = {
     userId: string;
     userEmail: string;
     apiKey?: ApiKey;
+    workspaceId?: string;
   };
 };
 
@@ -496,6 +499,39 @@ export function createApp() {
     return eventContext.run({ initiatorId }, next);
   });
 
+  // Workspace-wide live sync: after any successful mutating request whose
+  // workspace context is known (set by workspaceAccess middleware), broadcast a
+  // coarse "<entity> changed" signal so every connected client refreshes the
+  // relevant caches without a manual reload. Read-only and failed requests are
+  // ignored; the initiator is excluded so the actor isn't redundantly notified.
+  api.use("*", async (c, next) => {
+    await next();
+
+    try {
+      const method = c.req.method;
+      if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
+        return;
+      }
+
+      const status = c.res.status;
+      if (status < 200 || status >= 400) return;
+
+      const workspaceId = c.get("workspaceId");
+      if (!workspaceId) return;
+
+      const entity = c.req.path.replace(/^\/api\//, "").split("/")[0];
+      if (!entity || entity === "ws" || entity === "auth") return;
+
+      const windowId = c.req.header("X-Kaneo-Window-Id");
+      const userId = c.get("userId");
+      const initiatorId = windowId ? `${userId}:${windowId}` : userId;
+
+      broadcastToWorkspace(workspaceId, { entity }, initiatorId);
+    } catch (err) {
+      console.error("Workspace sync broadcast failed:", err);
+    }
+  });
+
   const oauthApi = api.route("/oauth", oauth);
 
   const projectApi = api.route("/project", project);
@@ -543,6 +579,47 @@ export function createApp() {
         "",
       ),
     ),
+  );
+
+  api.get(
+    "/ws/workspace/:workspaceId",
+    upgradeWebSocket(async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+
+      try {
+        await authenticateApiRequest(c);
+      } catch (error) {
+        if (error instanceof HTTPException) {
+          throw error;
+        }
+        console.error("API authentication failed:", error);
+        throw new HTTPException(500, { message: "Internal Server Error" });
+      }
+
+      const userId = c.get("userId");
+
+      if (workspaceId) {
+        await validateWorkspaceAccess(userId, workspaceId);
+      }
+
+      const windowId = c.req.query("windowId");
+      const initiatorId = windowId ? `${userId}:${windowId}` : userId;
+      const channel = workspaceChannel(workspaceId);
+      let conn: ReturnType<typeof addConnection> | null = null;
+
+      return {
+        onOpen(_evt, ws) {
+          if (workspaceId) {
+            conn = addConnection(channel, ws, userId, initiatorId);
+          }
+        },
+        onClose() {
+          if (conn && workspaceId) {
+            removeConnection(channel, conn);
+          }
+        },
+      };
+    }),
   );
 
   api.get(

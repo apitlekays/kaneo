@@ -180,6 +180,51 @@ export function broadcastToProject(
   projectBroadcastTimeouts.set(projectId, timeout);
 }
 
+/**
+ * Channel key used to register workspace-wide listeners. Kept distinct from
+ * project ids (which are cuids) so both can share the same connection registry
+ * and broadcast adapter.
+ */
+export function workspaceChannel(workspaceId: string) {
+  return `workspace:${workspaceId}`;
+}
+
+/**
+ * Broadcast a coarse "something changed in this workspace" signal to every
+ * client connected to the workspace channel. `entity` tells the client which
+ * query caches to invalidate. Unlike task broadcasts these are infrequent, so
+ * they are published immediately rather than batched.
+ */
+export function broadcastToWorkspace(
+  workspaceId: string,
+  payload: { entity: string; projectId?: string },
+  excludeInitiatorId?: string,
+) {
+  if (!adapter) {
+    console.warn("broadcastToWorkspace called before adapter initialization");
+    return;
+  }
+
+  const channel = workspaceChannel(workspaceId);
+  void adapter
+    .publish({
+      projectId: channel,
+      message: {
+        type: "WORKSPACE_SYNC",
+        projectId: payload.projectId ?? "",
+        workspaceId,
+        entity: payload.entity,
+      },
+      excludeInitiatorId,
+    })
+    .catch((err) => {
+      console.error(
+        `Failed to publish workspace sync for ${workspaceId}:`,
+        err,
+      );
+    });
+}
+
 type TaskEvent = {
   id: string | undefined;
   projectId: string;
