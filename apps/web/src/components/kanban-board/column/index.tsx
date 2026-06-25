@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { cn } from "@/lib/cn";
+import { getColumnTintClass } from "@/lib/column-colors";
 import type { ProjectWithTasks } from "@/types/project";
 import { ColumnDropzone } from "./column-dropzone";
 import { ColumnHeader } from "./column-header";
@@ -9,14 +11,19 @@ type ColumnProps = {
 
 function Column({ column }: ColumnProps) {
   const [isDropzoneOver, setIsDropzoneOver] = useState(false);
+  const tint = getColumnTintClass(column.slug, column.color);
 
   return (
     <div
-      className={`group relative flex h-full min-h-0 w-full flex-col rounded-xl border transition-all duration-300 ease-out ${
+      className={cn(
+        "group relative flex h-full min-h-0 w-full flex-col rounded-xl border transition-all duration-300 ease-out",
         isDropzoneOver
           ? "border-ring/40 bg-accent/60 shadow-md ring-2 ring-ring/30"
-          : "border-border/70 bg-muted/40 shadow-xs/5 hover:border-border/90 dark:bg-card/90"
-      }`}
+          : cn(
+              "border-border/70 shadow-xs/5 hover:border-border/90",
+              tint || "bg-muted/40 dark:bg-card/90",
+            ),
+      )}
     >
       <div className="shrink-0 border-b border-border/60 px-3 py-2">
         <ColumnHeader column={column} />

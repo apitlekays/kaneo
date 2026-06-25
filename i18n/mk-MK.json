@@ -651,7 +651,9 @@
 			"on": "Вклучено",
 			"off": "Исклучено",
 			"newColumnPlaceholder": "Име на нова колона...",
-			"add": "Додади"
+			"add": "Додади",
+			"pickColorTitle": "Pick column color",
+			"toastColorUpdated": "Column color updated"
 		},
 		"githubIntegration": {
 			"validation": {
@@ -1009,6 +1011,23 @@
 			"merged": "Споен",
 			"draft": "Нацрт",
 			"open": "Отворен"
+		},
+		"connections": {
+			"title": "Connections",
+			"subtitle": "Connect external services to Kaneo.",
+			"toastConnected": "Google Calendar connected",
+			"toastError": "Couldn’t connect Google Calendar",
+			"toastDisconnected": "Google Calendar disconnected",
+			"toastDisconnectError": "Couldn’t disconnect Google Calendar",
+			"googleCalendar": {
+				"title": "Google Calendar",
+				"description": "Sync your assigned tasks’ due dates to your Google Calendar.",
+				"connect": "Connect",
+				"disconnect": "Disconnect",
+				"connected": "Connected",
+				"connectedAs": "Connected as {{email}}",
+				"notConfigured": "Google integration isn’t configured on this instance."
+			}
 		}
 	},
 	"navigation": {
@@ -1040,7 +1059,8 @@
 			"members": "Членови",
 			"invitations": "Покани",
 			"more": "Повеќе",
-			"backToBoard": "Назад на табла"
+			"backToBoard": "Назад на табла",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "Погледни проект",
@@ -1649,6 +1669,15 @@
 			"searchActions": "Пребарај акции...",
 			"noActionsFound": "Не се пронајдени акции.",
 			"changeStatus": "Промени статус"
+		},
+		"driveAttachments": {
+			"title": "Attachments",
+			"attach": "Attach from Drive",
+			"addSuccess": "File attached",
+			"addError": "Couldn’t attach file",
+			"removeError": "Couldn’t remove attachment",
+			"openInDrive": "Open in Google Drive",
+			"remove": "Remove attachment"
 		}
 	},
 	"invitations": {
@@ -1800,6 +1829,14 @@
 		},
 		"branding": {
 			"poweredBy": "Овозможено од"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

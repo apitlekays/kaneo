@@ -43,6 +43,28 @@ import { getGithubSsoOAuthCredentials } from "./utils/github-sso-env";
 import { isCloud } from "./utils/is-cloud";
 import { isDisposableEmail } from "./utils/is-disposable-email";
 import { verifyTurnstile } from "./utils/verify-turnstile";
+import { broadcastToUser, broadcastToWorkspace } from "./ws";
+
+/**
+ * Better Auth organization endpoints that mutate workspace-shared state, mapped
+ * to the sync entity broadcast to the workspace channel for live updates.
+ */
+const ORG_SYNC_ENTITY: Record<string, string> = {
+  "/organization/create": "workspace",
+  "/organization/update": "workspace",
+  "/organization/delete": "workspace",
+  "/organization/invite-member": "invitation",
+  "/organization/cancel-invitation": "invitation",
+  "/organization/accept-invitation": "member",
+  "/organization/reject-invitation": "invitation",
+  "/organization/remove-member": "member",
+  "/organization/add-member": "member",
+  "/organization/update-member-role": "member",
+  "/organization/leave": "member",
+  "/organization/create-role": "workspace",
+  "/organization/update-role": "workspace",
+  "/organization/delete-role": "workspace",
+};
 
 config();
 
@@ -638,6 +660,63 @@ export const auth = betterAuth({
               .set({ activeOrganizationId: activeWorkspaceId })
               .where(eq(schema.sessionTable.id, newSession.session.id));
           }
+        }
+      }
+
+      // Workspace-wide live sync for organization mutations handled by Better
+      // Auth (members, invitations, roles, workspace settings). These bypass
+      // the Hono post-mutation middleware, so broadcast the change here so
+      // every connected workspace member refreshes without a manual reload.
+      const orgEntity = ORG_SYNC_ENTITY[ctx.path];
+      if (orgEntity) {
+        try {
+          const body = (ctx.body ?? {}) as Record<string, unknown>;
+          let workspaceId: string | null = null;
+
+          if (typeof body.organizationId === "string") {
+            workspaceId = body.organizationId;
+          } else if (typeof ctx.query?.organizationId === "string") {
+            workspaceId = ctx.query.organizationId;
+          }
+
+          // accept/reject/cancel-invitation only carry an invitationId.
+          if (!workspaceId && typeof body.invitationId === "string") {
+            const [inv] = await db
+              .select({ workspaceId: schema.invitationTable.workspaceId })
+              .from(schema.invitationTable)
+              .where(eq(schema.invitationTable.id, body.invitationId))
+              .limit(1);
+            workspaceId = inv?.workspaceId ?? null;
+          }
+
+          if (!workspaceId) {
+            const activeOrgId = ctx.context.session?.session
+              ?.activeOrganizationId as string | undefined;
+            workspaceId = activeOrgId ?? null;
+          }
+
+          if (workspaceId) {
+            broadcastToWorkspace(workspaceId, { entity: orgEntity });
+          }
+
+          // Notify the invitee directly (they aren't a workspace member yet,
+          // so the workspace channel can't reach them) so their pending
+          // invitations list updates live.
+          if (ctx.path === "/organization/invite-member") {
+            const inviteeEmail = body.email;
+            if (typeof inviteeEmail === "string" && inviteeEmail) {
+              const [invitee] = await db
+                .select({ id: schema.userTable.id })
+                .from(schema.userTable)
+                .where(eq(schema.userTable.email, inviteeEmail))
+                .limit(1);
+              if (invitee?.id) {
+                broadcastToUser(invitee.id, { entity: "invitation" });
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Workspace sync (org mutation) failed:", err);
         }
       }
     }),

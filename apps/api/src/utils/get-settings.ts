@@ -29,6 +29,9 @@ function getSettings() {
     disableLoginForm: process.env.DISABLE_LOGIN_FORM === "true",
     customOAuthAutoLogin: process.env.CUSTOM_OAUTH_AUTO_LOGIN === "true",
     customOAuthLogoutUrl: process.env.CUSTOM_OAUTH_LOGOUT_URL || null,
+    // Public values for the browser-side Google Drive Picker.
+    googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+    googleDrivePickerApiKey: process.env.GOOGLE_DRIVE_PICKER_API_KEY || null,
   };
 }
 

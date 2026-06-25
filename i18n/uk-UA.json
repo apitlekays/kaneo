@@ -649,7 +649,9 @@
 			"on": "Увімк.",
 			"off": "Вимк.",
 			"newColumnPlaceholder": "Назва нової колонки...",
-			"add": "Додати"
+			"add": "Додати",
+			"pickColorTitle": "Pick column color",
+			"toastColorUpdated": "Column color updated"
 		},
 		"githubIntegration": {
 			"validation": {
@@ -1009,6 +1011,23 @@
 			"merged": "Змерджено",
 			"draft": "Чернетка",
 			"open": "Відкрито"
+		},
+		"connections": {
+			"title": "Connections",
+			"subtitle": "Connect external services to Kaneo.",
+			"toastConnected": "Google Calendar connected",
+			"toastError": "Couldn’t connect Google Calendar",
+			"toastDisconnected": "Google Calendar disconnected",
+			"toastDisconnectError": "Couldn’t disconnect Google Calendar",
+			"googleCalendar": {
+				"title": "Google Calendar",
+				"description": "Sync your assigned tasks’ due dates to your Google Calendar.",
+				"connect": "Connect",
+				"disconnect": "Disconnect",
+				"connected": "Connected",
+				"connectedAs": "Connected as {{email}}",
+				"notConfigured": "Google integration isn’t configured on this instance."
+			}
 		}
 	},
 	"navigation": {
@@ -1039,7 +1058,8 @@
 			"projects": "Проєкти",
 			"members": "Учасники",
 			"invitations": "Запрошення",
-			"more": "Більше"
+			"more": "Більше",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "Переглянути проєкт",
@@ -1648,6 +1668,15 @@
 			"searchActions": "Пошук дій...",
 			"noActionsFound": "Дій не знайдено.",
 			"changeStatus": "Змінити статус"
+		},
+		"driveAttachments": {
+			"title": "Attachments",
+			"attach": "Attach from Drive",
+			"addSuccess": "File attached",
+			"addError": "Couldn’t attach file",
+			"removeError": "Couldn’t remove attachment",
+			"openInDrive": "Open in Google Drive",
+			"remove": "Remove attachment"
 		}
 	},
 	"invitations": {
@@ -1801,6 +1830,14 @@
 		},
 		"branding": {
 			"poweredBy": "Працює на"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

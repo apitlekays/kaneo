@@ -655,7 +655,9 @@
 			"on": "On",
 			"off": "Off",
 			"newColumnPlaceholder": "New column name...",
-			"add": "Add"
+			"add": "Add",
+			"pickColorTitle": "Pick column color",
+			"toastColorUpdated": "Column color updated"
 		},
 		"githubIntegration": {
 			"validation": {
@@ -1015,6 +1017,23 @@
 			"merged": "Merged",
 			"draft": "Draft",
 			"open": "Open"
+		},
+		"connections": {
+			"title": "Connections",
+			"subtitle": "Connect external services to Kaneo.",
+			"toastConnected": "Google Calendar connected",
+			"toastError": "Couldn’t connect Google Calendar",
+			"toastDisconnected": "Google Calendar disconnected",
+			"toastDisconnectError": "Couldn’t disconnect Google Calendar",
+			"googleCalendar": {
+				"title": "Google Calendar",
+				"description": "Sync your assigned tasks’ due dates to your Google Calendar.",
+				"connect": "Connect",
+				"disconnect": "Disconnect",
+				"connected": "Connected",
+				"connectedAs": "Connected as {{email}}",
+				"notConfigured": "Google integration isn’t configured on this instance."
+			}
 		}
 	},
 	"navigation": {
@@ -1046,7 +1065,8 @@
 			"members": "Members",
 			"invitations": "Invitations",
 			"more": "More",
-			"backToBoard": "Back to board"
+			"backToBoard": "Back to board",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "View Project",
@@ -1655,6 +1675,15 @@
 			"searchActions": "Search actions...",
 			"noActionsFound": "No actions found.",
 			"changeStatus": "Change Status"
+		},
+		"driveAttachments": {
+			"title": "Attachments",
+			"attach": "Attach from Drive",
+			"addSuccess": "File attached",
+			"addError": "Couldn’t attach file",
+			"removeError": "Couldn’t remove attachment",
+			"openInDrive": "Open in Google Drive",
+			"remove": "Remove attachment"
 		}
 	},
 	"invitations": {
@@ -1810,6 +1839,14 @@
 		},
 		"branding": {
 			"poweredBy": "Powered by"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

@@ -2526,6 +2526,12 @@
 						},
 						"add": {
 							"type": "string"
+						},
+						"pickColorTitle": {
+							"type": "string"
+						},
+						"toastColorUpdated": {
+							"type": "string"
 						}
 					},
 					"required": [
@@ -2545,7 +2551,9 @@
 						"on",
 						"off",
 						"newColumnPlaceholder",
-						"add"
+						"add",
+						"pickColorTitle",
+						"toastColorUpdated"
 					]
 				},
 				"githubIntegration": {
@@ -3501,6 +3509,75 @@
 						"draft",
 						"open"
 					]
+				},
+				"connections": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"title": {
+							"type": "string"
+						},
+						"subtitle": {
+							"type": "string"
+						},
+						"toastConnected": {
+							"type": "string"
+						},
+						"toastError": {
+							"type": "string"
+						},
+						"toastDisconnected": {
+							"type": "string"
+						},
+						"toastDisconnectError": {
+							"type": "string"
+						},
+						"googleCalendar": {
+							"type": "object",
+							"additionalProperties": false,
+							"properties": {
+								"title": {
+									"type": "string"
+								},
+								"description": {
+									"type": "string"
+								},
+								"connect": {
+									"type": "string"
+								},
+								"disconnect": {
+									"type": "string"
+								},
+								"connected": {
+									"type": "string"
+								},
+								"connectedAs": {
+									"type": "string"
+								},
+								"notConfigured": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"title",
+								"description",
+								"connect",
+								"disconnect",
+								"connected",
+								"connectedAs",
+								"notConfigured"
+							]
+						}
+					},
+					"required": [
+						"title",
+						"subtitle",
+						"toastConnected",
+						"toastError",
+						"toastDisconnected",
+						"toastDisconnectError",
+						"googleCalendar"
+					]
 				}
 			},
 			"required": [
@@ -3638,9 +3715,19 @@
 						},
 						"more": {
 							"type": "string"
+						},
+						"home": {
+							"type": "string"
 						}
 					},
-					"required": ["overview", "projects", "members", "invitations", "more"]
+					"required": [
+						"overview",
+						"projects",
+						"members",
+						"invitations",
+						"more",
+						"home"
+					]
 				},
 				"projectList": {
 					"type": "object",
@@ -5953,6 +6040,42 @@
 						"noActionsFound",
 						"changeStatus"
 					]
+				},
+				"driveAttachments": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"title": {
+							"type": "string"
+						},
+						"attach": {
+							"type": "string"
+						},
+						"addSuccess": {
+							"type": "string"
+						},
+						"addError": {
+							"type": "string"
+						},
+						"removeError": {
+							"type": "string"
+						},
+						"openInDrive": {
+							"type": "string"
+						},
+						"remove": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"title",
+						"attach",
+						"addSuccess",
+						"addError",
+						"removeError",
+						"openInDrive",
+						"remove"
+					]
 				}
 			},
 			"required": [
@@ -6561,6 +6684,32 @@
 				"copyUrl",
 				"branding"
 			]
+		},
+		"home": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"title": {
+					"type": "string"
+				},
+				"header": {
+					"type": "string"
+				},
+				"empty": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"title": {
+							"type": "string"
+						},
+						"description": {
+							"type": "string"
+						}
+					},
+					"required": ["title", "description"]
+				}
+			},
+			"required": ["title", "header", "empty"]
 		}
 	},
 	"required": [

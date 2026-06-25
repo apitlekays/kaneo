@@ -651,7 +651,9 @@
 			"on": "켜짐",
 			"off": "꺼짐",
 			"newColumnPlaceholder": "새 컬럼 이름...",
-			"add": "추가"
+			"add": "추가",
+			"pickColorTitle": "Pick column color",
+			"toastColorUpdated": "Column color updated"
 		},
 		"githubIntegration": {
 			"validation": {
@@ -1011,6 +1013,23 @@
 			"merged": "병합됨",
 			"draft": "초안",
 			"open": "열림"
+		},
+		"connections": {
+			"title": "Connections",
+			"subtitle": "Connect external services to Kaneo.",
+			"toastConnected": "Google Calendar connected",
+			"toastError": "Couldn’t connect Google Calendar",
+			"toastDisconnected": "Google Calendar disconnected",
+			"toastDisconnectError": "Couldn’t disconnect Google Calendar",
+			"googleCalendar": {
+				"title": "Google Calendar",
+				"description": "Sync your assigned tasks’ due dates to your Google Calendar.",
+				"connect": "Connect",
+				"disconnect": "Disconnect",
+				"connected": "Connected",
+				"connectedAs": "Connected as {{email}}",
+				"notConfigured": "Google integration isn’t configured on this instance."
+			}
 		}
 	},
 	"navigation": {
@@ -1042,7 +1061,8 @@
 			"members": "멤버",
 			"invitations": "초대",
 			"more": "더 보기",
-			"backToBoard": "보드로 돌아가기"
+			"backToBoard": "보드로 돌아가기",
+			"home": "Home"
 		},
 		"projectList": {
 			"viewProject": "프로젝트 보기",
@@ -1651,6 +1671,15 @@
 			"searchActions": "작업 검색...",
 			"noActionsFound": "작업을 찾을 수 없습니다.",
 			"changeStatus": "상태 변경"
+		},
+		"driveAttachments": {
+			"title": "Attachments",
+			"attach": "Attach from Drive",
+			"addSuccess": "File attached",
+			"addError": "Couldn’t attach file",
+			"removeError": "Couldn’t remove attachment",
+			"openInDrive": "Open in Google Drive",
+			"remove": "Remove attachment"
 		}
 	},
 	"invitations": {
@@ -1802,6 +1831,14 @@
 		},
 		"branding": {
 			"poweredBy": "제공"
+		}
+	},
+	"home": {
+		"title": "Home",
+		"header": "My tasks",
+		"empty": {
+			"title": "No tasks assigned to you",
+			"description": "Tasks assigned to you across this workspace’s projects will show up here."
 		}
 	}
 }

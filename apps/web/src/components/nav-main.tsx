@@ -29,6 +29,12 @@ export function NavMain() {
 
   const navItems = [
     {
+      title: t("navigation:sidebar.home"),
+      url: "/dashboard/home",
+      isActive: window.location.pathname === "/dashboard/home",
+      badge: null,
+    },
+    {
       title: t("navigation:sidebar.projects"),
       url: `/dashboard/workspace/${workspace.id}`,
       isActive:

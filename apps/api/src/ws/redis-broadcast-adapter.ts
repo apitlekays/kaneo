@@ -14,6 +14,8 @@ const broadcastMessageSchema = v.object({
     taskId: v.optional(v.string()),
     sourceTaskId: v.optional(v.string()),
     targetTaskId: v.optional(v.string()),
+    entity: v.optional(v.string()),
+    workspaceId: v.optional(v.string()),
   }),
   excludeInitiatorId: v.optional(v.string()),
 });

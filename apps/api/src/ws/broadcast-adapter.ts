@@ -4,9 +4,16 @@ export type ProjectBroadcastMessage = {
   taskId?: string;
   sourceTaskId?: string;
   targetTaskId?: string;
+  /** Workspace-wide sync fields (set for WORKSPACE_SYNC messages) */
+  entity?: string;
+  workspaceId?: string;
 };
 
 export type BroadcastMessage = {
+  /**
+   * Routing channel key. Either a projectId (project-scoped task/comment
+   * updates) or `workspace:<workspaceId>` (workspace-wide sync).
+   */
   projectId: string;
   message: ProjectBroadcastMessage;
   excludeInitiatorId?: string;

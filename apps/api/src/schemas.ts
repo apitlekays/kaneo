@@ -258,4 +258,6 @@ export const configSchema = v.object({
   disableLoginForm: v.nullable(v.boolean()),
   customOAuthAutoLogin: v.nullable(v.boolean()),
   customOAuthLogoutUrl: v.nullable(v.string()),
+  googleClientId: v.nullable(v.string()),
+  googleDrivePickerApiKey: v.nullable(v.string()),
 });

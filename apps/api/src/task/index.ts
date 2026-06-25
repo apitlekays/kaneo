@@ -23,6 +23,7 @@ import bulkUpdateTasks from "./controllers/bulk-update-tasks";
 import createTask from "./controllers/create-task";
 import deleteTask from "./controllers/delete-task";
 import exportTasks from "./controllers/export-tasks";
+import getMyTasks from "./controllers/get-my-tasks";
 import getTask from "./controllers/get-task";
 import getTasks from "./controllers/get-tasks";
 import importTasks from "./controllers/import-tasks";
@@ -41,6 +42,33 @@ const task = new Hono<{
     userId: string;
   };
 }>()
+  .get(
+    "/my-tasks",
+    describeRoute({
+      operationId: "listMyTasks",
+      tags: ["Tasks"],
+      description:
+        "Get all tasks assigned to the current user in a workspace, grouped by project",
+      responses: {
+        200: {
+          description: "Assigned tasks grouped by project",
+          content: {
+            "application/json": { schema: resolver(v.any()) },
+          },
+        },
+      },
+    }),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    async (c) => {
+      const { workspaceId } = c.req.valid("query");
+      const userId = c.get("userId");
+
+      const result = await getMyTasks(workspaceId, userId);
+
+      return c.json(result);
+    },
+  )
   .get(
     "/tasks/:projectId",
     describeRoute({

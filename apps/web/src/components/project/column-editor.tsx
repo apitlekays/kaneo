@@ -19,6 +19,10 @@ import { useUpdateColumn } from "@/hooks/mutations/column/use-update-column";
 import { useGetColumns } from "@/hooks/queries/column/use-get-columns";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { getColumnIcon } from "@/lib/column";
+import {
+  COLUMN_COLOR_OPTIONS,
+  resolveColumnColorKey,
+} from "@/lib/column-colors";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +42,9 @@ export default function ColumnEditor({ projectId }: ColumnEditorProps) {
   const [newColumnName, setNewColumnName] = useState("");
   const [newColumnIcon, setNewColumnIcon] = useState("Circle");
   const [iconPickerColumnId, setIconPickerColumnId] = useState<string | null>(
+    null,
+  );
+  const [colorPickerColumnId, setColorPickerColumnId] = useState<string | null>(
     null,
   );
   const [newIconPickerOpen, setNewIconPickerOpen] = useState(false);
@@ -99,6 +106,20 @@ export default function ColumnEditor({ projectId }: ColumnEditorProps) {
       setIconPickerColumnId(null);
       setIconSearch("");
       toast.success(t("settings:columnEditor.toastIconUpdated"));
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t("settings:columnEditor.toastUpdateError"),
+      );
+    }
+  };
+
+  const handleUpdateColor = async (id: string, color: string) => {
+    try {
+      await updateColumn({ id, projectId, data: { color } });
+      setColorPickerColumnId(null);
+      toast.success(t("settings:columnEditor.toastColorUpdated"));
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -228,6 +249,59 @@ export default function ColumnEditor({ projectId }: ColumnEditorProps) {
                       })}
                     </div>
                   </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Popover
+              open={colorPickerColumnId === col.id}
+              onOpenChange={(open) =>
+                setColorPickerColumnId(open ? col.id : null)
+              }
+              modal={true}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 shrink-0"
+                  title={t("settings:columnEditor.pickColorTitle")}
+                  disabled={!canEdit}
+                >
+                  <span
+                    className={cn(
+                      "h-3.5 w-3.5 rounded-full",
+                      COLUMN_COLOR_OPTIONS.find(
+                        (option) =>
+                          option.key ===
+                          resolveColumnColorKey(col.slug, col.color),
+                      )?.dot,
+                    )}
+                  />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-2" align="start">
+                <div className="grid grid-cols-4 gap-1.5">
+                  {COLUMN_COLOR_OPTIONS.map((option) => {
+                    const isSelected =
+                      resolveColumnColorKey(col.slug, col.color) === option.key;
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => handleUpdateColor(col.id, option.key)}
+                        title={option.label}
+                        className={cn(
+                          "flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent",
+                          isSelected && "ring-2 ring-ring/50",
+                        )}
+                      >
+                        <span
+                          className={cn("h-4 w-4 rounded-full", option.dot)}
+                        />
+                      </button>
+                    );
+                  })}
                 </div>
               </PopoverContent>
             </Popover>
