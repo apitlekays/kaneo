@@ -16,8 +16,8 @@ export default function TaskTitle({ taskId }: TaskTitleProps) {
   const { t } = useTranslation();
   const { data: task } = useGetTask(taskId);
   const { mutateAsync: updateTaskTitle } = useUpdateTaskTitle();
-  const { canManageTasks } = useWorkspacePermission();
-  const canEdit = canManageTasks();
+  const { canEditTasks } = useWorkspacePermission();
+  const canEdit = canEditTasks();
   const isInitializedRef = useRef(false);
   const taskRef = useRef(task);
   const updateTaskRef = useRef(updateTaskTitle);

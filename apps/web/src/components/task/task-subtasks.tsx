@@ -61,8 +61,8 @@ export default function TaskSubtasks({
   const createTask = useCreateTask();
   const createRelation = useCreateTaskRelation();
   const { mutateAsync: deleteTask } = useDeleteTask();
-  const { canManageTasks } = useWorkspacePermission();
-  const canEdit = canManageTasks();
+  const { canCreateTasks } = useWorkspacePermission();
+  const canEdit = canCreateTasks();
 
   const subtasks = relations
     .filter(

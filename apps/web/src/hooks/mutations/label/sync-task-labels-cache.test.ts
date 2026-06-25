@@ -19,6 +19,7 @@ describe("updateTaskLabelsInProject", () => {
           slug: "todo",
           name: "Todo",
           icon: null,
+          color: null,
           isFinal: false,
           tasks: [
             {

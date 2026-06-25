@@ -97,8 +97,10 @@ function BulkToolbar() {
   const { data: workspaceLabels = [] } = useGetLabelsByWorkspace(
     workspace?.id ?? "",
   );
-  const { canManageTasks, canAssignTasks } = useWorkspacePermission();
-  const canEdit = canManageTasks();
+  const { canEditTasks, canDeleteTasks, canAssignTasks } =
+    useWorkspacePermission();
+  const canEdit = canEditTasks();
+  const canDelete = canDeleteTasks();
   const canAssign = canAssignTasks();
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -270,14 +272,18 @@ function BulkToolbar() {
         value: "actions",
         label: t("tasks:bulk.actions"),
         items: [
-          {
-            value: "bulk-delete",
-            label: t("tasks:bulk.delete"),
-            icon: <Trash2 className="h-4 w-4 text-muted-foreground" />,
-            onRun: () => {
-              void handleBulkDelete();
-            },
-          },
+          ...(canDelete
+            ? [
+                {
+                  value: "bulk-delete",
+                  label: t("tasks:bulk.delete"),
+                  icon: <Trash2 className="h-4 w-4 text-muted-foreground" />,
+                  onRun: () => {
+                    void handleBulkDelete();
+                  },
+                },
+              ]
+            : []),
           {
             value: "bulk-archive",
             label: t("tasks:bulk.archive"),
@@ -363,6 +369,7 @@ function BulkToolbar() {
     return groups;
   }, [
     canEdit,
+    canDelete,
     canAssign,
     project?.columns,
     workspaceUsers?.members,

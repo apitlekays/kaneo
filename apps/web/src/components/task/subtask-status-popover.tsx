@@ -38,8 +38,8 @@ export default function SubtaskStatusPopover({
     isFinal: col.isFinal,
   }));
   const { mutateAsync: updateTaskStatus } = useUpdateTaskStatus();
-  const { canManageTasks } = useWorkspacePermission();
-  const canEdit = canManageTasks();
+  const { canEditTasks } = useWorkspacePermission();
+  const canEdit = canEditTasks();
 
   const allSameStatus =
     tasks.length > 0 && tasks.every((t) => t.status === tasks[0].status);

@@ -37,8 +37,8 @@ export default function TaskStatusPopover({
       isFinal: col.isFinal,
     })) ?? [];
   const { mutateAsync: updateTaskStatus } = useUpdateTaskStatus();
-  const { canManageTasks } = useWorkspacePermission();
-  const canEdit = canManageTasks();
+  const { canEditTasks } = useWorkspacePermission();
+  const canEdit = canEditTasks();
 
   const handleStatusChange = useCallback(
     async (newStatus: string) => {

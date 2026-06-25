@@ -94,8 +94,8 @@ export default function TaskRelations({
   );
   const createRelation = useCreateTaskRelation();
   const deleteRelation = useDeleteTaskRelation(taskId);
-  const { canManageTasks } = useWorkspacePermission();
-  const canEdit = canManageTasks();
+  const { canEditTasks } = useWorkspacePermission();
+  const canEdit = canEditTasks();
 
   useEffect(() => {
     if (!commandOpen) {

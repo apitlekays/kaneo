@@ -73,8 +73,10 @@ export default function TaskCardContextMenuContent({
   const { mutateAsync: updateTaskTitle } = useUpdateTaskTitle();
   const { mutateAsync: updateTaskDescription } = useUpdateTaskDescription();
   const { mutateAsync: updateTaskDueDate } = useUpdateTaskDueDate();
-  const { canManageTasks, canAssignTasks } = useWorkspacePermission();
-  const canEdit = canManageTasks();
+  const { canEditTasks, canDeleteTasks, canAssignTasks } =
+    useWorkspacePermission();
+  const canEdit = canEditTasks();
+  const canDelete = canDeleteTasks();
   const canAssign = canAssignTasks();
 
   const usersOptions = useMemo(() => {
@@ -303,7 +305,11 @@ export default function TaskCardContextMenuContent({
           <ContextMenuItem onClick={() => handleChange("status", "planned")}>
             <span>{t("tasks:actions.markAsPlanned")}</span>
           </ContextMenuItem>
+        </>
+      )}
 
+      {canDelete && (
+        <>
           <ContextMenuSeparator />
 
           <ContextMenuItem
