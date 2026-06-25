@@ -105,11 +105,14 @@ export async function pickDriveFiles(opts: {
   const appId = opts.clientId.split("-")[0]; // Cloud project number.
   const picker = window.google.picker;
 
+  // My Drive (the user's own files). NOTE: do NOT call setEnableDrives(true)
+  // here — that turns the view into a Shared Drives (Team Drives) listing,
+  // which is empty for users without Team Drives.
   const myDrive = new picker.DocsView(picker.ViewId.DOCS)
+    .setOwnedByMe(true)
     .setIncludeFolders(true)
     .setSelectFolderEnabled(false)
-    .setMode(picker.DocsViewMode.GRID)
-    .setEnableDrives(true);
+    .setMode(picker.DocsViewMode.GRID);
 
   const sharedWithMe = new picker.DocsView(picker.ViewId.DOCS)
     .setOwnedByMe(false)
@@ -119,7 +122,6 @@ export async function pickDriveFiles(opts: {
   return new Promise<PickedFile[]>((resolve) => {
     const instance = new picker.PickerBuilder()
       .enableFeature(picker.Feature.MULTISELECT_ENABLED)
-      .enableFeature(picker.Feature.SUPPORT_DRIVES)
       .setAppId(appId)
       .setOAuthToken(token)
       .setDeveloperKey(opts.apiKey)
