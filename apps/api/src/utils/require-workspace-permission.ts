@@ -1,5 +1,5 @@
 import { type BuiltInRoleName, builtInRoles } from "@kaneo/permissions";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import db, { schema } from "../database";
@@ -63,6 +63,9 @@ async function customRoleStatements(
         eq(schema.workspaceRoleTable.role, role),
       ),
     )
+    // Deterministic: with a unique (workspaceId, role) this returns the single
+    // row; the ordering is defensive in case any legacy duplicates remain.
+    .orderBy(desc(schema.workspaceRoleTable.updatedAt))
     .limit(1);
 
   if (!row?.permission) return null;

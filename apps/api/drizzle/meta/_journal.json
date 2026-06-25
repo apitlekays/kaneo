@@ -239,6 +239,13 @@
 			"when": 1782329103376,
 			"tag": "0033_drive_attachment",
 			"breakpoints": true
+		},
+		{
+			"idx": 34,
+			"version": "7",
+			"when": 1782404930990,
+			"tag": "0034_workspace_role_unique",
+			"breakpoints": true
 		}
 	]
 }

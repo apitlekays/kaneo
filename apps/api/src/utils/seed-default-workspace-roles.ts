@@ -92,7 +92,8 @@ export async function seedDefaultWorkspaceRoles() {
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       await db
         .insert(schema.workspaceRoleTable)
-        .values(rows.slice(i, i + BATCH_SIZE));
+        .values(rows.slice(i, i + BATCH_SIZE))
+        .onConflictDoNothing();
     }
     console.log(
       `✅ Seeded ${rows.length} default workspace role row(s) across ${workspaceIds.length} workspace(s).`,

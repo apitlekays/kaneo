@@ -360,7 +360,10 @@ export const auth = betterAuth({
               updatedAt: now,
             }));
             if (rows.length > 0) {
-              await db.insert(schema.workspaceRoleTable).values(rows);
+              await db
+                .insert(schema.workspaceRoleTable)
+                .values(rows)
+                .onConflictDoNothing();
             }
           } catch (error) {
             console.error(

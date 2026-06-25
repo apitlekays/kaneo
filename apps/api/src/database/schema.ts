@@ -226,6 +226,10 @@ export const workspaceRoleTable = pgTable(
   (table) => [
     index("workspace_role_workspaceId_idx").on(table.workspaceId),
     index("workspace_role_role_idx").on(table.role),
+    unique("workspace_role_workspace_id_role_unique").on(
+      table.workspaceId,
+      table.role,
+    ),
   ],
 );
 
