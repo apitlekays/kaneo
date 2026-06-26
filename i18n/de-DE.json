@@ -150,7 +150,11 @@
 			"oidcError": "Anmeldung mit OIDC fehlgeschlagen",
 			"googleError": "Anmeldung mit Google fehlgeschlagen",
 			"githubError": "Anmeldung mit GitHub fehlgeschlagen",
-			"discordError": "Anmeldung mit Discord fehlgeschlagen"
+			"discordError": "Anmeldung mit Discord fehlgeschlagen",
+			"errors": {
+				"oauth_code_verification_failed": "OAuth verification failed. Please try again.",
+				"registration_is_currently_disabled_you_need_a_valid_invitation_to_create_an_account_": "Registration is currently disabled. You need a valid invitation to create an account."
+			}
 		},
 		"providers": {
 			"google": "Google",
@@ -321,7 +325,13 @@
 				"nameRequired": "Name ist erforderlich",
 				"nameShort": "Der Name muss mindestens 2 Zeichen lang sein",
 				"invalidEmail": "Ungültige E-Mail-Adresse"
-			}
+			},
+			"avatarUnsupported": "Unsupported file type. Use PNG, JPG, GIF or WebP.",
+			"avatarUpdateError": "Failed to update profile picture",
+			"avatarUpdateSuccess": "Profile picture updated",
+			"changePicture": "Change",
+			"profilePictureHint": "PNG, JPG, GIF or WebP. Up to 10MB.",
+			"uploadPicture": "Upload"
 		},
 		"notificationsPage": {
 			"pageTitle": "Benachrichtigungen",
@@ -1744,7 +1754,8 @@
 				"complete": "Abgeschlossen",
 				"inProgress": "In Bearbeitung"
 			},
-			"noDueDate": "Kein Fälligkeitsdatum"
+			"noDueDate": "Kein Fälligkeitsdatum",
+			"emptyDescriptionReadOnly": "There are no projects in this workspace yet. Ask an admin to create one."
 		},
 		"search": {
 			"pageTitle": "Suche",
@@ -1784,7 +1795,8 @@
 		"roles": {
 			"owner": "Eigentümer",
 			"admin": "Admin",
-			"member": "Mitglied"
+			"member": "Mitglied",
+			"viewer": "Viewer"
 		},
 		"members": {
 			"pageTitle": "Mitglieder",
@@ -1820,7 +1832,9 @@
 			"removeSuccess": "Teammitglied erfolgreich entfernt",
 			"removeError": "Teammitglied konnte nicht entfernt werden",
 			"cancelInviteSuccess": "Einladung erfolgreich abgebrochen",
-			"cancelInviteError": "Einladung konnte nicht abgebrochen werden"
+			"cancelInviteError": "Einladung konnte nicht abgebrochen werden",
+			"roleUpdateError": "Failed to update role",
+			"roleUpdateSuccess": "Role updated"
 		}
 	},
 	"publicProject": {

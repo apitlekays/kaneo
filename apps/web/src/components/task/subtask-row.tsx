@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import TaskCardContextMenuContent from "@/components/kanban-board/task-card-context-menu/task-card-context-menu-content";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { getColumnIcon } from "@/lib/column";
 import type Task from "@/types/task";
@@ -85,15 +85,13 @@ export default function SubtaskRow({
                 className="shrink-0 flex items-center justify-center rounded p-0.5 transition-colors outline-none"
               >
                 {task.userId && assignee ? (
-                  <Avatar className="h-5 w-5">
-                    <AvatarImage
-                      src={assignee?.user?.image ?? ""}
-                      alt={assignee?.user?.name || ""}
-                    />
-                    <AvatarFallback className="text-[9px] font-medium border border-border/30">
-                      {assignee?.user?.name?.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <ColoredAvatar
+                    name={assignee?.user?.name}
+                    image={assignee?.user?.image}
+                    seed={task.userId}
+                    className="h-5 w-5 border border-border/30"
+                    fallbackClassName="text-[9px]"
+                  />
                 ) : (
                   <div
                     className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border/70"

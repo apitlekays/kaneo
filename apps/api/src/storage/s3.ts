@@ -273,6 +273,54 @@ export function assertStorageConfigured() {
   return getStorageConfig();
 }
 
+/**
+ * Deterministic object key for a user's avatar. We overwrite the same key on
+ * every upload (no per-upload suffix) so there are never orphaned avatars and
+ * the serving route can reconstruct the key from the user id alone. Cache
+ * invalidation is handled by a `?v=` query param on the stored image URL.
+ */
+export function buildAvatarObjectKey(userId: string) {
+  return `avatars/${sanitizePathSegment(userId)}`;
+}
+
+/** Create a presigned PUT URL for the current user's avatar. */
+export async function createAvatarUploadUrl(context: {
+  userId: string;
+  contentType: string;
+}): Promise<TaskImageUploadUrl> {
+  const config = getStorageConfig();
+  const client = getClient(config);
+  const key = applyKeyPrefix(
+    config.keyPrefix,
+    buildAvatarObjectKey(context.userId),
+  );
+
+  const command = new PutObjectCommand({
+    Bucket: config.bucket,
+    Key: key,
+    ContentType: context.contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(client, command, {
+    expiresIn: config.presignTtlSeconds,
+  });
+
+  return {
+    key,
+    uploadUrl,
+    headers: {
+      "Content-Type": context.contentType,
+    },
+  };
+}
+
+/** Stream a user's avatar object from storage. */
+export async function getAvatarObject(userId: string): Promise<AssetObject> {
+  const config = getStorageConfig();
+  const key = applyKeyPrefix(config.keyPrefix, buildAvatarObjectKey(userId));
+  return getPrivateObject(key);
+}
+
 export function assertTaskImageKeyMatchesContext(
   key: string,
   context: Omit<TaskImageUploadContext, "filename" | "contentType">,

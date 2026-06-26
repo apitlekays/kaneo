@@ -1,8 +1,8 @@
 import { X } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Calendar } from "@/components/ui/calendar";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   ContextMenuCheckboxItem,
   ContextMenuContent,
@@ -290,12 +290,13 @@ export default function TaskCardContextMenuContent({
                 onCheckedChange={() => handleChange("userId", user.value ?? "")}
                 closeOnClick
               >
-                <Avatar className="h-6 w-6">
-                  <AvatarImage src={user.image ?? ""} alt={user.name || ""} />
-                  <AvatarFallback className="text-xs font-medium border border-border/30">
-                    {user.name?.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <ColoredAvatar
+                  name={user.name}
+                  image={user.image}
+                  seed={user.value}
+                  className="h-6 w-6 border border-border/30"
+                  fallbackClassName="text-xs"
+                />
 
                 {user.label}
               </ContextMenuCheckboxItem>

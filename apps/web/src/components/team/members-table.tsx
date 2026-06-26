@@ -7,7 +7,6 @@ import useDeleteWorkspaceUser from "@/hooks/mutations/workspace-user/use-delete-
 import useUpdateWorkspaceUserRole from "@/hooks/mutations/workspace-user/use-update-workspace-user-role";
 import useWorkspaceRoles from "@/hooks/queries/workspace/use-workspace-roles";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
-import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import type {
@@ -24,9 +23,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../ui/alert-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { ColoredAvatar } from "../ui/colored-avatar";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import {
   Select,
@@ -50,42 +49,11 @@ type Props = {
   users: WorkspaceUser[];
 };
 
-// Stable per-user pastel for the avatar fallback. Picks one of a curated set
-// of Tailwind tone pairs from a cheap string hash so the same user keeps the
-// same color across re-renders without server-side state.
-const AVATAR_TONES = [
-  "bg-rose-500/15 text-rose-600 dark:text-rose-300",
-  "bg-amber-500/15 text-amber-600 dark:text-amber-300",
-  "bg-sky-500/15 text-sky-600 dark:text-sky-300",
-  "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
-  "bg-violet-500/15 text-violet-600 dark:text-violet-300",
-  "bg-indigo-500/15 text-indigo-600 dark:text-indigo-300",
-] as const;
-
 // Names that are NOT "truly custom" — viewer/member/admin are seeded as
 // editable workspace_role rows on every workspace creation, and owner is a
 // static built-in. The Select already lists them as built-ins, so we filter
 // them out of the custom-roles tail to avoid duplicate options.
 const RESERVED_ROLE_NAMES = new Set<string>([...DEFAULT_ROLE_NAMES, "owner"]);
-
-function toneFor(value: string): string {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(i);
-    hash |= 0;
-  }
-  return AVATAR_TONES[Math.abs(hash) % AVATAR_TONES.length];
-}
-
-function initials(value: string | null | undefined): string {
-  if (!value) return "?";
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
 
 function capitalize(value: string): string {
   if (!value) return value;
@@ -212,20 +180,17 @@ function MembersTable({ workspaceId, invitations, users }: Props) {
             const isSelf = currentUser?.id === member.userId;
             const showRoleSelect =
               canChangeRoles && !isSelf && member.role !== "owner";
-            const tone = toneFor(member.user.email);
             return (
               <TableRow key={member.user.email}>
                 <TableCell className="ps-6 py-3">
                   <div className="flex items-center gap-3">
-                    <Avatar className={cn("size-8", tone)}>
-                      <AvatarImage
-                        src={member.user.image ?? ""}
-                        alt={member.user.name ?? ""}
-                      />
-                      <AvatarFallback className="bg-transparent text-[11px] font-medium">
-                        {initials(member.user.name)}
-                      </AvatarFallback>
-                    </Avatar>
+                    <ColoredAvatar
+                      name={member.user.name}
+                      image={member.user.image}
+                      seed={member.userId}
+                      className="size-8"
+                      fallbackClassName="text-[11px]"
+                    />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">

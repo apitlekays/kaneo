@@ -4,7 +4,7 @@ import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import useGetWorkspaceUsers from "@/hooks/queries/workspace-users/use-get-workspace-users";
 import { formatDateMedium, formatRelativeTime } from "@/lib/format";
 import { getPriorityLabel, getStatusLabel } from "@/lib/i18n/domain";
-import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
+import { ColoredAvatar } from "../ui/colored-avatar";
 import {
   HoverCard,
   HoverCardContent,
@@ -118,15 +118,13 @@ function UserHoverName({
       </HoverCardTrigger>
       <HoverCardContent className="w-52 p-3">
         <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8">
-            <AvatarImage
-              src={user.user.image ?? ""}
-              alt={user.user.name || ""}
-            />
-            <AvatarFallback className="bg-muted text-xs font-medium">
-              {user.user.name?.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <ColoredAvatar
+            name={user.user.name}
+            image={user.user.image}
+            seed={user.user.id}
+            className="h-8 w-8"
+            fallbackClassName="text-xs"
+          />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-foreground leading-none">
               {user.user.name}
@@ -149,12 +147,13 @@ function ActorAvatar({
   fallbackName: string;
 }) {
   return (
-    <Avatar className="size-6">
-      <AvatarImage src={user?.user?.image ?? ""} alt={fallbackName} />
-      <AvatarFallback className="bg-muted text-[11px] font-medium">
-        {fallbackName.charAt(0).toUpperCase()}
-      </AvatarFallback>
-    </Avatar>
+    <ColoredAvatar
+      name={fallbackName}
+      image={user?.user?.image}
+      seed={user?.user?.id}
+      className="size-6"
+      fallbackClassName="text-[11px]"
+    />
   );
 }
 

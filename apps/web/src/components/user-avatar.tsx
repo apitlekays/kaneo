@@ -3,8 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { LogOut, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/components/providers/auth-provider/hooks/use-auth";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,14 +52,6 @@ export function UserAvatar() {
     navigate({ to: "/dashboard/settings/account/information" });
   };
 
-  const initials = user.name
-    ? user.name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-    : user.email?.substring(0, 2).toUpperCase() || "U";
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -68,23 +60,25 @@ export function UserAvatar() {
           size="icon"
           className="h-7 w-7 rounded-full p-0 hover:bg-sidebar-accent/70"
         >
-          <Avatar className="h-7 w-7">
-            <AvatarImage src={user.image ?? ""} alt={user.name || ""} />
-            <AvatarFallback className="text-xs font-medium border border-border/30">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
+          <ColoredAvatar
+            name={user.name || user.email}
+            image={user.image}
+            seed={user.id}
+            className="h-7 w-7"
+            fallbackClassName="text-xs border border-border/30"
+          />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-52 p-0" side="bottom" align="start">
         <div className="px-2.5 py-2">
           <div className="flex items-center gap-2 text-left text-sm">
-            <Avatar className="h-7 w-7 rounded-full">
-              <AvatarImage src={user.image ?? ""} alt={user.name || ""} />
-              <AvatarFallback className="rounded-full border border-border/30">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
+            <ColoredAvatar
+              name={user.name || user.email}
+              image={user.image}
+              seed={user.id}
+              className="h-7 w-7 rounded-full"
+              fallbackClassName="rounded-full border border-border/30"
+            />
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">
                 {user.name || t("navigation:userMenu.unnamedUser")}

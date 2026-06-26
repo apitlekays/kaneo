@@ -150,7 +150,11 @@
 			"oidcError": "Неуспешна најава со OIDC",
 			"googleError": "Неуспешна најава со Google",
 			"githubError": "Неуспешна најава со GitHub",
-			"discordError": "Неуспешна најава со Discord"
+			"discordError": "Неуспешна најава со Discord",
+			"errors": {
+				"oauth_code_verification_failed": "OAuth verification failed. Please try again.",
+				"registration_is_currently_disabled_you_need_a_valid_invitation_to_create_an_account_": "Registration is currently disabled. You need a valid invitation to create an account."
+			}
 		},
 		"providers": {
 			"google": "Google",
@@ -321,7 +325,13 @@
 				"nameRequired": "Името е задолжително",
 				"nameShort": "Името мора да има најмалку 2 знаци",
 				"invalidEmail": "Невалидна е-пошта"
-			}
+			},
+			"avatarUnsupported": "Unsupported file type. Use PNG, JPG, GIF or WebP.",
+			"avatarUpdateError": "Failed to update profile picture",
+			"avatarUpdateSuccess": "Profile picture updated",
+			"changePicture": "Change",
+			"profilePictureHint": "PNG, JPG, GIF or WebP. Up to 10MB.",
+			"uploadPicture": "Upload"
 		},
 		"notificationsPage": {
 			"pageTitle": "Notifications",
@@ -1002,7 +1012,9 @@
 				"pr_merged": "PR спoен",
 				"issue_opened": "Issue отворен",
 				"issue_closed": "Issue затворен"
-			}
+			},
+			"giteaHeading": "Gitea",
+			"giteaHint": "When a Gitea webhook event occurs, move the linked task to a column."
 		},
 		"externalLinks": {
 			"resources": "Ресурси",
@@ -1742,7 +1754,8 @@
 				"complete": "Завршен",
 				"inProgress": "Во тек"
 			},
-			"noDueDate": "Без краен рок"
+			"noDueDate": "Без краен рок",
+			"emptyDescriptionReadOnly": "There are no projects in this workspace yet. Ask an admin to create one."
 		},
 		"search": {
 			"pageTitle": "Пребарување",
@@ -1782,7 +1795,8 @@
 		"roles": {
 			"owner": "Сопственик",
 			"admin": "Администратор",
-			"member": "Член"
+			"member": "Член",
+			"viewer": "Viewer"
 		},
 		"members": {
 			"pageTitle": "Членови",
@@ -1818,7 +1832,9 @@
 			"removeSuccess": "Членот на тимот е успешно отстранет",
 			"removeError": "Неуспешно отстранување на член на тим",
 			"cancelInviteSuccess": "Поканата е успешно откажана",
-			"cancelInviteError": "Неуспешно откажување на покана"
+			"cancelInviteError": "Неуспешно откажување на покана",
+			"roleUpdateError": "Failed to update role",
+			"roleUpdateSuccess": "Role updated"
 		}
 	},
 	"publicProject": {

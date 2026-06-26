@@ -4,8 +4,8 @@ import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import CommentEditor from "@/components/activity/comment-editor";
 import { useAuth } from "@/components/providers/auth-provider/hooks/use-auth";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   HoverCard,
   HoverCardContent,
@@ -110,12 +110,13 @@ export default function CommentCard({
           <HoverCard>
             <HoverCardTrigger>
               <div className="flex cursor-pointer items-center gap-2">
-                <Avatar className="h-6 w-6">
-                  <AvatarImage src={user?.image ?? ""} alt={user?.name || ""} />
-                  <AvatarFallback className="bg-muted text-xs font-medium">
-                    {user?.name?.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <ColoredAvatar
+                  name={user?.name}
+                  image={user?.image}
+                  seed={user?.id}
+                  className="h-6 w-6"
+                  fallbackClassName="text-xs"
+                />
                 <span className="text-sm font-medium text-foreground/92 hover:text-foreground transition-colors">
                   {user?.name}
                 </span>
@@ -123,12 +124,13 @@ export default function CommentCard({
             </HoverCardTrigger>
             <HoverCardContent className="w-64 p-3">
               <div className="flex items-center gap-3">
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={user?.image ?? ""} alt={user?.name || ""} />
-                  <AvatarFallback className="bg-muted text-xs font-medium">
-                    {user?.name?.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <ColoredAvatar
+                  name={user?.name}
+                  image={user?.image}
+                  seed={user?.id}
+                  className="h-10 w-10"
+                  fallbackClassName="text-xs"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground leading-none">
                     {user?.name}

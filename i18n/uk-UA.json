@@ -150,7 +150,11 @@
 			"oidcError": "Не вдалося увійти через OIDC",
 			"googleError": "Не вдалося увійти через Google",
 			"githubError": "Не вдалося увійти через GitHub",
-			"discordError": "Не вдалося увійти через Discord"
+			"discordError": "Не вдалося увійти через Discord",
+			"errors": {
+				"oauth_code_verification_failed": "OAuth verification failed. Please try again.",
+				"registration_is_currently_disabled_you_need_a_valid_invitation_to_create_an_account_": "Registration is currently disabled. You need a valid invitation to create an account."
+			}
 		},
 		"providers": {
 			"google": "Google",
@@ -321,7 +325,13 @@
 				"nameRequired": "Ім'я є обов'язковим",
 				"nameShort": "Ім'я має містити щонайменше 2 символи",
 				"invalidEmail": "Невірна адреса електронної пошти"
-			}
+			},
+			"avatarUnsupported": "Unsupported file type. Use PNG, JPG, GIF or WebP.",
+			"avatarUpdateError": "Failed to update profile picture",
+			"avatarUpdateSuccess": "Profile picture updated",
+			"changePicture": "Change",
+			"profilePictureHint": "PNG, JPG, GIF or WebP. Up to 10MB.",
+			"uploadPicture": "Upload"
 		},
 		"notificationsPage": {
 			"pageTitle": "Сповіщення",
@@ -582,7 +592,9 @@
 				"keyShort": "Ключ має містити щонайменше 2 символи",
 				"keyMax": "Ключ може містити не більше 8 символів",
 				"iconRequired": "Іконка є обов'язковою"
-			}
+			},
+			"importExportTasks": "Import/Export",
+			"importExportTasksDescription": "Import and export tasks."
 		},
 		"projectIntegrations": {
 			"pageTitle": "Інтеґрації проєкту",
@@ -1076,7 +1088,8 @@
 			"members": "Учасники",
 			"invitations": "Запрошення",
 			"more": "Більше",
-			"home": "Home"
+			"home": "Home",
+			"backToBoard": "Back to board"
 		},
 		"projectList": {
 			"viewProject": "Переглянути проєкт",
@@ -1294,7 +1307,9 @@
 					"yaml": "YAML"
 				}
 			}
-		}
+		},
+		"created": "created this task",
+		"moved": "moved task from \"{{from}}\" to \"{{to}}\""
 	},
 	"tasks": {
 		"status": {
@@ -1321,7 +1336,9 @@
 		},
 		"common": {
 			"selectTask": "Обрати завдання",
-			"loadingTask": "Завантаження завдання..."
+			"loadingTask": "Завантаження завдання...",
+			"taskNotFound": "Task not found",
+			"taskNotFoundDescription": "The task you are looking for does not exist or has been deleted."
 		},
 		"detail": {
 			"subtaskOf": "Підзавдання",
@@ -1741,7 +1758,8 @@
 				"complete": "Завершено",
 				"inProgress": "В роботі"
 			},
-			"noDueDate": "Без дати завершення"
+			"noDueDate": "Без дати завершення",
+			"emptyDescriptionReadOnly": "There are no projects in this workspace yet. Ask an admin to create one."
 		},
 		"search": {
 			"pageTitle": "Пошук",
@@ -1783,7 +1801,8 @@
 		"roles": {
 			"owner": "Власник",
 			"admin": "Адміністратор",
-			"member": "Учасник"
+			"member": "Учасник",
+			"viewer": "Viewer"
 		},
 		"members": {
 			"pageTitle": "Учасники",
@@ -1819,7 +1838,9 @@
 			"removeSuccess": "Учасника команди успішно видалено",
 			"removeError": "Не вдалося видалити учасника команди",
 			"cancelInviteSuccess": "Запрошення успішно скасовано",
-			"cancelInviteError": "Не вдалося скасувати запрошення"
+			"cancelInviteError": "Не вдалося скасувати запрошення",
+			"roleUpdateError": "Failed to update role",
+			"roleUpdateSuccess": "Role updated"
 		}
 	},
 	"publicProject": {

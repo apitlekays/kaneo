@@ -1,8 +1,8 @@
 import { Check } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Popover,
   PopoverContent,
@@ -164,12 +164,13 @@ export default function SubtaskAssigneePopover({
               className="w-full justify-start gap-2 h-8 px-2"
               onClick={() => handleAssigneeChange(user.value)}
             >
-              <Avatar className="h-6 w-6">
-                <AvatarImage src={user.image ?? ""} alt={user.name || ""} />
-                <AvatarFallback className="text-xs font-medium border border-border/30">
-                  {user.name?.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+              <ColoredAvatar
+                name={user.name}
+                image={user.image}
+                seed={user.value}
+                className="h-6 w-6 border border-border/30"
+                fallbackClassName="text-xs"
+              />
               <span className="text-sm truncate">{user.label}</span>
               {currentAssignee === user.value ? (
                 <Check className="ml-auto h-4 w-4 shrink-0" />

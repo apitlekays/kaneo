@@ -20,7 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   HoverCard,
   HoverCardContent,
@@ -205,15 +205,13 @@ function TaskCard({ task }: TaskCardProps) {
             {showAssignees && (
               <div className="absolute top-3 right-3">
                 {task.userId ? (
-                  <Avatar className="h-5 w-5">
-                    <AvatarImage
-                      src={assignee?.user?.image ?? ""}
-                      alt={assignee?.user?.name || ""}
-                    />
-                    <AvatarFallback className="text-xs font-medium border border-border/30">
-                      {assignee?.user?.name?.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <ColoredAvatar
+                    name={assignee?.user?.name}
+                    image={assignee?.user?.image}
+                    seed={task.userId}
+                    className="h-5 w-5 border border-border/30"
+                    fallbackClassName="text-xs"
+                  />
                 ) : (
                   <div
                     className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-muted"

@@ -20,8 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   HoverCard,
   HoverCardContent,
@@ -352,15 +352,13 @@ function TaskRow({ task, projectSlug }: TaskRowProps) {
             {showAssignees && (
               <div className="flex-shrink-0">
                 {task.userId ? (
-                  <Avatar className="h-6 w-6">
-                    <AvatarImage
-                      src={assignee?.user?.image ?? ""}
-                      alt={assignee?.user?.name || ""}
-                    />
-                    <AvatarFallback className="text-xs font-medium border border-border/30">
-                      {assignee?.user?.name?.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <ColoredAvatar
+                    name={assignee?.user?.name}
+                    image={assignee?.user?.image}
+                    seed={task.userId}
+                    className="h-6 w-6 border border-border/30"
+                    fallbackClassName="text-xs"
+                  />
                 ) : (
                   <div
                     className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"

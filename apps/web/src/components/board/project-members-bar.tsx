@@ -2,8 +2,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Popover,
   PopoverContent,
@@ -12,6 +12,7 @@ import {
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
@@ -115,26 +116,29 @@ export default function ProjectMembersBar({
 
   return (
     <div className="inline-flex items-center gap-1.5">
-      <div className="flex items-center -space-x-2">
-        {shown.map((member) => (
-          <Tooltip key={member.userId}>
-            <TooltipTrigger asChild>
-              <Avatar className="h-6 w-6 border-2 border-background">
-                <AvatarImage src={member.image ?? ""} alt={member.name} />
-                <AvatarFallback className="text-[10px]">
-                  {member.name?.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{member.name}</TooltipContent>
-          </Tooltip>
-        ))}
-        {overflow > 0 && (
-          <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-[10px] font-medium text-muted-foreground">
-            +{overflow}
-          </div>
-        )}
-      </div>
+      <TooltipProvider>
+        <div className="flex items-center -space-x-2">
+          {shown.map((member) => (
+            <Tooltip key={member.userId}>
+              <TooltipTrigger render={<span className="inline-flex" />}>
+                <ColoredAvatar
+                  name={member.name}
+                  image={member.image}
+                  seed={member.userId}
+                  className="h-6 w-6 border-2 border-background"
+                  fallbackClassName="text-[10px]"
+                />
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{member.name}</TooltipContent>
+            </Tooltip>
+          ))}
+          {overflow > 0 && (
+            <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-[10px] font-medium text-muted-foreground">
+              +{overflow}
+            </div>
+          )}
+        </div>
+      </TooltipProvider>
 
       {canAdd && (
         <Popover open={open} onOpenChange={setOpen}>
@@ -182,15 +186,13 @@ export default function ProjectMembersBar({
                       onClick={() => handleAdd(m.userId)}
                       className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm hover:bg-accent disabled:opacity-50"
                     >
-                      <Avatar className="h-6 w-6">
-                        <AvatarImage
-                          src={m.user?.image ?? ""}
-                          alt={m.user?.name || ""}
-                        />
-                        <AvatarFallback className="text-[10px]">
-                          {m.user?.name?.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
+                      <ColoredAvatar
+                        name={m.user?.name}
+                        image={m.user?.image}
+                        seed={m.userId}
+                        className="h-6 w-6"
+                        fallbackClassName="text-[10px]"
+                      />
                       <span className="min-w-0 flex-1 truncate">
                         {m.user?.name || m.user?.email || m.userId}
                       </span>
@@ -210,15 +212,13 @@ export default function ProjectMembersBar({
                     key={request.userId}
                     className="flex items-center gap-2 px-1.5 py-1.5"
                   >
-                    <Avatar className="h-6 w-6">
-                      <AvatarImage
-                        src={request.image ?? ""}
-                        alt={request.name}
-                      />
-                      <AvatarFallback className="text-[10px]">
-                        {request.name?.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                    <ColoredAvatar
+                      name={request.name}
+                      image={request.image}
+                      seed={request.userId}
+                      className="h-6 w-6"
+                      fallbackClassName="text-[10px]"
+                    />
                     <span className="min-w-0 flex-1 truncate text-sm">
                       {request.name}
                     </span>

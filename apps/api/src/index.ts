@@ -55,6 +55,7 @@ import task from "./task";
 import taskRelation from "./task-relation";
 import telegramIntegration from "./telegram-integration";
 import timeEntry from "./time-entry";
+import user from "./user";
 import {
   authenticateApiRequest,
   resolveAssetBearerOrCookie,
@@ -582,6 +583,7 @@ export function createApp() {
   api.route("/google-calendar", googleCalendar);
   api.route("/drive-attachment", driveAttachment);
   api.route("/project-member", projectMember);
+  api.route("/user", user);
 
   app.route(
     "/",

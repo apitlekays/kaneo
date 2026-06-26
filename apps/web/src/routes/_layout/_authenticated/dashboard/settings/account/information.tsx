@@ -1,13 +1,15 @@
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef } from "react";
+import { Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import PageTitle from "@/components/page-title";
 import useAuth from "@/components/providers/auth-provider/hooks/use-auth";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Form,
   FormControl,
@@ -20,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import useUpdateUserProfile from "@/hooks/mutations/use-update-user-profile";
 import { toast } from "@/lib/toast";
+import { isSupportedAvatarFile, uploadAvatar } from "@/lib/upload-avatar";
 
 export const Route = createFileRoute(
   "/_layout/_authenticated/dashboard/settings/account/information",
@@ -51,6 +54,8 @@ function RouteComponent() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { mutateAsync: updateProfile } = useUpdateUserProfile();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isSavingRef = useRef(false);
   const queuedSaveRef = useRef<ProfileFormValues | null>(null);
@@ -164,6 +169,36 @@ function RouteComponent() {
     };
   }, []);
 
+  const handleAvatarFileChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
+
+      if (!isSupportedAvatarFile(file)) {
+        toast.error(t("settings:informationPage.avatarUnsupported"));
+        return;
+      }
+
+      setIsUploadingAvatar(true);
+      try {
+        const imageUrl = await uploadAvatar(file);
+        await updateProfile({ image: imageUrl });
+        await queryClient.invalidateQueries({ queryKey: ["session"] });
+        toast.success(t("settings:informationPage.avatarUpdateSuccess"));
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t("settings:informationPage.avatarUpdateError"),
+        );
+      } finally {
+        setIsUploadingAvatar(false);
+      }
+    },
+    [t, updateProfile, queryClient],
+  );
+
   return (
     <>
       <PageTitle title={t("settings:informationPage.pageTitle")} />
@@ -193,13 +228,40 @@ function RouteComponent() {
                 <p className="text-sm font-medium">
                   {t("settings:informationPage.profilePicture")}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings:informationPage.profilePictureHint")}
+                </p>
               </div>
-              <Avatar className="h-10 w-10">
-                <AvatarImage src={user?.image ?? ""} alt={user?.name || ""} />
-                <AvatarFallback className="text-xs font-medium border border-border/30">
-                  {user?.name?.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+              <div className="flex items-center gap-3">
+                <ColoredAvatar
+                  name={user?.name}
+                  image={user?.image}
+                  seed={user?.id}
+                  className="h-10 w-10"
+                  fallbackClassName="text-sm"
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarFileChange}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isUploadingAvatar}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {isUploadingAvatar && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  )}
+                  {user?.image
+                    ? t("settings:informationPage.changePicture")
+                    : t("settings:informationPage.uploadPicture")}
+                </Button>
+              </div>
             </div>
 
             <Separator />
