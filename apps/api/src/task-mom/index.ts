@@ -1,11 +1,14 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { validator } from "hono-openapi";
 import * as v from "valibot";
 import db from "../database";
 import { taskMomTable, taskTable, userTable } from "../database/schema";
 import createNotification from "../notification/controllers/create-notification";
-import { requireProjectAccessFromTask } from "../utils/project-access";
+import {
+  requireProjectAccess,
+  requireProjectAccessFromTask,
+} from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 
 const personSchema = v.object({
@@ -45,6 +48,30 @@ function collectTaggedUserIds(data: unknown): Set<string> {
 const taskMom = new Hono<{
   Variables: { userId: string; workspaceId?: string };
 }>()
+  // Consolidated list of every meeting's minutes in a project (the Minutes view).
+  .get(
+    "/project/:projectId",
+    validator("param", v.object({ projectId: v.string() })),
+    workspaceAccess.fromProject("projectId"),
+    requireProjectAccess("projectId"),
+    async (c) => {
+      const { projectId } = c.req.valid("param");
+      const rows = await db
+        .select({
+          taskId: taskMomTable.taskId,
+          data: taskMomTable.data,
+          updatedAt: taskMomTable.updatedAt,
+          taskTitle: taskTable.title,
+          taskNumber: taskTable.number,
+          taskStatus: taskTable.status,
+        })
+        .from(taskMomTable)
+        .innerJoin(taskTable, eq(taskMomTable.taskId, taskTable.id))
+        .where(eq(taskTable.projectId, projectId))
+        .orderBy(desc(taskMomTable.updatedAt));
+      return c.json(rows);
+    },
+  )
   .get(
     "/:taskId",
     validator("param", v.object({ taskId: v.string() })),

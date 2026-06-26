@@ -44,7 +44,14 @@ export function useUserWebSocket() {
           const message = JSON.parse(event.data);
           if (message.type !== "USER_SYNC") return;
 
-          // The only user-scoped event today is an inbound invitation.
+          if (message.entity === "notification") {
+            // Instant push for the Home activity feed + Home bell badge.
+            queryClient.invalidateQueries({ queryKey: ["notification-feed"] });
+            queryClient.invalidateQueries({ queryKey: ["notifications"] });
+            return;
+          }
+
+          // Otherwise it's an inbound invitation.
           queryClient.invalidateQueries({ queryKey: ["invitations"] });
           queryClient.invalidateQueries({ queryKey: ["user-invitations"] });
         } catch {

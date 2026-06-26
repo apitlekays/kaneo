@@ -3,6 +3,7 @@ import db from "../../database";
 import { notificationTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { deliverNotification } from "../../notification-preferences/delivery";
+import { broadcastToUser } from "../../ws";
 
 async function createNotification({
   userId,
@@ -46,6 +47,10 @@ async function createNotification({
         error,
       });
     });
+
+    // Instant push: nudge the recipient's user channel so their bell badge and
+    // Home activity feed update immediately (no 60s wait).
+    broadcastToUser(userId, { entity: "notification" });
   }
 
   return notification;

@@ -1742,7 +1742,8 @@
 			"searchOrType": "Search members or type a name…",
 			"tagPeople": "Tag people",
 			"time": "Time",
-			"title": "Minutes of Meeting"
+			"title": "Minutes of Meeting",
+			"tagPerson": "Tag a person"
 		}
 	},
 	"invitations": {
@@ -1918,6 +1919,19 @@
 				"status": "changed the status of",
 				"tagged": "tagged you in"
 			}
+		}
+	},
+	"minutes": {
+		"empty": "No minutes recorded in this project yet.",
+		"noActionItems": "No action items.",
+		"openStatus": "Open",
+		"pageTitle": "Minutes",
+		"searchPlaceholder": "Search meetings…",
+		"stats": {
+			"actionItems": "Action items",
+			"linked": "Linked",
+			"meetings": "Meetings",
+			"open": "Open"
 		}
 	}
 }

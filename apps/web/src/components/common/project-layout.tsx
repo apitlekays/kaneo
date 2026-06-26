@@ -1,5 +1,10 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { CalendarDays, SquareKanban, SquircleDashed } from "lucide-react";
+import {
+  CalendarDays,
+  FileText,
+  SquareKanban,
+  SquircleDashed,
+} from "lucide-react";
 import { type ReactNode, useState } from "react";
 import MobileProjectNav from "@/components/common/header/mobile-project-nav";
 import ProjectCrumbSelect from "@/components/common/header/project-crumb-select";
@@ -27,7 +32,7 @@ type ProjectLayoutProps = {
   headerActions?: ReactNode;
   children: ReactNode;
   showViewSwitcher?: boolean;
-  activeView?: "backlog" | "board" | "gantt";
+  activeView?: "backlog" | "board" | "gantt" | "minutes";
 };
 
 export default function ProjectLayout({
@@ -58,7 +63,9 @@ export default function ProjectLayout({
       ? "backlog"
       : location.pathname.includes("/gantt")
         ? "gantt"
-        : "board");
+        : location.pathname.includes("/minutes")
+          ? "minutes"
+          : "board");
 
   const handleNavigateToBacklog = () => {
     navigate({
@@ -77,6 +84,13 @@ export default function ProjectLayout({
   const handleNavigateToGantt = () => {
     navigate({
       to: "/dashboard/workspace/$workspaceId/project/$projectId/gantt",
+      params: { workspaceId, projectId },
+    });
+  };
+
+  const handleNavigateToMinutes = () => {
+    navigate({
+      to: "/dashboard/workspace/$workspaceId/project/$projectId/minutes",
       params: { workspaceId, projectId },
     });
   };
@@ -142,6 +156,7 @@ export default function ProjectLayout({
                 onSelectBacklog={handleNavigateToBacklog}
                 onSelectBoard={handleNavigateToBoard}
                 onSelectGantt={handleNavigateToGantt}
+                onSelectMinutes={handleNavigateToMinutes}
                 onSelectProject={handleProjectSwitch}
                 onAddProject={handleAddProject}
               />
@@ -184,6 +199,18 @@ export default function ProjectLayout({
                 >
                   <CalendarDays className="size-3.5" />
                   Gantt
+                </Button>
+                <Button
+                  variant={resolvedView === "minutes" ? "secondary" : "ghost"}
+                  size="xs"
+                  onClick={handleNavigateToMinutes}
+                  className={cn(
+                    "h-6 gap-1.5 rounded-md px-2 text-xs",
+                    resolvedView !== "minutes" && "text-muted-foreground",
+                  )}
+                >
+                  <FileText className="size-3.5" />
+                  Minutes
                 </Button>
               </div>
             )}

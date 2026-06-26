@@ -1728,7 +1728,6 @@
 			"add": "Add",
 			"searchOrType": "Search members or type a name…",
 			"addFreeText": "Add \"{{name}}\"",
-			"tagPeople": "Tag people",
 			"noMembers": "No project members",
 			"agenda": "Agenda",
 			"discussion": "Discussion Points",
@@ -1742,7 +1741,8 @@
 			"linkedSubtask": "Linked sub-task",
 			"addRow": "Add row",
 			"removeRow": "Remove row",
-			"actionItem": "Action item"
+			"actionItem": "Action item",
+			"tagPerson": "Tag a person"
 		}
 	},
 	"invitations": {
@@ -1918,6 +1918,19 @@
 				"status": "changed the status of",
 				"commented": "commented on"
 			}
+		}
+	},
+	"minutes": {
+		"pageTitle": "Minutes",
+		"searchPlaceholder": "Search meetings…",
+		"empty": "No minutes recorded in this project yet.",
+		"noActionItems": "No action items.",
+		"openStatus": "Open",
+		"stats": {
+			"meetings": "Meetings",
+			"actionItems": "Action items",
+			"open": "Open",
+			"linked": "Linked"
 		}
 	}
 }

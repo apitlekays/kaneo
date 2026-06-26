@@ -57,3 +57,22 @@ export async function saveTaskMom(
   if (!response.ok) throw new Error(await response.text());
   return response.json();
 }
+
+export type ProjectMomItem = {
+  taskId: string;
+  data: MomData;
+  updatedAt: string;
+  taskTitle: string;
+  taskNumber: number | null;
+  taskStatus: string;
+};
+
+export async function getProjectMoms(
+  projectId: string,
+): Promise<ProjectMomItem[]> {
+  const response = await fetch(getApiUrl(`task-mom/project/${projectId}`), {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}

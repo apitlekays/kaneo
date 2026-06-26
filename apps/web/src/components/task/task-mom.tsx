@@ -5,8 +5,8 @@ import {
   CornerDownRight,
   ListTree,
   Plus,
-  Tag,
   Trash2,
+  UserPlus,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -153,7 +153,7 @@ function PeopleEditor({
   );
 }
 
-/** Popover picker to tag project members on an action item. */
+/** Popover picker to tag a single project member on an action item. */
 function MemberTagPicker({
   selectedIds,
   members,
@@ -174,11 +174,11 @@ function MemberTagPicker({
             variant="ghost"
             size="sm"
             className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
-            title={t("tasks:mom.tagPeople")}
+            title={t("tasks:mom.tagPerson")}
           />
         }
       >
-        <Tag className="h-3 w-3" />
+        <UserPlus className="h-3 w-3" />
       </PopoverTrigger>
       <PopoverContent className="w-56 p-1" align="end">
         <div className="max-h-52 overflow-y-auto">
@@ -193,7 +193,10 @@ function MemberTagPicker({
                 <button
                   key={m.userId}
                   type="button"
-                  onClick={() => onToggle(m.userId)}
+                  onClick={() => {
+                    onToggle(m.userId);
+                    setOpen(false);
+                  }}
                   className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs hover:bg-accent"
                 >
                   <ColoredAvatar
@@ -316,11 +319,11 @@ export default function TaskMom({
       ],
     });
 
+  // Only one person can be tagged per action item: selecting a member replaces
+  // the current tag; selecting the already-tagged member clears it.
   const toggleTag = (row: MomRow, userId: string) =>
     updateRow(row.id, {
-      taggedUserIds: row.taggedUserIds.includes(userId)
-        ? row.taggedUserIds.filter((id) => id !== userId)
-        : [...row.taggedUserIds, userId],
+      taggedUserIds: row.taggedUserIds.includes(userId) ? [] : [userId],
     });
 
   const convertToSubtask = async (row: MomRow) => {

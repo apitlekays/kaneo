@@ -1,11 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getTaskMom, type MomData, saveTaskMom } from "@/fetchers/task-mom";
+import {
+  getProjectMoms,
+  getTaskMom,
+  type MomData,
+  saveTaskMom,
+} from "@/fetchers/task-mom";
 
 export function useTaskMom(taskId: string) {
   return useQuery({
     queryKey: ["task-mom", taskId],
     queryFn: () => getTaskMom(taskId),
     enabled: !!taskId,
+  });
+}
+
+export function useProjectMoms(projectId: string) {
+  return useQuery({
+    queryKey: ["project-moms", projectId],
+    queryFn: () => getProjectMoms(projectId),
+    enabled: !!projectId,
   });
 }
 
