@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { Dialog, DialogClose, DialogPopup } from "@/components/ui/dialog";
 import { dueDateStatusColors, getDueDateStatus } from "@/lib/due-date-status";
 import { formatDateMedium, formatDateShort } from "@/lib/format";
@@ -145,15 +145,12 @@ export function PublicTaskDetailModal({
 
                 {task.assigneeName && (
                   <div className="flex items-center gap-2 px-2.5 py-1 text-xs bg-muted text-muted-foreground rounded-md">
-                    <Avatar className="h-4 w-4">
-                      <AvatarImage
-                        src={task.assigneeImage ?? ""}
-                        alt={task.assigneeName ?? ""}
-                      />
-                      <AvatarFallback className="text-[10px]">
-                        {task.assigneeName.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                    <ColoredAvatar
+                      name={task.assigneeName}
+                      image={task.assigneeImage}
+                      className="h-4 w-4"
+                      fallbackClassName="text-[10px]"
+                    />
                     <span>{task.assigneeName}</span>
                   </div>
                 )}

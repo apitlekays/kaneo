@@ -3,8 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Check, Loader2, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Select,
   SelectContent,
@@ -184,12 +184,13 @@ function RouteComponent() {
               key={member.userId}
               className="flex items-center gap-3 px-4 py-2.5"
             >
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={member.image ?? ""} alt={member.name} />
-                <AvatarFallback className="text-xs">
-                  {member.name?.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+              <ColoredAvatar
+                name={member.name}
+                image={member.image}
+                seed={member.userId}
+                className="h-8 w-8"
+                fallbackClassName="text-xs"
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm">{member.name}</p>
                 <p className="truncate text-xs text-muted-foreground">
@@ -233,12 +234,13 @@ function RouteComponent() {
                 key={request.userId}
                 className="flex items-center gap-3 px-4 py-2.5"
               >
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={request.image ?? ""} alt={request.name} />
-                  <AvatarFallback className="text-xs">
-                    {request.name?.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <ColoredAvatar
+                  name={request.name}
+                  image={request.image}
+                  seed={request.userId}
+                  className="h-8 w-8"
+                  fallbackClassName="text-xs"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm">{request.name}</p>
                   <p className="truncate text-xs text-muted-foreground">

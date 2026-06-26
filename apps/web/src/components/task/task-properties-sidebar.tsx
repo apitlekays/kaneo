@@ -8,9 +8,9 @@ import {
   Plus,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { KbdSequence } from "@/components/ui/kbd";
 import {
   Tooltip,
@@ -232,15 +232,13 @@ export default function TaskPropertiesSidebar({
                     className="justify-start h-7 px-1.5 gap-1.5"
                   >
                     {task.userId ? (
-                      <Avatar className="h-[16px] w-[16px]">
-                        <AvatarImage
-                          src={assignee?.user?.image ?? ""}
-                          alt={assignee?.user?.name || ""}
-                        />
-                        <AvatarFallback className="text-[9px] font-medium border border-border/30 flex-shrink-0 h-[16px] w-[16px]">
-                          {assignee?.user?.name?.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
+                      <ColoredAvatar
+                        name={assignee?.user?.name}
+                        image={assignee?.user?.image}
+                        seed={task.userId}
+                        className="h-[16px] w-[16px] flex-shrink-0 border border-border/30"
+                        fallbackClassName="text-[9px]"
+                      />
                     ) : (
                       <div
                         className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center flex-shrink-0"
@@ -420,15 +418,13 @@ export default function TaskPropertiesSidebar({
                       className="justify-start h-7 px-1.5 gap-1.5"
                     >
                       {task.userId ? (
-                        <Avatar className="h-[16px] w-[16px]">
-                          <AvatarImage
-                            src={assignee?.user?.image ?? ""}
-                            alt={assignee?.user?.name || ""}
-                          />
-                          <AvatarFallback className="text-[9px] font-medium border border-border/30 shrink-0 h-[16px] w-[16px]">
-                            {assignee?.user?.name?.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
+                        <ColoredAvatar
+                          name={assignee?.user?.name}
+                          image={assignee?.user?.image}
+                          seed={task.userId}
+                          className="h-[16px] w-[16px] shrink-0 border border-border/30"
+                          fallbackClassName="text-[9px]"
+                        />
                       ) : (
                         <div
                           className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center shrink-0"
@@ -611,15 +607,13 @@ export default function TaskPropertiesSidebar({
                       className="justify-start h-7 px-1.5 gap-1.5 w-full"
                     >
                       {task.userId ? (
-                        <Avatar className="h-[16px] w-[16px]">
-                          <AvatarImage
-                            src={assignee?.user?.image ?? ""}
-                            alt={assignee?.user?.name || ""}
-                          />
-                          <AvatarFallback className="text-[9px] font-medium border border-border/30 shrink-0 h-[16px] w-[16px]">
-                            {assignee?.user?.name?.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
+                        <ColoredAvatar
+                          name={assignee?.user?.name}
+                          image={assignee?.user?.image}
+                          seed={task.userId}
+                          className="h-[16px] w-[16px] shrink-0 border border-border/30"
+                          fallbackClassName="text-[9px]"
+                        />
                       ) : (
                         <div
                           className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center shrink-0"

@@ -7,8 +7,8 @@ import {
 import { Bell, Code, Plug, Settings, User } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import useAuth from "@/components/providers/auth-provider/hooks/use-auth";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -57,12 +57,13 @@ function RouteComponent() {
       <aside className="w-64 flex-shrink-0">
         <div className="p-2">
           <div className="mb-1 flex items-center gap-3 rounded-md px-2 py-2">
-            <Avatar className="h-9 w-9">
-              <AvatarImage src={user?.image ?? ""} alt={user?.name || ""} />
-              <AvatarFallback className="text-xs font-medium border border-border/30">
-                {user?.name?.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <ColoredAvatar
+              name={user?.name}
+              image={user?.image}
+              seed={user?.id}
+              className="h-9 w-9 border border-border/30"
+              fallbackClassName="text-xs"
+            />
             <div className="flex flex-col">
               <p className="text-sm">{user?.name}</p>
               <p className="text-xs text-sidebar-foreground/70">

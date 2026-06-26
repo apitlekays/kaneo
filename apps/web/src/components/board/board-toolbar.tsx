@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import ProjectMembersBar from "@/components/board/project-members-bar";
 import SortControl from "@/components/common/sort-control";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -169,15 +169,13 @@ export default function BoardToolbar({
   const getAssigneeAvatar = (userId: string) => {
     const member = users?.members?.find((m) => m.userId === userId);
     return (
-      <Avatar className="h-4 w-4">
-        <AvatarImage
-          src={member?.user?.image ?? ""}
-          alt={member?.user?.name || ""}
-        />
-        <AvatarFallback className="border border-border/30 text-[9px] font-medium">
-          {member?.user?.name?.charAt(0).toUpperCase() || "?"}
-        </AvatarFallback>
-      </Avatar>
+      <ColoredAvatar
+        name={member?.user?.name}
+        image={member?.user?.image}
+        seed={userId}
+        className="h-4 w-4 border border-border/30"
+        fallbackClassName="text-[9px]"
+      />
     );
   };
 
@@ -397,15 +395,13 @@ export default function BoardToolbar({
                             )}
                           />
                           <span className="inline-flex items-center gap-2">
-                            <Avatar className="h-5 w-5">
-                              <AvatarImage
-                                src={member.user?.image ?? ""}
-                                alt={member.user?.name || ""}
-                              />
-                              <AvatarFallback className="border border-border/30 text-[10px] font-medium">
-                                {member.user?.name?.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
+                            <ColoredAvatar
+                              name={member.user?.name}
+                              image={member.user?.image}
+                              seed={member.userId}
+                              className="h-5 w-5 border border-border/30"
+                              fallbackClassName="text-[10px]"
+                            />
                             <span>{member.user?.name}</span>
                           </span>
                         </button>

@@ -10,8 +10,8 @@ import SortControl from "@/components/common/sort-control";
 import PageTitle from "@/components/page-title";
 import CreateTaskModal from "@/components/shared/modals/create-task-modal";
 import TaskDetailsSheet from "@/components/task/task-details-sheet";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -592,15 +592,13 @@ function RouteComponent() {
                         }
                         className="h-8 rounded-md text-sm"
                       >
-                        <Avatar className="h-6 w-6 mr-2">
-                          <AvatarImage
-                            src={member.user?.image ?? ""}
-                            alt={member.user?.name || ""}
-                          />
-                          <AvatarFallback className="text-xs font-medium border border-border/30">
-                            {member.user?.name?.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
+                        <ColoredAvatar
+                          name={member.user?.name}
+                          image={member.user?.image}
+                          seed={member.userId}
+                          className="h-6 w-6 mr-2 border border-border/30"
+                          fallbackClassName="text-xs"
+                        />
                         <span>{member.user?.name}</span>
                       </DropdownMenuCheckboxItem>
                     ))}

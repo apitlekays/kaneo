@@ -15,8 +15,8 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Calendar } from "@/components/ui/calendar";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Command,
   CommandCollection,
@@ -315,15 +315,13 @@ function BulkToolbar() {
           value: `assign-${member.userId}`,
           label: member.user?.name || t("common:people.someone"),
           icon: (
-            <Avatar className="h-5 w-5">
-              <AvatarImage
-                src={member.user?.image ?? ""}
-                alt={member.user?.name || ""}
-              />
-              <AvatarFallback className="text-xs font-medium border border-border/30">
-                {member.user?.name?.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <ColoredAvatar
+              name={member.user?.name}
+              image={member.user?.image}
+              seed={member.userId}
+              className="h-5 w-5 border border-border/30"
+              fallbackClassName="text-xs"
+            />
           ),
           onRun: () => {
             void handleBulkAssign(member.userId);

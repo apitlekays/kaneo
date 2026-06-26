@@ -12,7 +12,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import TaskDescriptionEditor from "@/components/task/task-description-editor";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -22,6 +21,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Dialog,
   DialogContent,
@@ -773,17 +773,13 @@ function CreateTaskModal({
                   >
                     {selectedUser ? (
                       <>
-                        <Avatar className="h-4 w-4">
-                          <AvatarImage
-                            src={selectedUser?.user?.image ?? ""}
-                            alt={selectedUser?.user?.name || ""}
-                          />
-                          <AvatarFallback className="text-[10px] font-medium border border-border/30">
-                            {selectedUser?.user?.name
-                              ?.charAt(0)
-                              .toUpperCase() || "?"}
-                          </AvatarFallback>
-                        </Avatar>
+                        <ColoredAvatar
+                          name={selectedUser?.user?.name}
+                          image={selectedUser?.user?.image}
+                          seed={selectedUser?.userId}
+                          className="h-4 w-4 border border-border/30"
+                          fallbackClassName="text-[10px]"
+                        />
                         <span>{selectedUser.user?.name}</span>
                       </>
                     ) : (
@@ -823,15 +819,13 @@ function CreateTaskModal({
                         className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent/50 text-left transition-colors h-8"
                         onClick={() => setAssigneeId(member.userId || "")}
                       >
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage
-                            src={member?.user?.image ?? ""}
-                            alt={member?.user?.name || ""}
-                          />
-                          <AvatarFallback className="text-xs font-medium border border-border/30">
-                            {member?.user?.name?.charAt(0).toUpperCase() || "?"}
-                          </AvatarFallback>
-                        </Avatar>
+                        <ColoredAvatar
+                          name={member?.user?.name}
+                          image={member?.user?.image}
+                          seed={member.userId}
+                          className="h-6 w-6 border border-border/30"
+                          fallbackClassName="text-xs"
+                        />
                         <span className="text-sm">{member?.user?.name}</span>
                         {assigneeId === member.userId && (
                           <Check className="ml-auto h-4 w-4" />

@@ -9,13 +9,13 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Command,
   CommandCollection,
@@ -341,17 +341,13 @@ export default function TaskRelations({
                               className="shrink-0 flex items-center justify-center rounded p-0.5 transition-colors outline-none"
                             >
                               {item.task.userId && assignee ? (
-                                <Avatar className="h-5 w-5">
-                                  <AvatarImage
-                                    src={assignee?.user?.image ?? ""}
-                                    alt={assignee?.user?.name || ""}
-                                  />
-                                  <AvatarFallback className="text-[9px] font-medium border border-border/30">
-                                    {assignee?.user?.name
-                                      ?.charAt(0)
-                                      .toUpperCase()}
-                                  </AvatarFallback>
-                                </Avatar>
+                                <ColoredAvatar
+                                  name={assignee?.user?.name}
+                                  image={assignee?.user?.image}
+                                  seed={item.task.userId}
+                                  className="h-5 w-5 border border-border/30"
+                                  fallbackClassName="text-[9px]"
+                                />
                               ) : (
                                 <div
                                   className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border/70"
