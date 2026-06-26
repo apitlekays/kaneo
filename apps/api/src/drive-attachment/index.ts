@@ -16,6 +16,56 @@ import { workspaceAccess } from "../utils/workspace-access-middleware";
 const driveAttachment = new Hono<{
   Variables: { userId: string; workspaceId?: string };
 }>()
+  // Proxy a Drive file's thumbnail. The browser can't fetch Google's
+  // thumbnailLink directly (those hosts don't send CORS headers for a
+  // credentialed cross-origin request), so the client hands us its short-lived
+  // Drive token and we fetch the image server-side, where CORS doesn't apply,
+  // and stream it back. The token is used transiently and never stored.
+  .get(
+    "/thumbnail/:fileId",
+    validator("param", v.object({ fileId: v.string() })),
+    async (c) => {
+      const { fileId } = c.req.valid("param");
+      const token = c.req.header("x-drive-token");
+      if (!token) {
+        throw new HTTPException(400, { message: "Missing Drive token" });
+      }
+      const size = Number.parseInt(c.req.query("size") ?? "400", 10) || 400;
+
+      const metaResponse = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+          fileId,
+        )}?fields=thumbnailLink&supportsAllDrives=true`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!metaResponse.ok) {
+        throw new HTTPException(404, { message: "Thumbnail unavailable" });
+      }
+
+      const meta = (await metaResponse.json()) as { thumbnailLink?: string };
+      if (!meta.thumbnailLink) {
+        throw new HTTPException(404, { message: "No thumbnail" });
+      }
+
+      // thumbnailLinks end with a size token like `=s220`; bump it for clarity.
+      const link = meta.thumbnailLink.replace(/=s\d+$/, `=s${size}`);
+      const imageResponse = await fetch(link, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const contentType = imageResponse.headers.get("content-type") ?? "";
+      if (!imageResponse.ok || !contentType.startsWith("image/")) {
+        throw new HTTPException(404, { message: "Thumbnail unavailable" });
+      }
+
+      const buffer = await imageResponse.arrayBuffer();
+      return new Response(buffer, {
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "private, max-age=3600",
+        },
+      });
+    },
+  )
   .get(
     "/:taskId",
     validator("param", v.object({ taskId: v.string() })),

@@ -10,6 +10,7 @@
  * plain icon — there's never a hard error.
  */
 
+import { getApiUrl } from "@/fetchers/get-api-url";
 import {
   getCachedDriveToken,
   getDriveAccessToken,
@@ -19,34 +20,27 @@ import {
 // Object URLs are blobs held for the session; revisiting a task reuses them.
 const thumbnailCache = new Map<string, string | null>();
 
-const DRIVE_FILE_ENDPOINT = "https://www.googleapis.com/drive/v3/files";
-
 async function fetchThumbnail(
   fileId: string,
   token: string,
   size: number,
 ): Promise<string | null> {
-  const metaResponse = await fetch(
-    `${DRIVE_FILE_ENDPOINT}/${encodeURIComponent(
-      fileId,
-    )}?fields=thumbnailLink&supportsAllDrives=true`,
-    { headers: { Authorization: `Bearer ${token}` } },
+  // Go through our backend proxy (same-origin → no CORS). It fetches Google's
+  // thumbnailLink server-side using the supplied Drive token and streams the
+  // image back. Fetching Google's hosts directly from the browser is blocked
+  // by CORS, which is why the previous client-side approach showed only icons.
+  const response = await fetch(
+    `${getApiUrl(
+      `drive-attachment/thumbnail/${encodeURIComponent(fileId)}`,
+    )}?size=${size}`,
+    {
+      credentials: "include",
+      headers: { "x-drive-token": token },
+    },
   );
-  if (!metaResponse.ok) return null;
+  if (!response.ok) return null;
 
-  const meta = (await metaResponse.json()) as { thumbnailLink?: string };
-  if (!meta.thumbnailLink) return null;
-
-  // Drive thumbnail URLs end with a size token like `=s220`; bump it for a
-  // crisper preview when present.
-  const link = meta.thumbnailLink.replace(/=s\d+$/, `=s${size}`);
-
-  const imageResponse = await fetch(link, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!imageResponse.ok) return null;
-
-  const blob = await imageResponse.blob();
+  const blob = await response.blob();
   return URL.createObjectURL(blob);
 }
 
