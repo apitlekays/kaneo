@@ -18,6 +18,7 @@ import {
   validateTaskAssetUploadInput,
 } from "../storage/s3";
 import {
+  assertCanAccessTasks,
   requireProjectAccess,
   requireProjectAccessFromTask,
 } from "../utils/project-access";
@@ -169,6 +170,9 @@ const task = new Hono<{
       if (!userId) {
         throw new HTTPException(401, { message: "Unauthorized" });
       }
+
+      // Only act on tasks in projects the user can access.
+      await assertCanAccessTasks(userId, taskIds);
 
       if (
         operation !== "delete" &&

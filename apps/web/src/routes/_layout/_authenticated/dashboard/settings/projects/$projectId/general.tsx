@@ -124,8 +124,9 @@ function RouteComponent() {
   const { mutateAsync: updateProject } = useUpdateProject();
   const { mutateAsync: deleteProject, isPending: isDeleting } =
     useDeleteProject();
-  const { canManageProjects, canDeleteProjects } = useWorkspacePermission();
-  const canEdit = canManageProjects();
+  const { canManageCurrentProject, canDeleteProjects } =
+    useWorkspacePermission();
+  const canEdit = canManageCurrentProject();
   const canDelete = canDeleteProjects();
 
   const projectForm = useForm<ProjectFormValues>({

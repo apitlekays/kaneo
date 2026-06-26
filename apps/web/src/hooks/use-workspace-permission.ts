@@ -59,10 +59,13 @@ export function useWorkspacePermission() {
       : undefined;
   const { data: session } = authClient.useSession();
   const { data: currentProjectMembers } = useProjectMembers(projectId ?? "");
-  const isProjectMember = Boolean(
-    projectId &&
-      currentProjectMembers?.some((m) => m.userId === session?.user?.id),
-  );
+  const myProjectRole = projectId
+    ? currentProjectMembers?.find((m) => m.userId === session?.user?.id)?.role
+    : undefined;
+  const isProjectMember = Boolean(myProjectRole);
+  const isProjectManager = myProjectRole === "manager";
+  const isGlobalAdminRole =
+    role === "owner" || role === "admin" || role === "global-admin";
 
   // One query that fans out to all capability checks in parallel and caches
   // the resulting map by (workspaceId, role). Refetches when either changes
@@ -109,6 +112,9 @@ export function useWorkspacePermission() {
       canManageProjects: () => can.manageProjects,
       canCreateProjects: () => can.createProjects,
       canDeleteProjects: () => can.deleteProjects,
+      // Editing a project's settings: global admins/owner OR the project's
+      // own manager. Used by the project settings pages.
+      canManageCurrentProject: () => isGlobalAdminRole || isProjectManager,
       canManageTasks: () => can.manageTasks || isProjectMember,
       canCreateTasks: () => can.createTasks || isProjectMember,
       canEditTasks: () => can.editTasks || isProjectMember,
@@ -135,7 +141,7 @@ export function useWorkspacePermission() {
         }
       },
     };
-  }, [can, workspaceId, isProjectMember]);
+  }, [can, workspaceId, isProjectMember, isProjectManager, isGlobalAdminRole]);
 
   return {
     ...helpers,

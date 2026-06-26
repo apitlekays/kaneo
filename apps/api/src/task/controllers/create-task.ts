@@ -1,8 +1,14 @@
 import { and, eq, max } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import db from "../../database";
-import { columnTable, taskTable, userTable } from "../../database/schema";
+import {
+  columnTable,
+  projectTable,
+  taskTable,
+  userTable,
+} from "../../database/schema";
 import { publishEvent } from "../../events";
+import { canAccessProject } from "../../utils/project-access";
 import { assertValidTaskStatus } from "../validate-task-fields";
 import getNextTaskNumber from "./get-next-task-number";
 
@@ -31,6 +37,23 @@ async function createTask({
   const resolvedPriority = priority || "no-priority";
 
   await assertValidTaskStatus(resolvedStatus, projectId);
+
+  // A user can only be assigned a task in a project they belong to.
+  if (userId) {
+    const [project] = await db
+      .select({ workspaceId: projectTable.workspaceId })
+      .from(projectTable)
+      .where(eq(projectTable.id, projectId))
+      .limit(1);
+    if (
+      project &&
+      !(await canAccessProject(userId, projectId, project.workspaceId))
+    ) {
+      throw new HTTPException(400, {
+        message: "User must be a member of the project to be assigned",
+      });
+    }
+  }
 
   const [assignee] = await db
     .select({ name: userTable.name })

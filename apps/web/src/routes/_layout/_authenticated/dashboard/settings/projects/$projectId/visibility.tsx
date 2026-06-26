@@ -31,21 +31,22 @@ function RouteComponent() {
 
   const queryClient = useQueryClient();
   const { mutateAsync: updateProject } = useUpdateProject();
-  const { hasPermission } = useWorkspacePermission();
+  const { hasPermission, canManageCurrentProject } = useWorkspacePermission();
   const savingRef = useRef(false);
   // `project:share` isn't in CAPABILITIES (only admin/owner/custom roles
-  // with it can flip visibility), so use the generic server check. Result
-  // isn't cached, but visibility is a rarely-toggled setting page.
+  // with it can flip visibility), so use the generic server check. Project
+  // managers of this project can also toggle it.
   const [canShare, setCanShare] = useState(false);
+  const canManage = canManageCurrentProject();
   useEffect(() => {
     let cancelled = false;
     void hasPermission({ project: ["share"] }).then((ok) => {
-      if (!cancelled) setCanShare(ok);
+      if (!cancelled) setCanShare(ok || canManage);
     });
     return () => {
       cancelled = true;
     };
-  }, [hasPermission]);
+  }, [hasPermission, canManage]);
 
   const handleToggle = useCallback(async () => {
     if (!project) return;

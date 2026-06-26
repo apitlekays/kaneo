@@ -1,10 +1,14 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import db, { schema } from "../database";
-// projectMemberTable isn't part of the curated `schema` object passed to
-// drizzle, so import it directly from the schema module.
-import { projectMemberTable } from "../database/schema";
+// These aren't part of the curated `schema` object passed to drizzle, so
+// import them directly from the schema module.
+import {
+  columnTable,
+  projectMemberTable,
+  workflowRuleTable,
+} from "../database/schema";
 
 /**
  * Per-project access control.
@@ -159,6 +163,109 @@ export function requireProjectManager(projectIdKey = "id") {
 
     return next();
   };
+}
+
+type ProjectContext = { projectId: string; workspaceId: string } | null;
+
+async function resolveProjectFromColumn(
+  columnId: string,
+): Promise<ProjectContext> {
+  const [row] = await db
+    .select({
+      projectId: columnTable.projectId,
+      workspaceId: schema.projectTable.workspaceId,
+    })
+    .from(columnTable)
+    .innerJoin(
+      schema.projectTable,
+      eq(columnTable.projectId, schema.projectTable.id),
+    )
+    .where(eq(columnTable.id, columnId))
+    .limit(1);
+  return row ?? null;
+}
+
+async function resolveProjectFromWorkflowRule(
+  ruleId: string,
+): Promise<ProjectContext> {
+  const [row] = await db
+    .select({
+      projectId: workflowRuleTable.projectId,
+      workspaceId: schema.projectTable.workspaceId,
+    })
+    .from(workflowRuleTable)
+    .innerJoin(
+      schema.projectTable,
+      eq(workflowRuleTable.projectId, schema.projectTable.id),
+    )
+    .where(eq(workflowRuleTable.id, ruleId))
+    .limit(1);
+  return row ?? null;
+}
+
+function projectManagerGuard(resolve: (c: Context) => Promise<ProjectContext>) {
+  return async (c: Context, next: Next) => {
+    const userId = c.get("userId");
+    if (!userId) throw new HTTPException(401, { message: "Unauthorized" });
+
+    const ctx = await resolve(c);
+    if (!ctx) throw new HTTPException(404, { message: "Not found" });
+
+    if (
+      !(await canManageProjectMembers(userId, ctx.projectId, ctx.workspaceId))
+    ) {
+      throw new HTTPException(403, {
+        message: "Only project managers can change this project",
+      });
+    }
+    return next();
+  };
+}
+
+/** Require Project Manager (or global admin) for a route keyed by a column id. */
+export function requireProjectManagerFromColumn(idKey = "id") {
+  return projectManagerGuard((c) => {
+    const id = c.req.param(idKey);
+    return id ? resolveProjectFromColumn(id) : Promise.resolve(null);
+  });
+}
+
+/** Require Project Manager (or global admin) for a route keyed by a workflow-rule id. */
+export function requireProjectManagerFromWorkflowRule(idKey = "id") {
+  return projectManagerGuard((c) => {
+    const id = c.req.param(idKey);
+    return id ? resolveProjectFromWorkflowRule(id) : Promise.resolve(null);
+  });
+}
+
+/**
+ * Assert the user can access the project of every given task. Used by bulk task
+ * routes (which span task ids that may live in different projects).
+ */
+export async function assertCanAccessTasks(
+  userId: string,
+  taskIds: string[],
+): Promise<void> {
+  if (taskIds.length === 0) return;
+  const rows = await db
+    .selectDistinct({
+      projectId: schema.taskTable.projectId,
+      workspaceId: schema.projectTable.workspaceId,
+    })
+    .from(schema.taskTable)
+    .innerJoin(
+      schema.projectTable,
+      eq(schema.taskTable.projectId, schema.projectTable.id),
+    )
+    .where(inArray(schema.taskTable.id, taskIds));
+
+  for (const row of rows) {
+    if (!(await canAccessProject(userId, row.projectId, row.workspaceId))) {
+      throw new HTTPException(403, {
+        message: "You don't have access to one of these tasks' projects",
+      });
+    }
+  }
 }
 
 /**
