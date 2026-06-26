@@ -6475,9 +6475,12 @@
 						},
 						"inviteMember": {
 							"type": "string"
+						},
+						"globalAdminHint": {
+							"type": "string"
 						}
 					},
-					"required": ["pageTitle", "inviteMember"]
+					"required": ["pageTitle", "inviteMember", "globalAdminHint"]
 				},
 				"inviteModal": {
 					"type": "object",

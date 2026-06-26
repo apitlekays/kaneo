@@ -2,6 +2,9 @@ import { and, eq } from "drizzle-orm";
 import type { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import db, { schema } from "../database";
+// projectMemberTable isn't part of the curated `schema` object passed to
+// drizzle, so import it directly from the schema module.
+import { projectMemberTable } from "../database/schema";
 
 /**
  * Per-project access control.
@@ -52,12 +55,12 @@ export async function getProjectRole(
   projectId: string,
 ): Promise<string | null> {
   const [member] = await db
-    .select({ role: schema.projectMemberTable.role })
-    .from(schema.projectMemberTable)
+    .select({ role: projectMemberTable.role })
+    .from(projectMemberTable)
     .where(
       and(
-        eq(schema.projectMemberTable.userId, userId),
-        eq(schema.projectMemberTable.projectId, projectId),
+        eq(projectMemberTable.userId, userId),
+        eq(projectMemberTable.projectId, projectId),
       ),
     )
     .limit(1);
@@ -70,15 +73,15 @@ export async function getMemberProjectIds(
   workspaceId: string,
 ): Promise<string[]> {
   const rows = await db
-    .select({ projectId: schema.projectMemberTable.projectId })
-    .from(schema.projectMemberTable)
+    .select({ projectId: projectMemberTable.projectId })
+    .from(projectMemberTable)
     .innerJoin(
       schema.projectTable,
-      eq(schema.projectMemberTable.projectId, schema.projectTable.id),
+      eq(projectMemberTable.projectId, schema.projectTable.id),
     )
     .where(
       and(
-        eq(schema.projectMemberTable.userId, userId),
+        eq(projectMemberTable.userId, userId),
         eq(schema.projectTable.workspaceId, workspaceId),
       ),
     );
@@ -120,6 +123,47 @@ export function requireProjectAccess(projectIdKey = "projectId") {
     }
 
     if (!(await canAccessProject(userId, projectId, workspaceId))) {
+      throw new HTTPException(403, {
+        message: "You don't have access to this project",
+      });
+    }
+
+    return next();
+  };
+}
+
+/**
+ * Middleware: require project access for a route keyed by a task id (resolves
+ * the task's project + workspace, then checks access). Defense-in-depth for
+ * task mutation routes so a non-member can't act on a task by id alone.
+ */
+export function requireProjectAccessFromTask(taskIdKey = "id") {
+  return async (c: Context, next: Next) => {
+    const userId = c.get("userId");
+    const taskId = c.req.param(taskIdKey);
+
+    if (!userId || !taskId) {
+      throw new HTTPException(400, { message: "Missing task context" });
+    }
+
+    const [row] = await db
+      .select({
+        projectId: schema.taskTable.projectId,
+        workspaceId: schema.projectTable.workspaceId,
+      })
+      .from(schema.taskTable)
+      .innerJoin(
+        schema.projectTable,
+        eq(schema.taskTable.projectId, schema.projectTable.id),
+      )
+      .where(eq(schema.taskTable.id, taskId))
+      .limit(1);
+
+    if (!row) {
+      throw new HTTPException(404, { message: "Task not found" });
+    }
+
+    if (!(await canAccessProject(userId, row.projectId, row.workspaceId))) {
       throw new HTTPException(403, {
         message: "You don't have access to this project",
       });

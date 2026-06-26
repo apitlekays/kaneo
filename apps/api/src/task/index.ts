@@ -17,7 +17,10 @@ import {
   isImageContentType,
   validateTaskAssetUploadInput,
 } from "../storage/s3";
-import { requireProjectAccess } from "../utils/project-access";
+import {
+  requireProjectAccess,
+  requireProjectAccessFromTask,
+} from "../utils/project-access";
 import { requireWorkspacePermission } from "../utils/require-workspace-permission";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import bulkUpdateTasks from "./controllers/bulk-update-tasks";
@@ -262,6 +265,7 @@ const task = new Hono<{
     }),
     validator("param", v.object({ id: v.string() })),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     async (c) => {
       const { id } = c.req.valid("param");
 
@@ -302,6 +306,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["update"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -349,6 +354,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["update"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -471,6 +477,7 @@ const task = new Hono<{
     }),
     validator("param", v.object({ id: v.string() })),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["delete"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -499,6 +506,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ status: v.string() })),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["update"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -528,6 +536,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ priority: v.picklist(VALID_PRIORITIES) })),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["update"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -557,6 +566,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ userId: v.string() })),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["assign"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -586,6 +596,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ dueDate: v.optional(v.string()) })),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["update"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -620,6 +631,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ title: v.string() })),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["update"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -659,6 +671,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["update"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -743,6 +756,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["update"] }),
     async (c) => {
       const { id } = c.req.valid("param");
@@ -859,6 +873,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ description: v.string() })),
     workspaceAccess.fromTask(),
+    requireProjectAccessFromTask("id"),
     requireWorkspacePermission({ task: ["update"] }),
     async (c) => {
       const { id } = c.req.valid("param");

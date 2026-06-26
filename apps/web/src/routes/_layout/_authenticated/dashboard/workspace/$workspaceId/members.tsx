@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { UserPlus } from "lucide-react";
+import { ShieldCheck, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import WorkspaceLayout from "@/components/common/workspace-layout";
@@ -43,6 +43,13 @@ function RouteComponent() {
           ) : null
         }
       >
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <p className="text-xs text-muted-foreground">
+            {t("team:members.globalAdminHint")}
+          </p>
+        </div>
+
         <MembersTable
           workspaceId={workspaceId}
           users={workspace?.members ?? []}

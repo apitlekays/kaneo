@@ -1817,7 +1817,8 @@
 		},
 		"members": {
 			"pageTitle": "Участники",
-			"inviteMember": "Пригласить участника"
+			"inviteMember": "Пригласить участника",
+			"globalAdminHint": "Admins are global admins — they can see and manage every project in this workspace. To grant this, set a member’s role to Admin. Members and viewers only see projects they’ve been added to."
 		},
 		"inviteModal": {
 			"title": "Пригласить участника команды",

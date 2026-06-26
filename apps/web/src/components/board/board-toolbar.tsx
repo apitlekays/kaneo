@@ -1,6 +1,7 @@
 import { Filter, PanelsTopLeft, Rows3, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import ProjectMembersBar from "@/components/board/project-members-bar";
 import SortControl from "@/components/common/sort-control";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -528,6 +529,8 @@ export default function BoardToolbar({
             </DropdownMenu>
 
             <SortControl sort={sort} onSortChange={onSortChange} />
+
+            {project?.id && <ProjectMembersBar projectId={project.id} />}
 
             {selectedStatusIds.length > 0 && (
               <ActiveFilterChip
