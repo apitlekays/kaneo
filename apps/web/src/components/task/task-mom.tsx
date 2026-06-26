@@ -36,6 +36,7 @@ import {
   useTaskMom,
 } from "@/hooks/queries/task-mom/use-task-mom";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
+import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { toast } from "@/lib/toast";
 
 type SimpleMember = { userId: string; name: string; image: string | null };
@@ -243,6 +244,9 @@ export default function TaskMom({
   const saveMom = useSaveTaskMom(taskId);
   const { data: projectMembers = [] } = useProjectMembers(projectId);
   const { data: workspaceUsers } = useGetActiveWorkspaceUsers(workspaceId);
+  const { canManageCurrentProject } = useWorkspacePermission();
+  // Only project managers / global admins may lock or unlock the minutes.
+  const canToggleLock = canManageCurrentProject();
   const createTask = useCreateTask();
   const createRelation = useCreateTaskRelation();
 
@@ -405,21 +409,30 @@ export default function TaskMom({
                 />
               )}
             </div>
-            <Button
-              type="button"
-              variant={locked ? "secondary" : "outline"}
-              size="sm"
-              className="ms-auto h-7 gap-1 text-xs"
-              onClick={() => patch({ locked: !locked })}
-              title={locked ? t("tasks:mom.unlock") : t("tasks:mom.lock")}
-            >
-              {locked ? (
-                <Lock className="h-3.5 w-3.5" />
-              ) : (
-                <LockOpen className="h-3.5 w-3.5" />
-              )}
-              {locked ? t("tasks:mom.locked") : t("tasks:mom.lock")}
-            </Button>
+            {canToggleLock ? (
+              <Button
+                type="button"
+                variant={locked ? "secondary" : "outline"}
+                size="sm"
+                className="ms-auto h-7 gap-1 text-xs"
+                onClick={() => patch({ locked: !locked })}
+                title={locked ? t("tasks:mom.unlock") : t("tasks:mom.lock")}
+              >
+                {locked ? (
+                  <Lock className="h-3.5 w-3.5" />
+                ) : (
+                  <LockOpen className="h-3.5 w-3.5" />
+                )}
+                {locked ? t("tasks:mom.locked") : t("tasks:mom.lock")}
+              </Button>
+            ) : (
+              locked && (
+                <span className="ms-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <Lock className="h-3.5 w-3.5" />
+                  {t("tasks:mom.locked")}
+                </span>
+              )
+            )}
           </div>
           <PeopleEditor
             label={t("tasks:mom.attendees")}

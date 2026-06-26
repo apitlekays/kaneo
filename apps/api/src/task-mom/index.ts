@@ -1,11 +1,13 @@
 import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { validator } from "hono-openapi";
 import * as v from "valibot";
 import db from "../database";
 import { taskMomTable, taskTable, userTable } from "../database/schema";
 import createNotification from "../notification/controllers/create-notification";
 import {
+  canManageProjectMembers,
   requireProjectAccess,
   requireProjectAccessFromTask,
 } from "../utils/project-access";
@@ -104,6 +106,39 @@ const taskMom = new Hono<{
         .from(taskMomTable)
         .where(eq(taskMomTable.taskId, taskId))
         .limit(1);
+
+      // Lock enforcement: only project managers / global admins may flip the
+      // lock, and a locked document accepts no writes until it's unlocked.
+      const currentLocked = Boolean(
+        (existing?.data as MomData | undefined)?.locked,
+      );
+      const wantedLocked = Boolean(data.locked);
+      if (currentLocked || wantedLocked) {
+        if (currentLocked && wantedLocked) {
+          throw new HTTPException(403, {
+            message: "The minutes are locked",
+          });
+        }
+        const workspaceId = c.get("workspaceId");
+        const [taskRow] = await db
+          .select({ projectId: taskTable.projectId })
+          .from(taskTable)
+          .where(eq(taskTable.id, taskId))
+          .limit(1);
+        const canManage =
+          workspaceId && taskRow
+            ? await canManageProjectMembers(
+                userId,
+                taskRow.projectId,
+                workspaceId,
+              )
+            : false;
+        if (!canManage) {
+          throw new HTTPException(403, {
+            message: "Only project managers can lock or unlock the minutes",
+          });
+        }
+      }
 
       const oldTagged = existing
         ? collectTaggedUserIds(existing.data)

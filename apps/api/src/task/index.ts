@@ -21,6 +21,7 @@ import {
   assertCanAccessTasks,
   requireProjectAccess,
   requireProjectAccessFromTask,
+  requireProjectManagerFromTask,
 } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import bulkUpdateTasks from "./controllers/bulk-update-tasks";
@@ -562,7 +563,8 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ userId: v.string() })),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    // Only project managers and global admins can assign/unassign.
+    requireProjectManagerFromTask("id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { userId } = c.req.valid("json");

@@ -119,7 +119,9 @@ export function useWorkspacePermission() {
       canCreateTasks: () => can.createTasks || isProjectMember,
       canEditTasks: () => can.editTasks || isProjectMember,
       canDeleteTasks: () => can.deleteTasks || isProjectMember,
-      canAssignTasks: () => can.assignTasks || isProjectMember,
+      // Assigning/unassigning a task is restricted to global admins/owner and
+      // the project's managers (not every project member).
+      canAssignTasks: () => isGlobalAdminRole || isProjectManager,
       canManageLabels: () => can.manageLabels,
       canManageWorkspace: () => can.manageWorkspace,
       canDeleteWorkspace: () => can.deleteWorkspace,

@@ -238,6 +238,30 @@ export function requireProjectManagerFromWorkflowRule(idKey = "id") {
   });
 }
 
+async function resolveProjectFromTask(taskId: string): Promise<ProjectContext> {
+  const [row] = await db
+    .select({
+      projectId: schema.taskTable.projectId,
+      workspaceId: schema.projectTable.workspaceId,
+    })
+    .from(schema.taskTable)
+    .innerJoin(
+      schema.projectTable,
+      eq(schema.taskTable.projectId, schema.projectTable.id),
+    )
+    .where(eq(schema.taskTable.id, taskId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Require Project Manager (or global admin) for a route keyed by a task id. */
+export function requireProjectManagerFromTask(idKey = "id") {
+  return projectManagerGuard((c) => {
+    const id = c.req.param(idKey);
+    return id ? resolveProjectFromTask(id) : Promise.resolve(null);
+  });
+}
+
 /**
  * Assert the user can access the project of every given task. Used by bulk task
  * routes (which span task ids that may live in different projects).
