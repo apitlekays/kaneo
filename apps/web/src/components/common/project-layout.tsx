@@ -18,6 +18,7 @@ import {
 import { shortcuts } from "@/constants/shortcuts";
 import useGetProject from "@/hooks/queries/project/use-get-project";
 import { useProjectWebSocket } from "@/hooks/use-project-websocket";
+import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
 
 type ProjectLayoutProps = {
@@ -42,6 +43,12 @@ export default function ProjectLayout({
   const { data: project } = useGetProject({ id: projectId, workspaceId });
   const [isCreateProjectModalOpen, setIsCreateProjectModalOpen] =
     useState(false);
+  const { canCreateProjects } = useWorkspacePermission();
+  // Project creation is reserved for the SuperUser (owner) and Global Admins.
+  const canCreateProject = canCreateProjects();
+  const handleAddProject = canCreateProject
+    ? () => setIsCreateProjectModalOpen(true)
+    : undefined;
 
   useProjectWebSocket(projectId);
 
@@ -123,7 +130,7 @@ export default function ProjectLayout({
                 projectId={projectId}
                 projectName={project?.name}
                 onSelectProject={handleProjectSwitch}
-                onAddProject={() => setIsCreateProjectModalOpen(true)}
+                onAddProject={handleAddProject}
               />
             </div>
 
@@ -136,7 +143,7 @@ export default function ProjectLayout({
                 onSelectBoard={handleNavigateToBoard}
                 onSelectGantt={handleNavigateToGantt}
                 onSelectProject={handleProjectSwitch}
-                onAddProject={() => setIsCreateProjectModalOpen(true)}
+                onAddProject={handleAddProject}
               />
             </div>
 

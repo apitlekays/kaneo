@@ -17,7 +17,7 @@ type MobileProjectNavProps = {
   onSelectBacklog: () => void;
   onSelectGantt: () => void;
   onSelectProject: (projectId: string) => void;
-  onAddProject: () => void;
+  onAddProject?: () => void;
 };
 
 export default function MobileProjectNav({
@@ -124,14 +124,16 @@ export default function MobileProjectNav({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onAddProject}
-            className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-accent"
-          >
-            <Plus className="size-3.5" />
-            Add project
-          </button>
+          {onAddProject && (
+            <button
+              type="button"
+              onClick={onAddProject}
+              className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-accent"
+            >
+              <Plus className="size-3.5" />
+              Add project
+            </button>
+          )}
         </div>
       </PopoverContent>
     </Popover>

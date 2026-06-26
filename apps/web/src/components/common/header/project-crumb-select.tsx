@@ -17,7 +17,7 @@ type ProjectCrumbSelectProps = {
   projectId: string;
   projectName?: string;
   onSelectProject: (projectId: string) => void;
-  onAddProject: () => void;
+  onAddProject?: () => void;
 };
 
 export default function ProjectCrumbSelect({
@@ -76,16 +76,20 @@ export default function ProjectCrumbSelect({
             </DropdownMenuItem>
           )}
         </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem
-            onClick={onAddProject}
-            className="h-8 gap-2 text-sm"
-          >
-            <Plus className="size-3.5" />
-            {t("navigation:projectList.addProject")}
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
+        {onAddProject && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem
+                onClick={onAddProject}
+                className="h-8 gap-2 text-sm"
+              >
+                <Plus className="size-3.5" />
+                {t("navigation:projectList.addProject")}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -25,6 +25,7 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { shortcuts } from "@/constants/shortcuts";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useRegisterShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { useUserPreferencesStore } from "@/store/user-preferences";
 import CreateProjectModal from "../shared/modals/create-project-modal";
 
@@ -47,6 +48,9 @@ function CommandPalette() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: workspace } = useActiveWorkspace();
+  const { canCreateProjects } = useWorkspacePermission();
+  // Project creation is reserved for the SuperUser (owner) and Global Admins.
+  const canCreateProject = canCreateProjects();
   const [open, setOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
@@ -77,7 +81,9 @@ function CommandPalette() {
             params: { workspaceId: workspace.id },
           });
         },
-        [shortcuts.project.create]: () => setIsCreateProjectOpen(true),
+        [shortcuts.project.create]: () => {
+          if (canCreateProject) setIsCreateProjectOpen(true);
+        },
       },
       [shortcuts.task.prefix]: {
         [shortcuts.task.create]: () => setIsCreateTaskOpen(true),
@@ -134,12 +140,16 @@ function CommandPalette() {
             shortcut: `${shortcuts.task.prefix} ${shortcuts.task.create}`,
             onRun: () => setIsCreateTaskOpen(true),
           },
-          {
-            value: "create-project",
-            label: t("navigation:commandPalette.createProject"),
-            shortcut: `${shortcuts.project.prefix} ${shortcuts.project.create}`,
-            onRun: () => setIsCreateProjectOpen(true),
-          },
+          ...(canCreateProject
+            ? [
+                {
+                  value: "create-project",
+                  label: t("navigation:commandPalette.createProject"),
+                  shortcut: `${shortcuts.project.prefix} ${shortcuts.project.create}`,
+                  onRun: () => setIsCreateProjectOpen(true),
+                },
+              ]
+            : []),
         ],
       },
       {
@@ -182,7 +192,7 @@ function CommandPalette() {
         ],
       },
     ],
-    [navigate, setTheme, t, workspace?.id],
+    [navigate, setTheme, t, workspace?.id, canCreateProject],
   );
 
   const shortcutHandlers = useMemo(() => {
