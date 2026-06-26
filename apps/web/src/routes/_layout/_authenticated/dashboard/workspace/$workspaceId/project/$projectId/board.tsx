@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import BoardToolbar from "@/components/board/board-toolbar";
+import ProjectLocked from "@/components/board/project-locked";
 import ProjectLayout from "@/components/common/project-layout";
 import KanbanBoard from "@/components/kanban-board";
 import ListView from "@/components/list-view";
@@ -79,7 +80,13 @@ function RouteComponent() {
   const { projectId, workspaceId } = Route.useParams();
   const { taskId } = Route.useSearch();
   const navigate = useNavigate();
-  const { data } = useGetTasks(projectId);
+  const { data, error: tasksError } = useGetTasks(projectId);
+  const isLocked = Boolean(
+    tasksError &&
+      /access to this project/i.test(
+        tasksError instanceof Error ? tasksError.message : "",
+      ),
+  );
   const { project, setProject } = useProjectStore();
   const { viewMode, setViewMode } = useUserPreferencesStore();
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -207,6 +214,18 @@ function RouteComponent() {
       />
     </div>
   ) : null;
+
+  if (isLocked) {
+    return (
+      <ProjectLayout
+        projectId={projectId}
+        workspaceId={workspaceId}
+        activeView="board"
+      >
+        <ProjectLocked projectId={projectId} />
+      </ProjectLayout>
+    );
+  }
 
   return (
     <ProjectLayout

@@ -1046,7 +1046,11 @@
 			"removeError": "Couldn’t remove member",
 			"remove": "Remove from project",
 			"roleManager": "Manager",
-			"roleMember": "Member"
+			"roleMember": "Member",
+			"requestsTitle": "Requests",
+			"requestsSubtitle": "People requesting access to this project.",
+			"approve": "Approve",
+			"deny": "Deny"
 		}
 	},
 	"navigation": {
@@ -1698,6 +1702,14 @@
 			"removeError": "Couldn’t remove attachment",
 			"openInDrive": "Open in Google Drive",
 			"remove": "Remove attachment"
+		},
+		"projectLocked": {
+			"title": "Project locked",
+			"description": "You haven’t been added to this project. Request access and a project manager can approve you.",
+			"requestAccess": "Request access",
+			"requested": "Access requested — a project manager will review it.",
+			"requestedShort": "Requested",
+			"requestError": "Couldn’t send request"
 		}
 	},
 	"invitations": {

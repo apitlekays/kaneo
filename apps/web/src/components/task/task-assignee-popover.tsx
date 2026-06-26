@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/popover";
 import { ShortcutNumber } from "@/components/ui/shortcut-number";
 import { useUpdateTaskAssignee } from "@/hooks/mutations/task/use-update-task-assignee";
+import { useProjectMembers } from "@/hooks/queries/project-member/use-project-members";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { useNumberedShortcuts } from "@/hooks/use-numbered-shortcuts";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
@@ -37,17 +38,26 @@ export default function TaskAssigneePopover({
   );
   const { mutateAsync: updateTaskAssignee } = useUpdateTaskAssignee();
   const { data: workspaceUsers } = useGetActiveWorkspaceUsers(workspaceId);
+  const { data: projectMembers = [] } = useProjectMembers(task.projectId);
   const { canAssignTasks } = useWorkspacePermission();
   const canAssign = canAssignTasks();
 
+  // Only project members can be assigned (the API enforces this too).
+  const projectMemberIds = useMemo(
+    () => new Set(projectMembers.map((member) => member.userId)),
+    [projectMembers],
+  );
+
   const usersOptions = useMemo(() => {
-    return workspaceUsers?.members?.map((member) => ({
-      label: member?.user?.name ?? member.userId,
-      value: member.userId,
-      image: member?.user?.image ?? "",
-      name: member?.user?.name ?? "",
-    }));
-  }, [workspaceUsers]);
+    return workspaceUsers?.members
+      ?.filter((member) => projectMemberIds.has(member.userId))
+      .map((member) => ({
+        label: member?.user?.name ?? member.userId,
+        value: member.userId,
+        image: member?.user?.image ?? "",
+        name: member?.user?.name ?? "",
+      }));
+  }, [workspaceUsers, projectMemberIds]);
 
   const handleAssigneeChange = useCallback(
     async (newUserId: string) => {

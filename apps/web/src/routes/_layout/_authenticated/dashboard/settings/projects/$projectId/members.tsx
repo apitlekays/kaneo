@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2, Plus, X } from "lucide-react";
+import { Check, Loader2, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -14,9 +14,12 @@ import {
 } from "@/components/ui/select";
 import {
   addProjectMember,
+  approveProjectRequest,
+  denyProjectRequest,
   removeProjectMember,
 } from "@/fetchers/project-member";
 import { useProjectMembers } from "@/hooks/queries/project-member/use-project-members";
+import { useProjectRequests } from "@/hooks/queries/project-member/use-project-requests";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
@@ -42,12 +45,38 @@ function RouteComponent() {
   const { data: workspaceUsers } = useGetActiveWorkspaceUsers(
     workspace?.id ?? "",
   );
+  const handleApprove = async (userId: string) => {
+    try {
+      await approveProjectRequest(projectId, userId);
+      await Promise.all([
+        invalidate(),
+        queryClient.invalidateQueries({
+          queryKey: ["project-requests", projectId],
+        }),
+      ]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed");
+    }
+  };
+
+  const handleDeny = async (userId: string) => {
+    try {
+      await denyProjectRequest(projectId, userId);
+      await queryClient.invalidateQueries({
+        queryKey: ["project-requests", projectId],
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed");
+    }
+  };
 
   const [addUserId, setAddUserId] = useState("");
   const [busy, setBusy] = useState(false);
 
   const myRole = members.find((m) => m.userId === currentUserId)?.role;
   const canManage = isAdmin || myRole === "manager";
+
+  const { data: requests = [] } = useProjectRequests(projectId, canManage);
 
   const memberIds = useMemo(
     () => new Set(members.map((m) => m.userId)),
@@ -187,6 +216,58 @@ function RouteComponent() {
           ))
         )}
       </div>
+
+      {canManage && requests.length > 0 && (
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <h2 className="text-md font-medium">
+              {t("settings:projectMembers.requestsTitle")}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {t("settings:projectMembers.requestsSubtitle")}
+            </p>
+          </div>
+          <div className="rounded-lg border divide-y divide-border/60">
+            {requests.map((request) => (
+              <div
+                key={request.userId}
+                className="flex items-center gap-3 px-4 py-2.5"
+              >
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={request.image ?? ""} alt={request.name} />
+                  <AvatarFallback className="text-xs">
+                    {request.name?.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{request.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {request.email}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1"
+                  onClick={() => handleApprove(request.userId)}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  {t("settings:projectMembers.approve")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => handleDeny(request.userId)}
+                  title={t("settings:projectMembers.deny")}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

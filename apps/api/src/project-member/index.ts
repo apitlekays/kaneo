@@ -5,6 +5,7 @@ import { validator } from "hono-openapi";
 import * as v from "valibot";
 import db from "../database";
 import {
+  projectAccessRequestTable,
   projectMemberTable,
   userTable,
   workspaceUserTable,
@@ -132,6 +133,135 @@ const projectMember = new Hono<{
           and(
             eq(projectMemberTable.projectId, projectId),
             eq(projectMemberTable.userId, targetUserId),
+          ),
+        );
+
+      return c.json({ success: true });
+    },
+  )
+  // Request access to a project the current user can't open yet.
+  .post(
+    "/:projectId/request",
+    validator("param", v.object({ projectId: v.string() })),
+    workspaceAccess.fromProject("projectId"),
+    async (c) => {
+      const { projectId } = c.req.valid("param");
+      const userId = c.get("userId");
+      const workspaceId = c.get("workspaceId");
+
+      // Already a member (or global admin) — nothing to request.
+      if (
+        workspaceId &&
+        (await canAccessProject(userId, projectId, workspaceId))
+      ) {
+        return c.json({ success: true, alreadyMember: true });
+      }
+
+      await db
+        .insert(projectAccessRequestTable)
+        .values({ projectId, userId })
+        .onConflictDoNothing();
+
+      return c.json({ success: true });
+    },
+  )
+  // List pending access requests. Managers + global admins.
+  .get(
+    "/:projectId/requests",
+    validator("param", v.object({ projectId: v.string() })),
+    workspaceAccess.fromProject("projectId"),
+    async (c) => {
+      const { projectId } = c.req.valid("param");
+      const userId = c.get("userId");
+      const workspaceId = c.get("workspaceId");
+
+      if (
+        !workspaceId ||
+        !(await canManageProjectMembers(userId, projectId, workspaceId))
+      ) {
+        throw new HTTPException(403, {
+          message: "You can't manage this project's members",
+        });
+      }
+
+      const requests = await db
+        .select({
+          userId: projectAccessRequestTable.userId,
+          createdAt: projectAccessRequestTable.createdAt,
+          name: userTable.name,
+          email: userTable.email,
+          image: userTable.image,
+        })
+        .from(projectAccessRequestTable)
+        .innerJoin(
+          userTable,
+          eq(projectAccessRequestTable.userId, userTable.id),
+        )
+        .where(eq(projectAccessRequestTable.projectId, projectId));
+
+      return c.json(requests);
+    },
+  )
+  // Approve a request: add the user as a member and clear the request.
+  .post(
+    "/:projectId/requests/:userId/approve",
+    validator("param", v.object({ projectId: v.string(), userId: v.string() })),
+    workspaceAccess.fromProject("projectId"),
+    async (c) => {
+      const { projectId, userId: targetUserId } = c.req.valid("param");
+      const userId = c.get("userId");
+      const workspaceId = c.get("workspaceId");
+
+      if (
+        !workspaceId ||
+        !(await canManageProjectMembers(userId, projectId, workspaceId))
+      ) {
+        throw new HTTPException(403, {
+          message: "You can't manage this project's members",
+        });
+      }
+
+      await db
+        .insert(projectMemberTable)
+        .values({ projectId, userId: targetUserId, role: "member" })
+        .onConflictDoNothing();
+      await db
+        .delete(projectAccessRequestTable)
+        .where(
+          and(
+            eq(projectAccessRequestTable.projectId, projectId),
+            eq(projectAccessRequestTable.userId, targetUserId),
+          ),
+        );
+
+      return c.json({ success: true });
+    },
+  )
+  // Deny (delete) a request.
+  .delete(
+    "/:projectId/requests/:userId",
+    validator("param", v.object({ projectId: v.string(), userId: v.string() })),
+    workspaceAccess.fromProject("projectId"),
+    async (c) => {
+      const { projectId, userId: targetUserId } = c.req.valid("param");
+      const userId = c.get("userId");
+      const workspaceId = c.get("workspaceId");
+
+      if (
+        !workspaceId ||
+        !(await canManageProjectMembers(userId, projectId, workspaceId))
+      ) {
+        throw new HTTPException(403, {
+          message: "You can't manage this project's members",
+        });
+      }
+
+      await db
+        .delete(projectAccessRequestTable)
+        .where(
+          and(
+            eq(projectAccessRequestTable.projectId, projectId),
+            eq(projectAccessRequestTable.userId, targetUserId),
           ),
         );
 

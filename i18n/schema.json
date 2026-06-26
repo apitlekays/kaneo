@@ -3615,6 +3615,18 @@
 						},
 						"roleMember": {
 							"type": "string"
+						},
+						"requestsTitle": {
+							"type": "string"
+						},
+						"requestsSubtitle": {
+							"type": "string"
+						},
+						"approve": {
+							"type": "string"
+						},
+						"deny": {
+							"type": "string"
 						}
 					},
 					"required": [
@@ -3628,7 +3640,11 @@
 						"removeError",
 						"remove",
 						"roleManager",
-						"roleMember"
+						"roleMember",
+						"requestsTitle",
+						"requestsSubtitle",
+						"approve",
+						"deny"
 					]
 				}
 			},
@@ -6131,6 +6147,38 @@
 						"removeError",
 						"openInDrive",
 						"remove"
+					]
+				},
+				"projectLocked": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"title": {
+							"type": "string"
+						},
+						"description": {
+							"type": "string"
+						},
+						"requestAccess": {
+							"type": "string"
+						},
+						"requested": {
+							"type": "string"
+						},
+						"requestedShort": {
+							"type": "string"
+						},
+						"requestError": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"title",
+						"description",
+						"requestAccess",
+						"requested",
+						"requestedShort",
+						"requestError"
 					]
 				}
 			},

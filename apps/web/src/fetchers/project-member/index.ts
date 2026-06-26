@@ -44,3 +44,57 @@ export async function removeProjectMember(
   if (!response.ok) throw new Error(await response.text());
   return response.json();
 }
+
+export type ProjectAccessRequest = {
+  userId: string;
+  createdAt: string;
+  name: string;
+  email: string;
+  image: string | null;
+};
+
+export async function requestProjectAccess(
+  projectId: string,
+): Promise<{ success: boolean }> {
+  const response = await fetch(
+    getApiUrl(`project-member/${projectId}/request`),
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function getProjectRequests(
+  projectId: string,
+): Promise<ProjectAccessRequest[]> {
+  const response = await fetch(
+    getApiUrl(`project-member/${projectId}/requests`),
+    { credentials: "include" },
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function approveProjectRequest(
+  projectId: string,
+  userId: string,
+): Promise<{ success: boolean }> {
+  const response = await fetch(
+    getApiUrl(`project-member/${projectId}/requests/${userId}/approve`),
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function denyProjectRequest(
+  projectId: string,
+  userId: string,
+): Promise<{ success: boolean }> {
+  const response = await fetch(
+    getApiUrl(`project-member/${projectId}/requests/${userId}`),
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}

@@ -30,7 +30,12 @@ const ENTITY_INVALIDATIONS: Record<string, string[][]> = {
   "task-relation": [["task-relations"], ["tasks"], ["task"]],
   "external-link": [["external-links"], ["tasks"]],
   "drive-attachment": [["drive-attachments"]],
-  "project-member": [["project-members"], ["projects"], ["my-tasks"]],
+  "project-member": [
+    ["project-members"],
+    ["project-requests"],
+    ["projects"],
+    ["my-tasks"],
+  ],
   "workflow-rule": [["workflow-rules"]],
   workspace: [
     ["projects"],

@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -14,8 +14,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { addProjectMember } from "@/fetchers/project-member";
+import {
+  addProjectMember,
+  approveProjectRequest,
+  denyProjectRequest,
+} from "@/fetchers/project-member";
 import { useProjectMembers } from "@/hooks/queries/project-member/use-project-members";
+import { useProjectRequests } from "@/hooks/queries/project-member/use-project-requests";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
@@ -45,6 +50,36 @@ export default function ProjectMembersBar({
 
   const myRole = members.find((m) => m.userId === currentUserId)?.role;
   const canAdd = isAdmin || myRole === "manager";
+  const { data: requests = [] } = useProjectRequests(projectId, canAdd);
+
+  const refetchMembers = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["project-members", projectId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["project-requests", projectId],
+      }),
+    ]);
+  };
+
+  const handleApprove = async (userId: string) => {
+    try {
+      await approveProjectRequest(projectId, userId);
+      await refetchMembers();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed");
+    }
+  };
+
+  const handleDeny = async (userId: string) => {
+    try {
+      await denyProjectRequest(projectId, userId);
+      await refetchMembers();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed");
+    }
+  };
 
   const memberIds = useMemo(
     () => new Set(members.map((m) => m.userId)),
@@ -109,12 +144,17 @@ export default function ProjectMembersBar({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-6 w-6 rounded-full p-0"
+                className="relative h-6 w-6 rounded-full p-0"
                 title={t("settings:projectMembers.add")}
               />
             }
           >
             <Plus className="h-3.5 w-3.5" />
+            {requests.length > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+                {requests.length}
+              </span>
+            )}
           </PopoverTrigger>
           <PopoverContent className="w-64 p-2" align="start">
             <p className="px-1 pb-1.5 text-xs font-medium text-muted-foreground">
@@ -159,6 +199,49 @@ export default function ProjectMembersBar({
                 )
               )}
             </div>
+
+            {requests.length > 0 && (
+              <div className="mt-2 border-t border-border/60 pt-2">
+                <p className="px-1 pb-1.5 text-xs font-medium text-muted-foreground">
+                  {t("settings:projectMembers.requestsTitle")}
+                </p>
+                {requests.map((request) => (
+                  <div
+                    key={request.userId}
+                    className="flex items-center gap-2 px-1.5 py-1.5"
+                  >
+                    <Avatar className="h-6 w-6">
+                      <AvatarImage
+                        src={request.image ?? ""}
+                        alt={request.name}
+                      />
+                      <AvatarFallback className="text-[10px]">
+                        {request.name?.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      {request.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(request.userId)}
+                      className="text-muted-foreground hover:text-success-foreground"
+                      title={t("settings:projectMembers.approve")}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeny(request.userId)}
+                      className="text-muted-foreground hover:text-destructive"
+                      title={t("settings:projectMembers.deny")}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </PopoverContent>
         </Popover>
       )}

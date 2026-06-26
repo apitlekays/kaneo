@@ -291,6 +291,30 @@ export const projectMemberTable = pgTable(
   ],
 );
 
+/** A pending request from a workspace member to join a project they can't access. */
+export const projectAccessRequestTable = pgTable(
+  "project_access_request",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projectTable.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("project_access_request_projectId_idx").on(table.projectId),
+    unique("project_access_request_project_user_unique").on(
+      table.projectId,
+      table.userId,
+    ),
+  ],
+);
+
 export const columnTable = pgTable(
   "column",
   {
