@@ -331,7 +331,8 @@ export default function TaskMom({
     try {
       const newTask = await createTask.mutateAsync({
         title,
-        description: "",
+        // Carry the meeting's discussion points into the sub-task description.
+        description: row.discussion.trim(),
         projectId,
         status: "to-do",
         priority: "no-priority",
