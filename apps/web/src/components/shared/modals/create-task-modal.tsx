@@ -41,6 +41,7 @@ import useCreateTask from "@/hooks/mutations/task/use-create-task";
 import { useDeleteTask } from "@/hooks/mutations/task/use-delete-task";
 import { useUpdateTask } from "@/hooks/mutations/task/use-update-task";
 import useGetLabelsByWorkspace from "@/hooks/queries/label/use-get-labels-by-workspace";
+import { useProjectMembers } from "@/hooks/queries/project-member/use-project-members";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
@@ -198,6 +199,16 @@ function CreateTaskModal({
   const routeProjectId =
     location.pathname.match(/\/project\/([^/]+)/)?.[1] ?? null;
   const resolvedProjectId = projectId || project?.id || routeProjectId || "";
+
+  // Only project members can be assigned.
+  const { data: projectMembers = [] } = useProjectMembers(resolvedProjectId);
+  const projectMemberIds = useMemo(
+    () => new Set(projectMembers.map((m) => m.userId)),
+    [projectMembers],
+  );
+  const assignableMembers = (workspaceUsers?.members ?? []).filter(
+    (member: { userId: string }) => projectMemberIds.has(member.userId),
+  );
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const draftCreationPromiseRef = useRef<Promise<Task> | null>(null);
@@ -805,7 +816,7 @@ function CreateTaskModal({
                       </span>
                       {!assigneeId && <Check className="ml-auto h-4 w-4" />}
                     </button>
-                    {workspaceUsers?.members?.map((member) => (
+                    {assignableMembers.map((member) => (
                       <button
                         key={member.userId}
                         type="button"

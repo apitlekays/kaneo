@@ -20,6 +20,7 @@ import { useUpdateTaskStatus } from "@/hooks/mutations/task/use-update-task-stat
 import { useUpdateTaskPriority } from "@/hooks/mutations/task/use-update-task-status-priority";
 import { useUpdateTaskTitle } from "@/hooks/mutations/task/use-update-task-title";
 import { useGetColumns } from "@/hooks/queries/column/use-get-columns";
+import { useProjectMembers } from "@/hooks/queries/project-member/use-project-members";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { getColumnIcon } from "@/lib/column";
@@ -66,6 +67,9 @@ export default function TaskCardContextMenuContent({
   const { data: workspaceUsers } = useGetActiveWorkspaceUsers(
     taskCardContext.worskpaceId,
   );
+  const { data: projectMembers = [] } = useProjectMembers(
+    taskCardContext.projectId,
+  );
   const { mutateAsync: updateTask } = useUpdateTask();
   const { mutateAsync: updateTaskPriority } = useUpdateTaskPriority();
   const { mutateAsync: updateTaskStatus } = useUpdateTaskStatus();
@@ -79,14 +83,20 @@ export default function TaskCardContextMenuContent({
   const canDelete = canDeleteTasks();
   const canAssign = canAssignTasks();
 
+  const projectMemberIds = useMemo(
+    () => new Set(projectMembers.map((m) => m.userId)),
+    [projectMembers],
+  );
   const usersOptions = useMemo(() => {
-    return workspaceUsers?.members?.map((member) => ({
-      label: member?.user?.name ?? member.userId,
-      value: member.userId,
-      image: member?.user?.image ?? "",
-      name: member?.user?.name ?? "",
-    }));
-  }, [workspaceUsers]);
+    return workspaceUsers?.members
+      ?.filter((member) => projectMemberIds.has(member.userId))
+      .map((member) => ({
+        label: member?.user?.name ?? member.userId,
+        value: member.userId,
+        image: member?.user?.image ?? "",
+        name: member?.user?.name ?? "",
+      }));
+  }, [workspaceUsers, projectMemberIds]);
 
   const handleCopyTaskLink = () => {
     const path = `/dashboard/workspace/${taskCardContext.worskpaceId}/project/${taskCardContext.projectId}/task/${task.id}`;
