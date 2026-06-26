@@ -6,6 +6,7 @@ import {
   CornerDownRight,
   FileText,
   ListTree,
+  Lock,
   Search,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -97,6 +98,7 @@ export default function ProjectMinutes({
   }, [moms]);
 
   const handleConvert = async (item: ProjectMomItem, rowId: string) => {
+    if (item.data.locked) return;
     const row = item.data.rows.find((r) => r.id === rowId);
     if (!row || row.subtaskId) return;
     setConverting(rowId);
@@ -196,6 +198,15 @@ export default function ProjectMinutes({
                     )}
                     {item.taskTitle}
                   </Link>
+                  {item.data.locked && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                      title={t("tasks:mom.locked")}
+                    >
+                      <Lock className="h-3 w-3" />
+                      {t("tasks:mom.locked")}
+                    </span>
+                  )}
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
                     {item.data.date && (
                       <span className="inline-flex items-center gap-1">
@@ -298,7 +309,7 @@ export default function ProjectMinutes({
                                 ? t("minutes:doneStatus")
                                 : t("tasks:mom.linkedSubtask")}
                             </Link>
-                          ) : canManage ? (
+                          ) : canManage && !item.data.locked ? (
                             <Button
                               type="button"
                               variant="ghost"

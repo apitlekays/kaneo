@@ -21,6 +21,7 @@ export type MomData = {
   attendees: MomPerson[];
   absentees: MomPerson[];
   rows: MomRow[];
+  locked?: boolean;
 };
 
 export type TaskMom = {
@@ -33,7 +34,14 @@ export type TaskMom = {
 };
 
 export function emptyMomData(): MomData {
-  return { date: null, time: null, attendees: [], absentees: [], rows: [] };
+  return {
+    date: null,
+    time: null,
+    attendees: [],
+    absentees: [],
+    rows: [],
+    locked: false,
+  };
 }
 
 export async function getTaskMom(taskId: string): Promise<TaskMom | null> {

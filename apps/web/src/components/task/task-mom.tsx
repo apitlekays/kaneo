@@ -4,6 +4,8 @@ import {
   Clock,
   CornerDownRight,
   ListTree,
+  Lock,
+  LockOpen,
   Plus,
   Trash2,
   UserPlus,
@@ -48,11 +50,13 @@ function PeopleEditor({
   people,
   members,
   onChange,
+  readOnly = false,
 }: {
   label: string;
   people: MomPerson[];
   members: SimpleMember[];
   onChange: (next: MomPerson[]) => void;
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -71,6 +75,9 @@ function PeopleEditor({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      {readOnly && people.length === 0 && (
+        <span className="text-xs text-muted-foreground/70">—</span>
+      )}
       {people.map((person) => (
         <span
           key={person.id}
@@ -83,72 +90,76 @@ function PeopleEditor({
             fallbackClassName="text-[8px]"
           />
           <span className="max-w-[10rem] truncate">{person.name}</span>
-          <button
-            type="button"
-            onClick={() => onChange(people.filter((p) => p.id !== person.id))}
-            className="text-muted-foreground hover:text-destructive"
-          >
-            <X className="h-3 w-3" />
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={() => onChange(people.filter((p) => p.id !== person.id))}
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </span>
       ))}
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger
-          render={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-6 gap-1 rounded-full px-2 text-xs text-muted-foreground"
+      {readOnly ? null : (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 gap-1 rounded-full px-2 text-xs text-muted-foreground"
+              />
+            }
+          >
+            <Plus className="h-3 w-3" />
+            {t("tasks:mom.add")}
+          </PopoverTrigger>
+          <PopoverContent className="w-60 p-2" align="start">
+            <Input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("tasks:mom.searchOrType")}
+              className="mb-2 h-7 text-xs"
             />
-          }
-        >
-          <Plus className="h-3 w-3" />
-          {t("tasks:mom.add")}
-        </PopoverTrigger>
-        <PopoverContent className="w-60 p-2" align="start">
-          <Input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("tasks:mom.searchOrType")}
-            className="mb-2 h-7 text-xs"
-          />
-          <div className="max-h-52 overflow-y-auto">
-            {filtered.map((m) => (
-              <button
-                key={m.userId}
-                type="button"
-                onClick={() =>
-                  add({ id: uid(), userId: m.userId, name: m.name })
-                }
-                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs hover:bg-accent"
-              >
-                <ColoredAvatar
-                  name={m.name}
-                  image={m.image}
-                  seed={m.userId}
-                  className="h-5 w-5"
-                  fallbackClassName="text-[9px]"
-                />
-                <span className="truncate">{m.name}</span>
-              </button>
-            ))}
-            {query.trim() && (
-              <button
-                type="button"
-                onClick={() =>
-                  add({ id: uid(), userId: null, name: query.trim() })
-                }
-                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs text-muted-foreground hover:bg-accent"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {t("tasks:mom.addFreeText", { name: query.trim() })}
-              </button>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
+            <div className="max-h-52 overflow-y-auto">
+              {filtered.map((m) => (
+                <button
+                  key={m.userId}
+                  type="button"
+                  onClick={() =>
+                    add({ id: uid(), userId: m.userId, name: m.name })
+                  }
+                  className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs hover:bg-accent"
+                >
+                  <ColoredAvatar
+                    name={m.name}
+                    image={m.image}
+                    seed={m.userId}
+                    className="h-5 w-5"
+                    fallbackClassName="text-[9px]"
+                  />
+                  <span className="truncate">{m.name}</span>
+                </button>
+              ))}
+              {query.trim() && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    add({ id: uid(), userId: null, name: query.trim() })
+                  }
+                  className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs text-muted-foreground hover:bg-accent"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t("tasks:mom.addFreeText", { name: query.trim() })}
+                </button>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }
@@ -298,6 +309,7 @@ export default function TaskMom({
 
   if (!data) return null;
 
+  const locked = data.locked ?? false;
   const patch = (partial: Partial<MomData>) => commit({ ...data, ...partial });
   const updateRow = (rowId: string, partial: Partial<MomRow>) =>
     patch({
@@ -368,35 +380,60 @@ export default function TaskMom({
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <CalendarDays className="h-3.5 w-3.5" />
               {t("tasks:mom.date")}
-              <Input
-                type="date"
-                value={data.date ?? ""}
-                onChange={(e) => patch({ date: e.target.value || null })}
-                className="h-7 w-auto text-xs"
-              />
+              {locked ? (
+                <span className="text-foreground">{data.date || "—"}</span>
+              ) : (
+                <Input
+                  type="date"
+                  value={data.date ?? ""}
+                  onChange={(e) => patch({ date: e.target.value || null })}
+                  className="h-7 w-auto text-xs"
+                />
+              )}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Clock className="h-3.5 w-3.5" />
               {t("tasks:mom.time")}
-              <Input
-                type="time"
-                value={data.time ?? ""}
-                onChange={(e) => patch({ time: e.target.value || null })}
-                className="h-7 w-auto text-xs"
-              />
+              {locked ? (
+                <span className="text-foreground">{data.time || "—"}</span>
+              ) : (
+                <Input
+                  type="time"
+                  value={data.time ?? ""}
+                  onChange={(e) => patch({ time: e.target.value || null })}
+                  className="h-7 w-auto text-xs"
+                />
+              )}
             </div>
+            <Button
+              type="button"
+              variant={locked ? "secondary" : "outline"}
+              size="sm"
+              className="ms-auto h-7 gap-1 text-xs"
+              onClick={() => patch({ locked: !locked })}
+              title={locked ? t("tasks:mom.unlock") : t("tasks:mom.lock")}
+            >
+              {locked ? (
+                <Lock className="h-3.5 w-3.5" />
+              ) : (
+                <LockOpen className="h-3.5 w-3.5" />
+              )}
+              {locked ? t("tasks:mom.locked") : t("tasks:mom.lock")}
+            </Button>
           </div>
           <PeopleEditor
             label={t("tasks:mom.attendees")}
             people={data.attendees}
             members={peopleMembers}
             onChange={(attendees) => patch({ attendees })}
+            readOnly={locked}
           />
           <PeopleEditor
             label={t("tasks:mom.absentees")}
             people={data.absentees}
             members={peopleMembers}
             onChange={(absentees) => patch({ absentees })}
+            readOnly={locked}
           />
         </div>
 
@@ -414,41 +451,61 @@ export default function TaskMom({
                 <th className="w-1/3 border-b border-border/60 p-2 font-medium">
                   {t("tasks:mom.actionItems")}
                 </th>
-                <th className="w-8 border-b border-border/60 p-2" />
+                {!locked && (
+                  <th className="w-8 border-b border-border/60 p-2" />
+                )}
               </tr>
             </thead>
             <tbody>
               {data.rows.map((row) => (
                 <tr key={row.id} className="align-top">
                   <td className="border-b border-border/40 p-1.5">
-                    <Textarea
-                      value={row.agenda}
-                      onChange={(e) =>
-                        updateRow(row.id, { agenda: e.target.value })
-                      }
-                      placeholder={t("tasks:mom.agendaPlaceholder")}
-                      className="min-h-[2.25rem] resize-y text-xs"
-                    />
+                    {locked ? (
+                      <p className="whitespace-pre-wrap p-1 text-foreground">
+                        {row.agenda || "—"}
+                      </p>
+                    ) : (
+                      <Textarea
+                        value={row.agenda}
+                        onChange={(e) =>
+                          updateRow(row.id, { agenda: e.target.value })
+                        }
+                        placeholder={t("tasks:mom.agendaPlaceholder")}
+                        className="min-h-[2.25rem] resize-y text-xs"
+                      />
+                    )}
                   </td>
                   <td className="border-b border-border/40 p-1.5">
-                    <Textarea
-                      value={row.discussion}
-                      onChange={(e) =>
-                        updateRow(row.id, { discussion: e.target.value })
-                      }
-                      placeholder={t("tasks:mom.discussionPlaceholder")}
-                      className="min-h-[2.25rem] resize-y text-xs"
-                    />
+                    {locked ? (
+                      <p className="whitespace-pre-wrap p-1 text-foreground">
+                        {row.discussion || "—"}
+                      </p>
+                    ) : (
+                      <Textarea
+                        value={row.discussion}
+                        onChange={(e) =>
+                          updateRow(row.id, { discussion: e.target.value })
+                        }
+                        placeholder={t("tasks:mom.discussionPlaceholder")}
+                        className="min-h-[2.25rem] resize-y text-xs"
+                      />
+                    )}
                   </td>
                   <td className="border-b border-border/40 p-1.5">
-                    <Textarea
-                      value={row.action}
-                      onChange={(e) =>
-                        updateRow(row.id, { action: e.target.value })
-                      }
-                      placeholder={t("tasks:mom.actionPlaceholder")}
-                      className="min-h-[2.25rem] resize-y text-xs"
-                    />
+                    {locked ? (
+                      <p className="whitespace-pre-wrap p-1 text-foreground">
+                        {row.action || "—"}
+                      </p>
+                    ) : (
+                      <Textarea
+                        value={row.action}
+                        onChange={(e) =>
+                          updateRow(row.id, { action: e.target.value })
+                        }
+                        placeholder={t("tasks:mom.actionPlaceholder")}
+                        className="min-h-[2.25rem] resize-y text-xs"
+                      />
+                    )}
                     <div className="mt-1 flex flex-wrap items-center gap-1">
                       {row.taggedUserIds.map((userId) => (
                         <span
@@ -464,63 +521,81 @@ export default function TaskMom({
                           {memberName(userId)}
                         </span>
                       ))}
-                      <MemberTagPicker
-                        selectedIds={row.taggedUserIds}
-                        members={tagMembers}
-                        onToggle={(userId) => toggleTag(row, userId)}
-                      />
+                      {!locked && (
+                        <MemberTagPicker
+                          selectedIds={row.taggedUserIds}
+                          members={tagMembers}
+                          onToggle={(userId) => toggleTag(row, userId)}
+                        />
+                      )}
                       {row.subtaskId ? (
                         <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                           <CornerDownRight className="h-3 w-3" />
                           {t("tasks:mom.linkedSubtask")}
                         </span>
                       ) : (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
-                          onClick={() => convertToSubtask(row)}
-                          title={t("tasks:mom.convertToSubtask")}
-                        >
-                          <ListTree className="h-3 w-3" />
-                          {t("tasks:mom.convertToSubtask")}
-                        </Button>
+                        !locked && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+                            onClick={() => convertToSubtask(row)}
+                            title={t("tasks:mom.convertToSubtask")}
+                          >
+                            <ListTree className="h-3 w-3" />
+                            {t("tasks:mom.convertToSubtask")}
+                          </Button>
+                        )
                       )}
                     </div>
                   </td>
-                  <td className="border-b border-border/40 p-1.5 text-center">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        patch({
-                          rows: data.rows.filter((r) => r.id !== row.id),
-                        })
-                      }
-                      className="text-muted-foreground hover:text-destructive"
-                      title={t("tasks:mom.removeRow")}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
+                  {!locked && (
+                    <td className="border-b border-border/40 p-1.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          patch({
+                            rows: data.rows.filter((r) => r.id !== row.id),
+                          })
+                        }
+                        className="text-muted-foreground hover:text-destructive"
+                        title={t("tasks:mom.removeRow")}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
+              {locked && data.rows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={3}
+                    className="p-3 text-center text-xs text-muted-foreground"
+                  >
+                    {t("tasks:mom.noRows")}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
-        <div className="p-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 text-xs text-muted-foreground"
-            onClick={addRow}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {t("tasks:mom.addRow")}
-          </Button>
-        </div>
+        {!locked && (
+          <div className="p-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 text-xs text-muted-foreground"
+              onClick={addRow}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {t("tasks:mom.addRow")}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

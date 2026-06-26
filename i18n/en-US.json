@@ -1742,7 +1742,11 @@
 			"addRow": "Add row",
 			"removeRow": "Remove row",
 			"actionItem": "Action item",
-			"tagPerson": "Tag a person"
+			"tagPerson": "Tag a person",
+			"lock": "Lock",
+			"unlock": "Unlock",
+			"locked": "Locked",
+			"noRows": "No items"
 		}
 	},
 	"invitations": {

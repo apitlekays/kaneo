@@ -32,6 +32,7 @@ const momDataSchema = v.object({
   attendees: v.array(personSchema),
   absentees: v.array(personSchema),
   rows: v.array(rowSchema),
+  locked: v.optional(v.boolean()),
 });
 
 type MomData = v.InferOutput<typeof momDataSchema>;
