@@ -15,6 +15,7 @@ import useGetTaskRelations from "@/hooks/queries/task-relation/use-get-task-rela
 import type { ExternalLink } from "@/types/external-link";
 import DriveAttachments from "./drive-attachments";
 import TaskDescription from "./task-description";
+import TaskMom from "./task-mom";
 import TaskRelations from "./task-relations";
 import TaskSubtasks from "./task-subtasks";
 import TaskTitle from "./task-title";
@@ -88,6 +89,13 @@ export default function TaskDetailsContent({
           />
         </div>
       )}
+      <div className="mt-4">
+        <TaskMom
+          taskId={taskId}
+          projectId={projectId}
+          workspaceId={workspaceId}
+        />
+      </div>
       <div className="mt-4">
         <TaskSubtasks
           taskId={taskId}

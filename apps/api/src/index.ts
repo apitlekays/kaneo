@@ -52,6 +52,7 @@ import search from "./search";
 import slackIntegration from "./slack-integration";
 import { getPrivateObject } from "./storage/s3";
 import task from "./task";
+import taskMom from "./task-mom";
 import taskRelation from "./task-relation";
 import telegramIntegration from "./telegram-integration";
 import timeEntry from "./time-entry";
@@ -584,6 +585,7 @@ export function createApp() {
   api.route("/drive-attachment", driveAttachment);
   api.route("/project-member", projectMember);
   api.route("/user", user);
+  api.route("/task-mom", taskMom);
 
   app.route(
     "/",

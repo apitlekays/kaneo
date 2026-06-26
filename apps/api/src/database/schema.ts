@@ -1159,3 +1159,26 @@ export const taskDriveAttachmentTable = pgTable(
     ),
   ],
 );
+
+// Minutes of Meeting — one structured document per task. The whole document
+// (date, time, attendees, absentees, agenda/discussion/action rows with tagged
+// users) is stored as a single JSON blob for flexibility.
+export const taskMomTable = pgTable(
+  "task_mom",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .unique()
+      .references(() => taskTable.id, { onDelete: "cascade" }),
+    data: jsonb("data").notNull(),
+    updatedBy: text("updated_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("task_mom_taskId_idx").on(table.taskId)],
+);

@@ -1718,6 +1718,31 @@
 			"requested": "Access requested — a project manager will review it.",
 			"requestedShort": "Requested",
 			"requestError": "Couldn’t send request"
+		},
+		"mom": {
+			"absentees": "Absentees",
+			"actionItem": "Action item",
+			"actionItems": "Action Items",
+			"actionPlaceholder": "Action item…",
+			"add": "Add",
+			"addFreeText": "Add \"{{name}}\"",
+			"addRow": "Add row",
+			"agenda": "Agenda",
+			"agendaPlaceholder": "Agenda item",
+			"attendees": "Attendees",
+			"convertedToast": "Action item converted to a sub-task",
+			"convertError": "Couldn’t convert to a sub-task",
+			"convertToSubtask": "Convert to sub-task",
+			"date": "Date",
+			"discussion": "Discussion Points",
+			"discussionPlaceholder": "Discussion…",
+			"linkedSubtask": "Linked sub-task",
+			"noMembers": "No project members",
+			"removeRow": "Remove row",
+			"searchOrType": "Search members or type a name…",
+			"tagPeople": "Tag people",
+			"time": "Time",
+			"title": "Minutes of Meeting"
 		}
 	},
 	"invitations": {
@@ -1882,6 +1907,17 @@
 		"empty": {
 			"title": "No tasks assigned to you",
 			"description": "Tasks assigned to you across this workspace’s projects will show up here."
+		},
+		"feed": {
+			"empty": "No recent activity yet.",
+			"someone": "Someone",
+			"title": "Activity",
+			"verbs": {
+				"assigned": "assigned you to",
+				"commented": "commented on",
+				"status": "changed the status of",
+				"tagged": "tagged you in"
+			}
 		}
 	}
 }
