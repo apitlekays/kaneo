@@ -7,5 +7,16 @@ export function useGetTasks(projectId: string) {
     queryFn: () => getTasks(projectId),
     refetchInterval: 30000,
     enabled: !!projectId,
+    // Don't retry (with backoff) when the project is locked — surface the
+    // "no access" state immediately instead of after several retries.
+    retry: (failureCount, error) => {
+      if (
+        error instanceof Error &&
+        /access to this project/i.test(error.message)
+      ) {
+        return false;
+      }
+      return failureCount < 2;
+    },
   });
 }

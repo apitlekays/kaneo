@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { LayoutGrid, Plus } from "lucide-react";
+import { LayoutGrid, Lock, Plus } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import WorkspaceLayout from "@/components/common/workspace-layout";
@@ -30,6 +30,7 @@ import { shortcuts } from "@/constants/shortcuts";
 import useGetProjects from "@/hooks/queries/project/use-get-projects";
 import { useRegisterShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
+import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
 
 export const Route = createFileRoute(
@@ -226,6 +227,7 @@ function RouteComponent() {
 
               const IconComponent =
                 icons[project.icon as keyof typeof icons] || icons.Layout;
+              const locked = project.isMember === false;
 
               const getStatusText = () => {
                 if (project.statistics.totalTasks === 0)
@@ -245,13 +247,16 @@ function RouteComponent() {
               return (
                 <TableRow
                   key={project.id}
-                  className="cursor-pointer"
+                  className={cn("cursor-pointer", locked && "opacity-60")}
                   onClick={() => handleProjectClick(project.id)}
                 >
                   <TableCell className="py-3">
                     <div className="flex items-center gap-3">
                       <IconComponent className="w-5 h-5 text-muted-foreground" />
                       <span className="font-medium">{project.name}</span>
+                      {locked && (
+                        <Lock className="h-3.5 w-3.5 text-muted-foreground/60" />
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="py-3">

@@ -120,11 +120,9 @@ export function NavProjects() {
                         size="default"
                         className={cn(
                           "h-8 gap-0 ps-3.5 text-sm hover:bg-transparent hover:text-sidebar-accent-foreground active:bg-transparent",
-                          locked && "cursor-not-allowed opacity-50",
+                          locked && "opacity-50",
                         )}
-                        onClick={() => {
-                          if (!locked) handleProjectClick(project);
-                        }}
+                        onClick={() => handleProjectClick(project)}
                         title={
                           locked
                             ? t("navigation:projectList.lockedTooltip")
