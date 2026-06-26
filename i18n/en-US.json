@@ -1931,6 +1931,7 @@
 			"actionItems": "Action items",
 			"open": "Open",
 			"linked": "Linked"
-		}
+		},
+		"doneStatus": "Done"
 	}
 }

@@ -16,9 +16,11 @@ import { Input } from "@/components/ui/input";
 import { type ProjectMomItem, saveTaskMom } from "@/fetchers/task-mom";
 import useCreateTask from "@/hooks/mutations/task/use-create-task";
 import useCreateTaskRelation from "@/hooks/mutations/task-relation/use-create-task-relation";
+import { useGetTasks } from "@/hooks/queries/task/use-get-tasks";
 import { useProjectMoms } from "@/hooks/queries/task-mom/use-task-mom";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
+import { cn } from "@/lib/cn";
 import { toast } from "@/lib/toast";
 
 type MinutesProps = {
@@ -53,6 +55,26 @@ export default function ProjectMinutes({
     }
     return map;
   }, [workspaceUsers]);
+
+  // Ids of tasks sitting in a final ("done") column, so converted action
+  // items that are complete can be struck through.
+  const { data: projectData } = useGetTasks(projectId);
+  const doneTaskIds = useMemo(() => {
+    const done = new Set<string>();
+    const columns =
+      projectData && "columns" in projectData
+        ? (projectData.columns as Array<{
+            isFinal?: boolean;
+            tasks?: { id: string }[];
+          }>)
+        : [];
+    for (const col of columns) {
+      if (col.isFinal) {
+        for (const task of col.tasks ?? []) done.add(task.id);
+      }
+    }
+    return done;
+  }, [projectData]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -219,15 +241,35 @@ export default function ProjectMinutes({
                       const taggedInfo = tagged
                         ? memberById.get(tagged)
                         : undefined;
+                      const subtaskDone = row.subtaskId
+                        ? doneTaskIds.has(row.subtaskId)
+                        : false;
+                      const label = row.action.trim() || row.agenda.trim();
                       return (
                         <li
                           key={row.id}
                           className="flex items-start gap-3 px-3 py-2 text-xs"
                         >
                           <span className="min-w-0 flex-1">
-                            <span className="text-foreground">
-                              {row.action.trim() || row.agenda.trim()}
-                            </span>
+                            {row.subtaskId ? (
+                              <Link
+                                to="/dashboard/workspace/$workspaceId/project/$projectId/task/$taskId"
+                                params={{
+                                  workspaceId,
+                                  projectId,
+                                  taskId: row.subtaskId,
+                                }}
+                                className={cn(
+                                  "text-foreground hover:underline",
+                                  subtaskDone &&
+                                    "text-muted-foreground line-through",
+                                )}
+                              >
+                                {label}
+                              </Link>
+                            ) : (
+                              <span className="text-foreground">{label}</span>
+                            )}
                           </span>
                           {tagged && (
                             <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
@@ -242,10 +284,20 @@ export default function ProjectMinutes({
                             </span>
                           )}
                           {row.subtaskId ? (
-                            <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
+                            <Link
+                              to="/dashboard/workspace/$workspaceId/project/$projectId/task/$taskId"
+                              params={{
+                                workspaceId,
+                                projectId,
+                                taskId: row.subtaskId,
+                              }}
+                              className="inline-flex shrink-0 items-center gap-1 text-muted-foreground hover:text-foreground"
+                            >
                               <CornerDownRight className="h-3 w-3" />
-                              {t("tasks:mom.linkedSubtask")}
-                            </span>
+                              {subtaskDone
+                                ? t("minutes:doneStatus")
+                                : t("tasks:mom.linkedSubtask")}
+                            </Link>
                           ) : canManage ? (
                             <Button
                               type="button"
