@@ -107,6 +107,18 @@ export function hasDriveToken(): boolean {
 }
 
 /**
+ * The cached Drive token if one is still valid, else null. Never triggers a
+ * request — so reading it can't pop a GIS window. Callers that want to acquire
+ * a token interactively must use getDriveAccessToken with a user gesture.
+ */
+export function getCachedDriveToken(): string | null {
+  if (cachedToken && cachedToken.expiresAt - Date.now() > 60_000) {
+    return cachedToken.token;
+  }
+  return null;
+}
+
+/**
  * Obtain a Drive access token outside the picker (e.g. to load thumbnails).
  * `silent` (default) never shows UI — it rejects if consent would be needed,
  * so callers can fall back gracefully without surprising the user with a popup.

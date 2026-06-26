@@ -10,7 +10,10 @@
  * plain icon — there's never a hard error.
  */
 
-import { getDriveAccessToken } from "./google-drive-picker";
+import {
+  getCachedDriveToken,
+  getDriveAccessToken,
+} from "./google-drive-picker";
 
 // fileId → object URL (string) or `null` when the file has no usable thumbnail.
 // Object URLs are blobs held for the session; revisiting a task reuses them.
@@ -49,15 +52,24 @@ async function fetchThumbnail(
 
 /**
  * Load thumbnails for the given file ids, invoking `onLoaded` as each resolves
- * (cached entries fire synchronously-ish first). Never throws; if a Drive token
- * can't be obtained silently it simply does nothing and the icons remain.
+ * (cached entries fire first). Never throws.
+ *
+ * By default it uses ONLY a token already cached in memory — it never requests
+ * one, so it can't pop a GIS window on task open. Pass `interactive: true` (from
+ * a user gesture, e.g. a "Show previews" button) to acquire a token, which may
+ * show a Google popup once; the token is then cached for the rest of the
+ * session so subsequent loads are silent.
+ *
+ * Returns true if a usable token was available (cached or freshly granted).
  */
 export async function loadDriveThumbnails(
   clientId: string,
   fileIds: string[],
   onLoaded: (fileId: string, url: string | null) => void,
-  size = 400,
-): Promise<void> {
+  opts: { interactive?: boolean; size?: number } = {},
+): Promise<boolean> {
+  const size = opts.size ?? 400;
+
   // Serve anything already cached right away.
   const uncached: string[] = [];
   for (const fileId of fileIds) {
@@ -67,19 +79,26 @@ export async function loadDriveThumbnails(
       uncached.push(fileId);
     }
   }
-  if (uncached.length === 0) return;
+  if (uncached.length === 0) return true;
 
-  let token: string;
-  try {
-    token = await getDriveAccessToken(clientId, { silent: true });
-  } catch {
-    return; // No silent token → leave icons in place, no popup.
+  let token: string | null;
+  if (opts.interactive) {
+    try {
+      token = await getDriveAccessToken(clientId, { silent: false });
+    } catch {
+      return false; // User dismissed/denied — leave icons in place.
+    }
+  } else {
+    // No popup ever: only proceed if we already hold a token.
+    token = getCachedDriveToken();
+    if (!token) return false;
   }
 
+  const resolvedToken = token;
   await Promise.all(
     uncached.map(async (fileId) => {
       try {
-        const url = await fetchThumbnail(fileId, token, size);
+        const url = await fetchThumbnail(fileId, resolvedToken, size);
         thumbnailCache.set(fileId, url);
         onLoaded(fileId, url);
       } catch {
@@ -88,4 +107,5 @@ export async function loadDriveThumbnails(
       }
     }),
   );
+  return true;
 }

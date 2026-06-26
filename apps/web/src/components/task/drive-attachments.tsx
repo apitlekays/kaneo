@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, FileText, Loader2, Plus, X } from "lucide-react";
+import { ExternalLink, Eye, FileText, Loader2, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import {
 } from "@/fetchers/drive-attachment";
 import useGetConfig from "@/hooks/queries/config/use-get-config";
 import { useDriveAttachments } from "@/hooks/queries/drive-attachment/use-drive-attachments";
-import { pickDriveFiles } from "@/lib/google-drive-picker";
+import { hasDriveToken, pickDriveFiles } from "@/lib/google-drive-picker";
 import { loadDriveThumbnails } from "@/lib/google-drive-thumbnails";
 import { toast } from "@/lib/toast";
 
@@ -27,6 +27,11 @@ export default function DriveAttachments({ taskId }: DriveAttachmentsProps) {
   const [thumbnails, setThumbnails] = useState<Record<string, string | null>>(
     {},
   );
+  // True when previews need a (one-time, user-initiated) Drive sign-in because
+  // no token is cached yet. We never auto-request a token — that would pop a
+  // Google window on every task open.
+  const [needsPreviewAuth, setNeedsPreviewAuth] = useState(false);
+  const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
 
   const clientId = config?.googleClientId ?? null;
   const apiKey = config?.googleDrivePickerApiKey ?? null;
@@ -41,6 +46,14 @@ export default function DriveAttachments({ taskId }: DriveAttachmentsProps) {
 
   useEffect(() => {
     if (!clientId || fileIds.length === 0) return;
+    // Only auto-load when a Drive token is already cached this session (e.g.
+    // right after using the Picker). Otherwise show the "Show previews" button
+    // instead of silently triggering a token request — that pops a GIS window.
+    if (!hasDriveToken()) {
+      setNeedsPreviewAuth(true);
+      return;
+    }
+    setNeedsPreviewAuth(false);
     let cancelled = false;
     void loadDriveThumbnails(clientId, fileIds, (fileId, url) => {
       if (!cancelled) {
@@ -51,6 +64,22 @@ export default function DriveAttachments({ taskId }: DriveAttachmentsProps) {
       cancelled = true;
     };
   }, [clientId, fileIds]);
+
+  const handleShowPreviews = async () => {
+    if (!clientId) return;
+    setIsLoadingPreviews(true);
+    try {
+      const ok = await loadDriveThumbnails(
+        clientId,
+        fileIds,
+        (fileId, url) => setThumbnails((prev) => ({ ...prev, [fileId]: url })),
+        { interactive: true },
+      );
+      if (ok) setNeedsPreviewAuth(false);
+    } finally {
+      setIsLoadingPreviews(false);
+    }
+  };
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["drive-attachments", taskId] });
@@ -105,22 +134,41 @@ export default function DriveAttachments({ taskId }: DriveAttachmentsProps) {
         <h2 className="text-sm font-medium text-foreground/90">
           {t("tasks:driveAttachments.title")}
         </h2>
-        {canAttach && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1 text-xs"
-            onClick={handleAttach}
-            disabled={isPicking}
-          >
-            {isPicking ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Plus className="h-3.5 w-3.5" />
-            )}
-            {t("tasks:driveAttachments.attach")}
-          </Button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {needsPreviewAuth && attachments.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 text-xs text-muted-foreground"
+              onClick={handleShowPreviews}
+              disabled={isLoadingPreviews}
+              title={t("tasks:driveAttachments.showPreviewsHint")}
+            >
+              {isLoadingPreviews ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Eye className="h-3.5 w-3.5" />
+              )}
+              {t("tasks:driveAttachments.showPreviews")}
+            </Button>
+          )}
+          {canAttach && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1 text-xs"
+              onClick={handleAttach}
+              disabled={isPicking}
+            >
+              {isPicking ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Plus className="h-3.5 w-3.5" />
+              )}
+              {t("tasks:driveAttachments.attach")}
+            </Button>
+          )}
+        </div>
       </div>
 
       {attachments.length > 0 && (

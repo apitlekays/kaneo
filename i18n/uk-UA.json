@@ -1711,7 +1711,9 @@
 			"addError": "Couldn’t attach file",
 			"removeError": "Couldn’t remove attachment",
 			"openInDrive": "Open in Google Drive",
-			"remove": "Remove attachment"
+			"remove": "Remove attachment",
+			"showPreviews": "Show previews",
+			"showPreviewsHint": "Sign in to Google Drive once this session to load thumbnail previews"
 		},
 		"projectLocked": {
 			"title": "Project locked",
