@@ -89,7 +89,11 @@ function initials(value: string | null | undefined): string {
 
 function capitalize(value: string): string {
   if (!value) return value;
-  return value.charAt(0).toUpperCase() + value.slice(1);
+  // Title-case hyphenated role names too, e.g. "global-admin" -> "Global Admin".
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function MembersTable({ workspaceId, invitations, users }: Props) {

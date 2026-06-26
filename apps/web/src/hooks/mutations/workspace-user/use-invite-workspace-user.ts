@@ -5,7 +5,7 @@ import queryClient from "@/query-client";
 type InviteWorkspaceUserRequest = {
   workspaceId: string;
   email: string;
-  role: "admin" | "member" | "owner";
+  role: "viewer" | "member" | "admin" | "global-admin" | "owner";
   resend?: boolean;
 };
 
@@ -19,7 +19,9 @@ function useInviteWorkspaceUser() {
     }: InviteWorkspaceUserRequest) => {
       const { data, error } = await authClient.organization.inviteMember({
         email,
-        role,
+        // Dynamic roles (viewer/global-admin) are valid at runtime but not in
+        // better-auth's static role union.
+        role: role as "member",
         organizationId: workspaceId,
         resend,
       });

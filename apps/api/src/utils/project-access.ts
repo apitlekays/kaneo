@@ -40,13 +40,18 @@ export async function getWorkspaceRole(
   return member?.role ?? null;
 }
 
-/** Workspace owner/admin (or instance admin) — sees and manages every project. */
+// Workspace roles that grant global-admin powers (see/manage every project).
+// `owner` is the SuperUser; `global-admin` is the dedicated role; `admin` is
+// kept for backward compatibility until existing rows are migrated.
+const GLOBAL_ADMIN_ROLES = new Set(["owner", "global-admin", "admin"]);
+
+/** Workspace owner/global-admin (or instance admin) — sees and manages every project. */
 export async function isGlobalAdmin(
   userId: string,
   workspaceId: string,
 ): Promise<boolean> {
   const role = await getWorkspaceRole(userId, workspaceId);
-  if (role === "owner" || role === "admin") return true;
+  if (role && GLOBAL_ADMIN_ROLES.has(role)) return true;
   return isInstanceAdminUser(userId);
 }
 
@@ -125,6 +130,30 @@ export function requireProjectAccess(projectIdKey = "projectId") {
     if (!(await canAccessProject(userId, projectId, workspaceId))) {
       throw new HTTPException(403, {
         message: "You don't have access to this project",
+      });
+    }
+
+    return next();
+  };
+}
+
+/**
+ * Middleware: require the user to be a Project Manager (or global admin) for the
+ * project named by `projectIdKey`. Used to gate project-settings edits.
+ */
+export function requireProjectManager(projectIdKey = "id") {
+  return async (c: Context, next: Next) => {
+    const userId = c.get("userId");
+    const workspaceId = c.get("workspaceId");
+    const projectId = c.req.param(projectIdKey);
+
+    if (!userId || !workspaceId || !projectId) {
+      throw new HTTPException(400, { message: "Missing project context" });
+    }
+
+    if (!(await canManageProjectMembers(userId, projectId, workspaceId))) {
+      throw new HTTPException(403, {
+        message: "Only project managers can change this project",
       });
     }
 

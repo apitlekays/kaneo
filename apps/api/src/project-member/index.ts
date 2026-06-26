@@ -13,6 +13,7 @@ import {
 import {
   canAccessProject,
   canManageProjectMembers,
+  isGlobalAdmin,
 } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 
@@ -77,6 +78,13 @@ const projectMember = new Hono<{
       ) {
         throw new HTTPException(403, {
           message: "You can't manage this project's members",
+        });
+      }
+
+      // Only Global Admins (and owners) can assign the Project Manager role.
+      if (role === "manager" && !(await isGlobalAdmin(userId, workspaceId))) {
+        throw new HTTPException(403, {
+          message: "Only global admins can assign project managers",
         });
       }
 

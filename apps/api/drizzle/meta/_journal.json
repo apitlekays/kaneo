@@ -260,6 +260,13 @@
 			"when": 1782438203351,
 			"tag": "0036_project_access_request",
 			"breakpoints": true
+		},
+		{
+			"idx": 37,
+			"version": "7",
+			"when": 1782445316282,
+			"tag": "0037_migrate_admin_to_global_admin",
+			"breakpoints": true
 		}
 	]
 }

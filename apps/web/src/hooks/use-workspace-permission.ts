@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { useProjectMembers } from "@/hooks/queries/project-member/use-project-members";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useGetActiveWorkspaceUser } from "@/hooks/queries/workspace-users/use-active-workspace-user";
 import { authClient } from "@/lib/auth-client";
@@ -47,6 +49,21 @@ export function useWorkspacePermission() {
   const workspaceId = activeWorkspace?.id;
   const role = activeMember?.role as string | undefined;
 
+  // Task permissions are project-membership-based: any member of the current
+  // project (manager or member) can CRUD tasks, regardless of workspace role.
+  // Global admins/owners are covered by the workspace-role checks below.
+  const params = useParams({ strict: false });
+  const projectId =
+    "projectId" in params && typeof params.projectId === "string"
+      ? params.projectId
+      : undefined;
+  const { data: session } = authClient.useSession();
+  const { data: currentProjectMembers } = useProjectMembers(projectId ?? "");
+  const isProjectMember = Boolean(
+    projectId &&
+      currentProjectMembers?.some((m) => m.userId === session?.user?.id),
+  );
+
   // One query that fans out to all capability checks in parallel and caches
   // the resulting map by (workspaceId, role). Refetches when either changes
   // — e.g., when the admin edits the role's permissions in the Roles UI and
@@ -92,11 +109,11 @@ export function useWorkspacePermission() {
       canManageProjects: () => can.manageProjects,
       canCreateProjects: () => can.createProjects,
       canDeleteProjects: () => can.deleteProjects,
-      canManageTasks: () => can.manageTasks,
-      canCreateTasks: () => can.createTasks,
-      canEditTasks: () => can.editTasks,
-      canDeleteTasks: () => can.deleteTasks,
-      canAssignTasks: () => can.assignTasks,
+      canManageTasks: () => can.manageTasks || isProjectMember,
+      canCreateTasks: () => can.createTasks || isProjectMember,
+      canEditTasks: () => can.editTasks || isProjectMember,
+      canDeleteTasks: () => can.deleteTasks || isProjectMember,
+      canAssignTasks: () => can.assignTasks || isProjectMember,
       canManageLabels: () => can.manageLabels,
       canManageWorkspace: () => can.manageWorkspace,
       canDeleteWorkspace: () => can.deleteWorkspace,
@@ -118,7 +135,7 @@ export function useWorkspacePermission() {
         }
       },
     };
-  }, [can, workspaceId]);
+  }, [can, workspaceId, isProjectMember]);
 
   return {
     ...helpers,
@@ -126,7 +143,7 @@ export function useWorkspacePermission() {
     member: activeMember,
     role,
     isOwner: role === "owner",
-    isAdmin: role === "owner" || role === "admin",
+    isAdmin: role === "owner" || role === "admin" || role === "global-admin",
     // True while the first capability fetch is in flight. Useful for hiding
     // action UI during the initial render instead of flashing it on then
     // off when the server check resolves.

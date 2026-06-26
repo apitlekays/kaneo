@@ -24,15 +24,29 @@ export const viewer = ac.newRole({
   workspace: ["read"],
 });
 
+// Legacy workspace "member" role. Project creation is reserved for Global
+// Admins/owners, so it no longer grants project:create. (Task CRUD is enforced
+// by project membership, not this role.)
 export const member = ac.newRole({
   ...memberAc.statements,
-  project: ["create", "read"],
+  project: ["read"],
   task: ["create", "read", "update"],
   label: ["create", "read", "update", "delete"],
   workspace: ["read"],
 });
 
 export const admin = ac.newRole({
+  ...adminAc.statements,
+  project: ["create", "read", "update", "delete", "share"],
+  task: ["create", "read", "update", "delete", "assign"],
+  label: ["create", "read", "update", "delete"],
+  workspace: ["read", "update", "manage_settings"],
+});
+
+// Global Admin: workspace-level admin who creates projects and assigns project
+// managers. Same capabilities as the legacy `admin` role (which is migrated to
+// this on upgrade). Task CRUD is enforced at the project level, not here.
+export const globalAdmin = ac.newRole({
   ...adminAc.statements,
   project: ["create", "read", "update", "delete", "share"],
   task: ["create", "read", "update", "delete", "assign"],
@@ -48,7 +62,13 @@ export const owner = ac.newRole({
   workspace: ["read", "update", "delete", "manage_settings"],
 });
 
-export const builtInRoles = { viewer, member, admin, owner } as const;
+export const builtInRoles = {
+  viewer,
+  member,
+  admin,
+  "global-admin": globalAdmin,
+  owner,
+} as const;
 
 export type BuiltInRoleName = keyof typeof builtInRoles;
 
@@ -57,7 +77,12 @@ export type BuiltInRoleName = keyof typeof builtInRoles;
 // are reserved and the rows are auto-created on workspace creation /
 // backfilled at boot. `owner` is intentionally NOT in this list because it
 // stays a true static role on the better-auth side.
-export const DEFAULT_ROLE_NAMES = ["viewer", "member", "admin"] as const;
+export const DEFAULT_ROLE_NAMES = [
+  "viewer",
+  "member",
+  "admin",
+  "global-admin",
+] as const;
 export type DefaultRoleName = (typeof DEFAULT_ROLE_NAMES)[number];
 
 function toMutablePayload(
@@ -81,4 +106,5 @@ export const defaultRolePayloads: Record<
   viewer: toMutablePayload(viewer.statements),
   member: toMutablePayload(member.statements),
   admin: toMutablePayload(admin.statements),
+  "global-admin": toMutablePayload(globalAdmin.statements),
 };
