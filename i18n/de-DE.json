@@ -1030,6 +1030,19 @@
 				"connectedAs": "Connected as {{email}}",
 				"notConfigured": "Google integration isn’t configured on this instance."
 			}
+		},
+		"projectMembers": {
+			"title": "Members",
+			"subtitle": "Control who can access this project.",
+			"add": "Add",
+			"addPlaceholder": "Add a workspace member…",
+			"noneToAdd": "Everyone is already a member",
+			"addSuccess": "Member added",
+			"addError": "Couldn’t add member",
+			"removeError": "Couldn’t remove member",
+			"remove": "Remove from project",
+			"roleManager": "Manager",
+			"roleMember": "Member"
 		}
 	},
 	"navigation": {
@@ -1073,7 +1086,8 @@
 			"deleteConfirmTitle": "Projekt löschen?",
 			"deleteConfirmDescription": "Dadurch wird das Projekt und alle zugehörigen Daten dauerhaft entfernt. Diese Aktion kann nicht rückgängig gemacht werden.",
 			"deletedToast": "Projekt gelöscht",
-			"deleteProject": "Projekt löschen"
+			"deleteProject": "Projekt löschen",
+			"lockedTooltip": "You don’t have access to this project"
 		},
 		"search": {
 			"inputPlaceholder": "Aufgaben, Projekte, Kommentare suchen...",

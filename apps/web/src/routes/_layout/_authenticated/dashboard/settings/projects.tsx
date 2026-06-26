@@ -5,7 +5,7 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
-import { Eye, GitBranch, Plug, Settings } from "lucide-react";
+import { Eye, GitBranch, Plug, Settings, Users } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -43,6 +43,11 @@ function RouteComponent() {
       title: t("settings:projectGeneral.title"),
       icon: Settings,
       segment: "general",
+    },
+    {
+      title: t("settings:projectMembers.title"),
+      icon: Users,
+      segment: "members",
     },
     {
       title: t("settings:projectVisibility.title"),

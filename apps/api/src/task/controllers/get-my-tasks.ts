@@ -7,6 +7,7 @@ import {
   taskTable,
   userTable,
 } from "../../database/schema";
+import { getMemberProjectIds, isGlobalAdmin } from "../../utils/project-access";
 
 const priorityCaseExpr = sql<number>`CASE
   WHEN ${taskTable.priority} = 'urgent' THEN 4
@@ -22,6 +23,17 @@ END`;
  * excluded so the view reflects an actionable personal work queue.
  */
 async function getMyTasks(workspaceId: string, userId: string) {
+  // Restrict to projects the user can access (members only; global admins see
+  // all). Without access to any project, the result is empty.
+  const globalAdmin = await isGlobalAdmin(userId, workspaceId);
+  const accessibleProjectIds = globalAdmin
+    ? null
+    : await getMemberProjectIds(userId, workspaceId);
+
+  if (accessibleProjectIds && accessibleProjectIds.length === 0) {
+    return { data: { workspaceId, total: 0, projects: [] } };
+  }
+
   const tasks = await db
     .select({
       id: taskTable.id,
@@ -61,6 +73,9 @@ async function getMyTasks(workspaceId: string, userId: string) {
         // Exclude tasks sitting in a final/done column. IS NOT TRUE also keeps
         // tasks whose status doesn't map to a column (NULL isFinal).
         sql`${columnTable.isFinal} IS NOT TRUE`,
+        ...(accessibleProjectIds
+          ? [inArray(taskTable.projectId, accessibleProjectIds)]
+          : []),
       ),
     )
     .orderBy(

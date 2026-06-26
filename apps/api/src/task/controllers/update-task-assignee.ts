@@ -1,8 +1,9 @@
 import { eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import db from "../../database";
-import { taskTable, userTable } from "../../database/schema";
+import { projectTable, taskTable, userTable } from "../../database/schema";
 import { publishEvent } from "../../events";
+import { canAccessProject } from "../../utils/project-access";
 
 async function updateTaskAssignee({
   id,
@@ -26,6 +27,27 @@ async function updateTaskAssignee({
   const nextAssigneeId = userId || null;
   if (existingTask.userId === nextAssigneeId) {
     return existingTask;
+  }
+
+  // A user can only be assigned a task in a project they belong to.
+  if (nextAssigneeId) {
+    const [project] = await db
+      .select({ workspaceId: projectTable.workspaceId })
+      .from(projectTable)
+      .where(eq(projectTable.id, existingTask.projectId))
+      .limit(1);
+    if (
+      project &&
+      !(await canAccessProject(
+        nextAssigneeId,
+        existingTask.projectId,
+        project.workspaceId,
+      ))
+    ) {
+      throw new HTTPException(400, {
+        message: "User must be a member of the project to be assigned",
+      });
+    }
   }
 
   const [updatedTask] = await db

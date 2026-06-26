@@ -252,9 +252,42 @@ export const projectTable = pgTable(
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     isPublic: boolean("is_public").default(false),
     archivedAt: timestamp("archived_at", { mode: "date" }),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [
     unique("project_workspace_id_id_unique").on(table.workspaceId, table.id),
+  ],
+);
+
+/**
+ * Per-project membership. Only members (plus workspace owners/admins, who are
+ * "global admins") can access a project. `role` is "manager" | "member" —
+ * managers (and the creator) can manage project membership.
+ */
+export const projectMemberTable = pgTable(
+  "project_member",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projectTable.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("member"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("project_member_projectId_idx").on(table.projectId),
+    index("project_member_userId_idx").on(table.userId),
+    unique("project_member_project_user_unique").on(
+      table.projectId,
+      table.userId,
+    ),
   ],
 );
 

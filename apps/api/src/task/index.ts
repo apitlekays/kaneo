@@ -17,6 +17,7 @@ import {
   isImageContentType,
   validateTaskAssetUploadInput,
 } from "../storage/s3";
+import { requireProjectAccess } from "../utils/project-access";
 import { requireWorkspacePermission } from "../utils/require-workspace-permission";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import bulkUpdateTasks from "./controllers/bulk-update-tasks";
@@ -111,6 +112,7 @@ const task = new Hono<{
       ),
     ),
     workspaceAccess.fromProject("projectId"),
+    requireProjectAccess("projectId"),
     async (c) => {
       const { projectId } = c.req.valid("param");
       const filters = c.req.valid("query") || {};
@@ -214,6 +216,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromProject("projectId"),
+    requireProjectAccess("projectId"),
     requireWorkspacePermission({ task: ["create"] }),
     async (c) => {
       const { projectId } = c.req.param();
@@ -397,6 +400,7 @@ const task = new Hono<{
     }),
     validator("param", v.object({ projectId: v.string() })),
     workspaceAccess.fromProject("projectId"),
+    requireProjectAccess("projectId"),
     async (c) => {
       const { projectId } = c.req.valid("param");
 
@@ -438,6 +442,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromProject("projectId"),
+    requireProjectAccess("projectId"),
     requireWorkspacePermission({ task: ["create"] }),
     async (c) => {
       const { projectId } = c.req.valid("param");

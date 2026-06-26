@@ -3578,6 +3578,58 @@
 						"toastDisconnectError",
 						"googleCalendar"
 					]
+				},
+				"projectMembers": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"title": {
+							"type": "string"
+						},
+						"subtitle": {
+							"type": "string"
+						},
+						"add": {
+							"type": "string"
+						},
+						"addPlaceholder": {
+							"type": "string"
+						},
+						"noneToAdd": {
+							"type": "string"
+						},
+						"addSuccess": {
+							"type": "string"
+						},
+						"addError": {
+							"type": "string"
+						},
+						"removeError": {
+							"type": "string"
+						},
+						"remove": {
+							"type": "string"
+						},
+						"roleManager": {
+							"type": "string"
+						},
+						"roleMember": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"title",
+						"subtitle",
+						"add",
+						"addPlaceholder",
+						"noneToAdd",
+						"addSuccess",
+						"addError",
+						"removeError",
+						"remove",
+						"roleManager",
+						"roleMember"
+					]
 				}
 			},
 			"required": [
@@ -3759,6 +3811,9 @@
 						},
 						"deleteProject": {
 							"type": "string"
+						},
+						"lockedTooltip": {
+							"type": "string"
 						}
 					},
 					"required": [
@@ -3770,7 +3825,8 @@
 						"deleteConfirmTitle",
 						"deleteConfirmDescription",
 						"deletedToast",
-						"deleteProject"
+						"deleteProject",
+						"lockedTooltip"
 					]
 				},
 				"search": {

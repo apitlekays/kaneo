@@ -46,6 +46,7 @@ import { initializePlugins } from "./plugins";
 import { migrateGitHubIntegration } from "./plugins/github/migration";
 import project from "./project";
 import { getPublicProject } from "./project/controllers/get-public-project";
+import projectMember from "./project-member";
 import { initializeScheduler, shutdownScheduler } from "./scheduler";
 import search from "./search";
 import slackIntegration from "./slack-integration";
@@ -580,6 +581,7 @@ export function createApp() {
   const workspaceApi = api.route("/workspace", workspace);
   api.route("/google-calendar", googleCalendar);
   api.route("/drive-attachment", driveAttachment);
+  api.route("/project-member", projectMember);
 
   app.route(
     "/",

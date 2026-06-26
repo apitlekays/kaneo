@@ -1,5 +1,9 @@
 import db from "../../database";
-import { columnTable, projectTable } from "../../database/schema";
+import {
+  columnTable,
+  projectMemberTable,
+  projectTable,
+} from "../../database/schema";
 
 export const DEFAULT_PROJECT_COLUMNS = [
   { name: "To Do", slug: "to-do", position: 0, isFinal: false },
@@ -13,6 +17,7 @@ async function createProject(
   name: string,
   icon: string,
   slug: string,
+  createdBy?: string,
 ) {
   return db.transaction(async (tx) => {
     const [createdProject] = await tx
@@ -22,6 +27,7 @@ async function createProject(
         name,
         icon,
         slug,
+        createdBy: createdBy ?? null,
       })
       .returning();
 
@@ -33,6 +39,15 @@ async function createProject(
           slug: col.slug,
           position: col.position,
           isFinal: col.isFinal,
+        });
+      }
+
+      // The creator becomes the project's first member (a manager).
+      if (createdBy) {
+        await tx.insert(projectMemberTable).values({
+          projectId: createdProject.id,
+          userId: createdBy,
+          role: "manager",
         });
       }
     }

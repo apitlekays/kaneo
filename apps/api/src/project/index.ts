@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import * as v from "valibot";
 import { projectSchema } from "../schemas";
+import { requireProjectAccess } from "../utils/project-access";
 import { requireWorkspacePermission } from "../utils/require-workspace-permission";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import archiveProjectCtrl from "./controllers/archive-project";
@@ -47,6 +48,7 @@ const project = new Hono<{
       const projects = await getProjectsCtrl(
         workspaceId,
         includeArchived === "true",
+        c.get("userId"),
       );
       return c.json(projects);
     },
@@ -80,7 +82,13 @@ const project = new Hono<{
     async (c) => {
       const { name, icon, slug } = c.req.valid("json");
       const workspaceId = c.get("workspaceId");
-      const newProject = await createProjectCtrl(workspaceId, name, icon, slug);
+      const newProject = await createProjectCtrl(
+        workspaceId,
+        name,
+        icon,
+        slug,
+        c.get("userId"),
+      );
       return c.json(newProject);
     },
   )
@@ -101,6 +109,7 @@ const project = new Hono<{
     }),
     validator("param", v.object({ id: v.string() })),
     workspaceAccess.fromProject(),
+    requireProjectAccess("id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const workspaceId = c.get("workspaceId");
