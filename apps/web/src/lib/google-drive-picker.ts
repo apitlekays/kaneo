@@ -54,7 +54,17 @@ async function ensurePickerApi(): Promise<void> {
   });
 }
 
-function getAccessToken(clientId: string): Promise<string> {
+function ensureGis(): Promise<void> {
+  return loadScript("https://accounts.google.com/gsi/client");
+}
+
+/**
+ * Request a Drive access token. `prompt`:
+ *  - ""     → silent if already granted, otherwise GIS shows a consent popup.
+ *  - "none" → strictly silent; rejects (no popup) if interaction is required.
+ * Used by the picker (interactive, "") and by thumbnail loading (silent, "none").
+ */
+function requestToken(clientId: string, prompt: "" | "none"): Promise<string> {
   // Reuse a still-valid token (60s safety buffer) to avoid re-prompting.
   if (cachedToken && cachedToken.expiresAt - Date.now() > 60_000) {
     return Promise.resolve(cachedToken.token);
@@ -79,9 +89,34 @@ function getAccessToken(clientId: string): Promise<string> {
       };
       resolve(response.access_token);
     };
-    // "" = silent if already granted; GIS shows consent only when needed.
-    tokenClient.requestAccessToken({ prompt: "" });
+    // Fires when a silent ("none") request can't complete without UI.
+    tokenClient.error_callback = (error: AnyGoogle) => {
+      reject(new Error(error?.type ?? "drive_token_error"));
+    };
+    tokenClient.requestAccessToken({ prompt });
   });
+}
+
+function getAccessToken(clientId: string): Promise<string> {
+  return requestToken(clientId, "");
+}
+
+/** True when a non-expired Drive token is cached in memory this session. */
+export function hasDriveToken(): boolean {
+  return Boolean(cachedToken && cachedToken.expiresAt - Date.now() > 60_000);
+}
+
+/**
+ * Obtain a Drive access token outside the picker (e.g. to load thumbnails).
+ * `silent` (default) never shows UI — it rejects if consent would be needed,
+ * so callers can fall back gracefully without surprising the user with a popup.
+ */
+export async function getDriveAccessToken(
+  clientId: string,
+  opts: { silent?: boolean } = {},
+): Promise<string> {
+  await ensureGis();
+  return requestToken(clientId, opts.silent === false ? "" : "none");
 }
 
 export type PickedFile = {
