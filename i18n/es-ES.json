@@ -842,7 +842,7 @@
 			"addError": "Couldn’t add member",
 			"removeError": "Couldn’t remove member",
 			"remove": "Remove from project",
-			"roleManager": "Manager",
+			"roleManager": "Project Manager",
 			"roleMember": "Member",
 			"requestsTitle": "Requests",
 			"requestsSubtitle": "People requesting access to this project.",
