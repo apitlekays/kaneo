@@ -3,6 +3,7 @@ export {
   admin,
   type BuiltInRoleName,
   builtInRoles,
+  globalAdmin,
   member,
   owner,
   statement,

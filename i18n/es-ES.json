@@ -1743,7 +1743,11 @@
 			"tagPeople": "Tag people",
 			"time": "Time",
 			"title": "Minutes of Meeting",
-			"tagPerson": "Tag a person"
+			"tagPerson": "Tag a person",
+			"lock": "Lock",
+			"locked": "Locked",
+			"noRows": "No items",
+			"unlock": "Unlock"
 		}
 	},
 	"invitations": {
@@ -1824,7 +1828,8 @@
 			"owner": "Propietario",
 			"admin": "Admin",
 			"member": "Miembro",
-			"viewer": "Viewer"
+			"viewer": "Viewer",
+			"global-admin": "Global Admin"
 		},
 		"members": {
 			"pageTitle": "Miembros",
@@ -1932,6 +1937,7 @@
 			"linked": "Linked",
 			"meetings": "Meetings",
 			"open": "Open"
-		}
+		},
+		"doneStatus": "Done"
 	}
 }

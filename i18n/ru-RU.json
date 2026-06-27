@@ -1803,7 +1803,11 @@
 			"tagPeople": "Tag people",
 			"time": "Time",
 			"title": "Minutes of Meeting",
-			"tagPerson": "Tag a person"
+			"tagPerson": "Tag a person",
+			"lock": "Lock",
+			"locked": "Locked",
+			"noRows": "No items",
+			"unlock": "Unlock"
 		}
 	},
 	"invitations": {
@@ -1886,7 +1890,8 @@
 			"owner": "Владелец",
 			"admin": "Администратор",
 			"member": "Участник",
-			"viewer": "Viewer"
+			"viewer": "Viewer",
+			"global-admin": "Global Admin"
 		},
 		"members": {
 			"pageTitle": "Участники",
@@ -1994,6 +1999,7 @@
 			"linked": "Linked",
 			"meetings": "Meetings",
 			"open": "Open"
-		}
+		},
+		"doneStatus": "Done"
 	}
 }

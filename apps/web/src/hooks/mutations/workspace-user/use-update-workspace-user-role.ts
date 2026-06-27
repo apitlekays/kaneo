@@ -18,7 +18,7 @@ function useUpdateWorkspaceUserRole() {
       const { data, error } = await authClient.organization.updateMemberRole({
         memberId,
         organizationId: workspaceId,
-        role: role as "admin" | "member" | "owner",
+        role: role as "admin" | "member" | "owner" | "viewer" | "global-admin",
       });
 
       if (error) {

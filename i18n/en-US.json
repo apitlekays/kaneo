@@ -1827,7 +1827,8 @@
 			"owner": "Owner",
 			"admin": "Admin",
 			"member": "Member",
-			"viewer": "Viewer"
+			"viewer": "Viewer",
+			"global-admin": "Global Admin"
 		},
 		"members": {
 			"pageTitle": "Members",

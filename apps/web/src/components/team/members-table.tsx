@@ -237,8 +237,10 @@ function MembersTable({ workspaceId, invitations, users }: Props) {
                         <SelectItem value="member">
                           {t("team:roles.member", { defaultValue: "Member" })}
                         </SelectItem>
-                        <SelectItem value="admin">
-                          {t("team:roles.admin", { defaultValue: "Admin" })}
+                        <SelectItem value="global-admin">
+                          {t("team:roles.global-admin", {
+                            defaultValue: "Global Admin",
+                          })}
                         </SelectItem>
                         {/* Owner is intentionally NOT offered here: the better-auth
                             organization plugin requires an explicit ownership

@@ -11,7 +11,7 @@ import {
   organizationClient,
 } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import { ac, admin, member, owner, viewer } from "./permissions";
+import { ac, admin, globalAdmin, member, owner, viewer } from "./permissions";
 
 const getBaseURL = () => {
   const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:1337";
@@ -38,6 +38,7 @@ export const authClient = createAuthClient({
         member,
         admin,
         owner,
+        "global-admin": globalAdmin,
       },
       dynamicAccessControl: {
         enabled: true,
