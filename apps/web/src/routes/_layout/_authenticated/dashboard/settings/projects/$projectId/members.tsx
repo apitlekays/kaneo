@@ -121,6 +121,24 @@ function RouteComponent() {
     }
   };
 
+  // Promoting/demoting a project's manager is reserved for Global Admins/owner.
+  const handleChangeRole = async (
+    userId: string,
+    role: "manager" | "member",
+  ) => {
+    try {
+      await addProjectMember(projectId, userId, role);
+      await invalidate();
+      toast.success(t("settings:projectMembers.roleUpdated"));
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t("settings:projectMembers.roleUpdateError"),
+      );
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div className="space-y-2">
@@ -197,11 +215,38 @@ function RouteComponent() {
                   {member.email}
                 </p>
               </div>
-              <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                {member.role === "manager"
-                  ? t("settings:projectMembers.roleManager")
-                  : t("settings:projectMembers.roleMember")}
-              </span>
+              {isAdmin ? (
+                <Select
+                  value={member.role === "manager" ? "manager" : "member"}
+                  onValueChange={(value) => {
+                    if (value === "manager" || value === "member") {
+                      handleChangeRole(member.userId, value);
+                    }
+                  }}
+                >
+                  <SelectTrigger size="sm" className="h-7 w-36 text-xs">
+                    <SelectValue>
+                      {member.role === "manager"
+                        ? t("settings:projectMembers.roleManager")
+                        : t("settings:projectMembers.roleMember")}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">
+                      {t("settings:projectMembers.roleMember")}
+                    </SelectItem>
+                    <SelectItem value="manager">
+                      {t("settings:projectMembers.roleManager")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  {member.role === "manager"
+                    ? t("settings:projectMembers.roleManager")
+                    : t("settings:projectMembers.roleMember")}
+                </span>
+              )}
               {canManage && member.userId !== currentUserId && (
                 <Button
                   variant="ghost"

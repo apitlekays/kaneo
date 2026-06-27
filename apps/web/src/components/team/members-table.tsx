@@ -234,9 +234,6 @@ function MembersTable({ workspaceId, invitations, users }: Props) {
                         <SelectItem value="viewer">
                           {t("team:roles.viewer", { defaultValue: "Viewer" })}
                         </SelectItem>
-                        <SelectItem value="member">
-                          {t("team:roles.member", { defaultValue: "Member" })}
-                        </SelectItem>
                         <SelectItem value="global-admin">
                           {t("team:roles.global-admin", {
                             defaultValue: "Global Admin",

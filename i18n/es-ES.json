@@ -847,7 +847,9 @@
 			"requestsTitle": "Requests",
 			"requestsSubtitle": "People requesting access to this project.",
 			"approve": "Approve",
-			"deny": "Deny"
+			"deny": "Deny",
+			"roleUpdated": "Role updated",
+			"roleUpdateError": "Couldn’t update role"
 		},
 		"giteaIntegration": {
 			"actionsHint": "Verify access and connect",

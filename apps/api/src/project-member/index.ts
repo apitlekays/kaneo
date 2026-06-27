@@ -88,6 +88,31 @@ const projectMember = new Hono<{
         });
       }
 
+      // Changing the Project Manager status of an EXISTING member — in either
+      // direction — is also reserved for Global Admins/owner. Plain project
+      // managers can still add/remove regular members, just not appoint or
+      // demote other managers.
+      const [existingMembership] = await db
+        .select({ role: projectMemberTable.role })
+        .from(projectMemberTable)
+        .where(
+          and(
+            eq(projectMemberTable.projectId, projectId),
+            eq(projectMemberTable.userId, targetUserId),
+          ),
+        )
+        .limit(1);
+      const nextRole = role ?? "member";
+      const isManagerRoleChange =
+        existingMembership !== undefined &&
+        existingMembership.role !== nextRole &&
+        (existingMembership.role === "manager" || nextRole === "manager");
+      if (isManagerRoleChange && !(await isGlobalAdmin(userId, workspaceId))) {
+        throw new HTTPException(403, {
+          message: "Only global admins can change project manager roles",
+        });
+      }
+
       // Only workspace members can be added to a project.
       const [member] = await db
         .select({ id: workspaceUserTable.id })
