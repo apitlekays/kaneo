@@ -227,6 +227,9 @@ export default function ProjectMinutes({
                         <ColoredAvatar
                           key={p.id}
                           name={p.name}
+                          image={
+                            p.userId ? memberById.get(p.userId)?.image : null
+                          }
                           seed={p.userId ?? p.name}
                           className="h-5 w-5 border border-background"
                           fallbackClassName="text-[8px]"

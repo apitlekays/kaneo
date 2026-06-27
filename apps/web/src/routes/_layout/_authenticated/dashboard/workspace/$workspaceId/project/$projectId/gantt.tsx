@@ -19,6 +19,7 @@ import { GanttTaskBar } from "@/components/gantt/gantt-task-bar";
 import PageTitle from "@/components/page-title";
 import TaskDetailsSheet from "@/components/task/task-details-sheet";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { Input } from "@/components/ui/input";
 import { useGetTasks } from "@/hooks/queries/task/use-get-tasks";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -354,13 +355,27 @@ function RouteComponent() {
                               <p className="w-full line-clamp-1 text-xs font-medium leading-tight text-foreground">
                                 {task.title}
                               </p>
-                              <p className="w-full truncate text-[11px] leading-tight text-muted-foreground">
-                                {format(task.scheduleStart, "MMM d")} -{" "}
-                                {format(task.scheduleEnd, "MMM d")}
-                                {task.assigneeName
-                                  ? ` • ${task.assigneeName}`
-                                  : ""}
-                              </p>
+                              <span className="flex w-full items-center gap-1 text-[11px] leading-tight text-muted-foreground">
+                                <span className="shrink-0">
+                                  {format(task.scheduleStart, "MMM d")} -{" "}
+                                  {format(task.scheduleEnd, "MMM d")}
+                                </span>
+                                {task.assigneeName && (
+                                  <span className="flex min-w-0 items-center gap-1">
+                                    <span aria-hidden>•</span>
+                                    <ColoredAvatar
+                                      name={task.assigneeName}
+                                      image={task.assigneeImage}
+                                      seed={task.userId}
+                                      className="h-3.5 w-3.5 shrink-0"
+                                      fallbackClassName="text-[7px]"
+                                    />
+                                    <span className="truncate">
+                                      {task.assigneeName}
+                                    </span>
+                                  </span>
+                                )}
+                              </span>
                             </button>
                           </div>
                         ) : null}
