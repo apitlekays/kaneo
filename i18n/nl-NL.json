@@ -1091,7 +1091,21 @@
 			"invitations": "Uitnodigingen",
 			"more": "Meer",
 			"backToBoard": "Terug naar bord",
-			"home": "Home"
+			"home": "Home",
+			"categories": {
+				"assetsManagement": "Assets Management",
+				"customerService": "Customer Service",
+				"finance": "Finance",
+				"financeAccounting": "Finance & Accounting",
+				"generalManagement": "General Management",
+				"humanResources": "Human Resources",
+				"informationTechnology": "Information Technology",
+				"legalCompliances": "Legal & Compliances",
+				"marketing": "Marketing",
+				"operations": "Operations & Administration",
+				"revenue": "Revenue",
+				"sales": "Sales"
+			}
 		},
 		"projectList": {
 			"viewProject": "Project bekijken",
@@ -1941,5 +1955,8 @@
 			"open": "Open"
 		},
 		"doneStatus": "Done"
+	},
+	"comingSoon": {
+		"description": "This section is coming soon. We are still building it."
 	}
 }

@@ -1,5 +1,6 @@
 import type * as React from "react";
 
+import { NavCategories } from "@/components/nav-categories";
 import { NavMain } from "@/components/nav-main";
 import { NavProjects } from "@/components/nav-projects";
 import { ThemeToggleDropdown } from "@/components/theme-toggle-dropdown";
@@ -40,6 +41,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent className="overflow-hidden gap-1 py-1">
         <Search />
         <NavMain />
+        <NavCategories />
         <NavProjects />
       </SidebarContent>
       <SidebarFooter>

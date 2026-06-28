@@ -1091,7 +1091,21 @@
 			"invitations": "Invitations",
 			"more": "More",
 			"backToBoard": "Back to board",
-			"home": "Home"
+			"home": "Home",
+			"categories": {
+				"operations": "Operations & Administration",
+				"generalManagement": "General Management",
+				"humanResources": "Human Resources",
+				"legalCompliances": "Legal & Compliances",
+				"informationTechnology": "Information Technology",
+				"assetsManagement": "Assets Management",
+				"revenue": "Revenue",
+				"marketing": "Marketing",
+				"sales": "Sales",
+				"customerService": "Customer Service",
+				"finance": "Finance",
+				"financeAccounting": "Finance & Accounting"
+			}
 		},
 		"projectList": {
 			"viewProject": "View Project",
@@ -1940,5 +1954,8 @@
 			"linked": "Linked"
 		},
 		"doneStatus": "Done"
+	},
+	"comingSoon": {
+		"description": "This section is coming soon. We are still building it."
 	}
 }
