@@ -153,7 +153,7 @@ async function sendSlackMessage(
             type: "mrkdwn",
             text: data.actorName
               ? `Triggered by ${escapeSlack(data.actorName)}`
-              : "Triggered by Kaneo",
+              : "Triggered by MAPIMCore",
           },
         ],
       },

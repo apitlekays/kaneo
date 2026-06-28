@@ -12,23 +12,23 @@ export type OtpEmailProps = {
 
 const messages = {
   en: {
-    preview: "Your Kaneo verification code",
+    preview: "Your MAPIMCore verification code",
     title: "Your verification code",
     subtitle: "Enter this one-time code to finish signing in.",
-    code: "is your Kaneo verification code.",
+    code: "is your MAPIMCore verification code.",
     expiry: "This code expires in 15 minutes.",
     ignore: "If you didn't request this, you can ignore this email.",
-    footer: "Kaneo security email",
+    footer: "MAPIMCore security email",
   },
   de: {
-    preview: "Dein Kaneo Bestaetigungscode",
+    preview: "Dein MAPIMCore Bestaetigungscode",
     title: "Dein Bestaetigungscode",
     subtitle: "Gib diesen Einmalcode ein, um die Anmeldung abzuschliessen.",
-    code: "ist dein Kaneo Bestaetigungscode.",
+    code: "ist dein MAPIMCore Bestaetigungscode.",
     expiry: "Dieser Code laeuft in 15 Minuten ab.",
     ignore:
       "Wenn du das nicht angefordert hast, kannst du diese E-Mail ignorieren.",
-    footer: "Kaneo Sicherheits-E-Mail",
+    footer: "MAPIMCore Sicherheits-E-Mail",
   },
 } as const;
 

@@ -16,26 +16,26 @@ export type WorkspaceInvitationEmailProps = {
 
 const messages = {
   en: {
-    preview: "You're invited to {{workspaceName}} on Kaneo",
+    preview: "You're invited to {{workspaceName}} on MAPIMCore",
     title: "Join {{workspaceName}}",
     subtitle:
-      "{{inviterName}} ({{inviterEmail}}) invited you to collaborate in Kaneo.",
+      "{{inviterName}} ({{inviterEmail}}) invited you to collaborate in MAPIMCore.",
     cta: "Accept invitation",
     sameEmail: "You can accept with the same email that received this message.",
     ignore: "If this wasn't expected, you can safely ignore this email.",
-    footer: "Kaneo workspace invitation",
+    footer: "MAPIMCore workspace invitation",
   },
   de: {
-    preview: "Du wurdest zu {{workspaceName}} auf Kaneo eingeladen",
+    preview: "Du wurdest zu {{workspaceName}} auf MAPIMCore eingeladen",
     title: "{{workspaceName}} beitreten",
     subtitle:
-      "{{inviterName}} ({{inviterEmail}}) hat dich eingeladen, in Kaneo zusammenzuarbeiten.",
+      "{{inviterName}} ({{inviterEmail}}) hat dich eingeladen, in MAPIMCore zusammenzuarbeiten.",
     cta: "Einladung annehmen",
     sameEmail:
       "Du kannst die Einladung mit derselben E-Mail-Adresse annehmen, die diese Nachricht erhalten hat.",
     ignore:
       "Falls du damit nicht gerechnet hast, kannst du diese E-Mail einfach ignorieren.",
-    footer: "Kaneo Workspace-Einladung",
+    footer: "MAPIMCore Workspace-Einladung",
   },
 } as const;
 

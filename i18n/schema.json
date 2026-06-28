@@ -1,7 +1,7 @@
 {
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"$id": "https://kaneo.app/i18n/schema.json",
-	"title": "Kaneo locale schema",
+	"title": "MAPIMCore locale schema",
 	"type": "object",
 	"additionalProperties": false,
 	"properties": {
@@ -304,7 +304,7 @@
 								}
 							},
 							"required": [
-								"breadcrumbKaneo",
+								"breadcrumbMAPIMCore",
 								"title",
 								"description",
 								"namePlaceholder",

@@ -156,7 +156,7 @@ async function sendDiscordMessage(
           footer: {
             text: data.actorName
               ? `Triggered by ${data.actorName}`
-              : "Triggered by Kaneo",
+              : "Triggered by MAPIMCore",
           },
         },
       ],

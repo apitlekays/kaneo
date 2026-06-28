@@ -1,6 +1,6 @@
 {
-	"name": "Kaneo",
-	"short_name": "Kaneo",
+	"name": "MAPIMCore",
+	"short_name": "MAPIMCore",
 	"icons": [
 		{
 			"src": "/web-app-manifest-192x192.png",

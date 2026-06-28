@@ -14,7 +14,7 @@ const PasswordResetEmail = ({
   userName,
 }: PasswordResetEmailProps) => (
   <EmailShell
-    preview="Reset your Kaneo password"
+    preview="Reset your MAPIMCore password"
     title="Reset your password"
     subtitle={
       userName
@@ -31,7 +31,7 @@ const PasswordResetEmail = ({
         If you didn't request this, no changes will be made.
       </Text>
       <Section style={styles.divider} />
-      <Text style={styles.footer}>Kaneo security email</Text>
+      <Text style={styles.footer}>MAPIMCore security email</Text>
     </Section>
   </EmailShell>
 );

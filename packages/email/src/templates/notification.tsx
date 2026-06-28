@@ -15,17 +15,17 @@ export type NotificationEmailProps = {
 
 const messages = {
   en: {
-    preview: "You have a new Kaneo notification",
+    preview: "You have a new MAPIMCore notification",
     subtitle: "A notification matched your delivery preferences.",
-    footer: "Kaneo notification",
-    actionLabel: "Open in Kaneo",
+    footer: "MAPIMCore notification",
+    actionLabel: "Open in MAPIMCore",
   },
   de: {
-    preview: "Du hast eine neue Kaneo-Benachrichtigung",
+    preview: "Du hast eine neue MAPIMCore-Benachrichtigung",
     subtitle:
       "Eine Benachrichtigung entspricht deinen Zustellungs-Einstellungen.",
-    footer: "Kaneo-Benachrichtigung",
-    actionLabel: "In Kaneo oeffnen",
+    footer: "MAPIMCore-Benachrichtigung",
+    actionLabel: "In MAPIMCore oeffnen",
   },
 } as const;
 
