@@ -68,10 +68,13 @@ const user = new Hono<{
         // Stable served URL with a cache-busting version token. The object key
         // is deterministic (avatars/<userId>), so the version param is what
         // forces clients to re-fetch after a new upload overwrites the object.
-        const imageUrl = new URL(
-          `/api/user/avatar/${userId}?v=${Date.now()}`,
-          c.req.url,
-        ).toString();
+        //
+        // Store a RELATIVE URL: it resolves against whatever origin the app is
+        // served from. Baking an absolute URL from c.req.url would trap the
+        // request-time host/scheme into the DB (behind a TLS-terminating proxy
+        // that's http://<host>), which breaks on a domain change and triggers
+        // mixed-content blocking on the https frontend.
+        const imageUrl = `/api/user/avatar/${userId}?v=${Date.now()}`;
 
         return c.json({
           uploadUrl: upload.uploadUrl,
