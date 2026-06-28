@@ -844,7 +844,11 @@ const task = new Hono<{
 
       return c.json({
         id: asset.id,
-        url: new URL(`/api/asset/${asset.id}`, c.req.url).toString(),
+        // Relative URL: this gets embedded into task description/comment
+        // markdown, so an absolute URL built from c.req.url would freeze the
+        // request-time host/scheme (http://<host> behind the TLS proxy) into
+        // stored content and break on a domain change / as mixed content.
+        url: `/api/asset/${asset.id}`,
       });
     },
   )
