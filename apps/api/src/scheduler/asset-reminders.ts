@@ -1,9 +1,11 @@
-import { eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, lte, notInArray } from "drizzle-orm";
 import db from "../database";
 import {
+  assetPmScheduleTable,
   assetReminderSentTable,
   assetRenewalTable,
   registeredAssetTable,
+  workOrderTable,
 } from "../database/schema";
 import createNotification from "../notification/controllers/create-notification";
 
@@ -150,6 +152,97 @@ export async function checkAssetRemindersDue(): Promise<void> {
     } catch (error) {
       console.error("Failed to send asset renewal reminder", {
         renewalId: row.renewalId,
+        error,
+      });
+    }
+  }
+
+  await raisePreventiveMaintenanceWorkOrders();
+}
+
+/**
+ * For each active PM schedule whose nextDueDate has arrived and that has no open
+ * work order yet, raise a "scheduled" work order assigned to the custodian and
+ * notify them. The open-work-order check is the dedup.
+ */
+async function raisePreventiveMaintenanceWorkOrders(): Promise<void> {
+  let schedules: Array<{
+    scheduleId: string;
+    title: string;
+    nextDueDate: Date;
+    assetId: string;
+    assetName: string;
+    workspaceId: string;
+    custodianId: string | null;
+    createdBy: string | null;
+  }>;
+  try {
+    schedules = await db
+      .select({
+        scheduleId: assetPmScheduleTable.id,
+        title: assetPmScheduleTable.title,
+        nextDueDate: assetPmScheduleTable.nextDueDate,
+        assetId: registeredAssetTable.id,
+        assetName: registeredAssetTable.name,
+        workspaceId: registeredAssetTable.workspaceId,
+        custodianId: registeredAssetTable.currentCustodianId,
+        createdBy: registeredAssetTable.createdBy,
+      })
+      .from(assetPmScheduleTable)
+      .innerJoin(
+        registeredAssetTable,
+        eq(assetPmScheduleTable.assetId, registeredAssetTable.id),
+      )
+      .where(
+        and(
+          eq(assetPmScheduleTable.active, true),
+          lte(assetPmScheduleTable.nextDueDate, new Date()),
+        ),
+      );
+  } catch (error) {
+    console.error("Failed to query PM schedules", error);
+    return;
+  }
+
+  for (const s of schedules) {
+    try {
+      const open = await db
+        .select({ id: workOrderTable.id })
+        .from(workOrderTable)
+        .where(
+          and(
+            eq(workOrderTable.pmScheduleId, s.scheduleId),
+            notInArray(workOrderTable.status, ["done", "cancelled"]),
+          ),
+        )
+        .limit(1);
+      if (open.length) continue;
+
+      await db.insert(workOrderTable).values({
+        workspaceId: s.workspaceId,
+        assetId: s.assetId,
+        pmScheduleId: s.scheduleId,
+        title: `PM due: ${s.title}`,
+        status: "scheduled",
+        priority: "medium",
+        assigneeId: s.custodianId ?? null,
+        dueDate: s.nextDueDate,
+      });
+
+      const recipient = s.custodianId ?? s.createdBy;
+      if (recipient) {
+        await createNotification({
+          userId: recipient,
+          type: "asset_maintenance_due",
+          title: `Maintenance due — ${s.assetName}`,
+          content: `${s.assetName}: ${s.title} is due.`,
+          resourceId: s.assetId,
+          resourceType: "asset",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to raise PM work order", {
+        scheduleId: s.scheduleId,
         error,
       });
     }

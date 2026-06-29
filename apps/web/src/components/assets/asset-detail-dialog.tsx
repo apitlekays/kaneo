@@ -572,63 +572,179 @@ function MaintenanceTab({
   };
 
   return (
-    <EntrySection
-      title="Maintenance log"
-      form={
-        <div className="grid gap-2 sm:grid-cols-2">
-          <DateField value={date} onChange={setDate} placeholder="Date *" />
-          <Input
-            placeholder="Title *"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
+    <div className="space-y-6">
+      <PmSchedulesSection data={data} m={m} />
+      <EntrySection
+        title="Maintenance log"
+        form={
+          <div className="grid gap-2 sm:grid-cols-2">
+            <DateField value={date} onChange={setDate} placeholder="Date *" />
+            <Input
+              placeholder="Title *"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <Input
+              placeholder="Vendor / Workshop"
+              value={vendor}
+              onChange={(e) => setVendor(e.target.value)}
+            />
+            <Input
+              type="number"
+              placeholder="Cost"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+            />
+            <Textarea
+              className="sm:col-span-2"
+              rows={2}
+              placeholder="Notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+            <Button
+              size="sm"
+              className="sm:col-span-2"
+              disabled={!title.trim() || !date || m.addMaintenance.isPending}
+              onClick={add}
+            >
+              <Plus className="h-3.5 w-3.5" /> Add entry
+            </Button>
+          </div>
+        }
+      >
+        {data.maintenance.map((e) => (
+          <EntryRow
+            key={e.id}
+            primary={e.title}
+            secondary={[formatDateMedium(e.date), e.vendor, e.notes]
+              .filter(Boolean)
+              .join(" · ")}
+            right={
+              e.cost != null ? (
+                <span className="text-xs text-muted-foreground">
+                  {formatMoney(e.cost, currency)}
+                </span>
+              ) : undefined
+            }
+            onDelete={() => m.removeMaintenance.mutate(e.id)}
           />
-          <Input
-            placeholder="Vendor / Workshop"
-            value={vendor}
-            onChange={(e) => setVendor(e.target.value)}
-          />
+        ))}
+      </EntrySection>
+    </div>
+  );
+}
+
+function PmSchedulesSection({ data, m }: { data: AssetDetail; m: Mutations }) {
+  const [title, setTitle] = useState("");
+  const [intervalValue, setIntervalValue] = useState("6");
+  const [intervalType, setIntervalType] = useState("months");
+  const [nextDue, setNextDue] = useState<Date | null>(null);
+  const now = Date.now();
+
+  const add = () => {
+    if (!title.trim() || !nextDue) return;
+    m.addPmSchedule.mutate(
+      {
+        title: title.trim(),
+        intervalType,
+        intervalValue: Number(intervalValue) || 1,
+        nextDueDate: nextDue.toISOString(),
+      },
+      {
+        onSuccess: () => {
+          setTitle("");
+          setNextDue(null);
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-3 py-2">
+      <h4 className="text-sm font-medium">Preventive maintenance schedules</h4>
+      <div className="space-y-1.5">
+        {data.pmSchedules.map((s) => {
+          const overdue = new Date(s.nextDueDate).getTime() < now;
+          return (
+            <div
+              key={s.id}
+              className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm"
+            >
+              <div className="min-w-0">
+                <div className="truncate">{s.title}</div>
+                <div className="text-xs text-muted-foreground">
+                  Every {s.intervalValue} {s.intervalType} · next{" "}
+                  <span className={cn(overdue && "font-medium text-rose-500")}>
+                    {formatDateMedium(s.nextDueDate)}
+                    {overdue ? " (due)" : ""}
+                  </span>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    m.updatePmSchedule.mutate({
+                      scheduleId: s.id,
+                      body: { markDone: true },
+                    })
+                  }
+                >
+                  Mark done
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => m.removePmSchedule.mutate(s.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="grid gap-2 rounded-lg border border-dashed border-border p-3 sm:grid-cols-2">
+        <Input
+          placeholder="Title (e.g. Service, oil change) *"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <DateField
+          value={nextDue}
+          onChange={setNextDue}
+          placeholder="First due *"
+        />
+        <div className="flex items-center gap-2 sm:col-span-2">
+          <span className="text-sm text-muted-foreground">Every</span>
           <Input
             type="number"
-            placeholder="Cost"
-            value={cost}
-            onChange={(e) => setCost(e.target.value)}
+            className="w-20"
+            value={intervalValue}
+            onChange={(e) => setIntervalValue(e.target.value)}
           />
-          <Textarea
-            className="sm:col-span-2"
-            rows={2}
-            placeholder="Notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
+          <Select value={intervalType} onValueChange={setIntervalType}>
+            <SelectTrigger className="w-28">
+              <SelectValue>{intervalType}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="months">months</SelectItem>
+              <SelectItem value="days">days</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             size="sm"
-            className="sm:col-span-2"
-            disabled={!title.trim() || !date || m.addMaintenance.isPending}
+            className="ml-auto"
+            disabled={!title.trim() || !nextDue || m.addPmSchedule.isPending}
             onClick={add}
           >
-            <Plus className="h-3.5 w-3.5" /> Add entry
+            <Plus className="h-3.5 w-3.5" /> Add schedule
           </Button>
         </div>
-      }
-    >
-      {data.maintenance.map((e) => (
-        <EntryRow
-          key={e.id}
-          primary={e.title}
-          secondary={[formatDateMedium(e.date), e.vendor, e.notes]
-            .filter(Boolean)
-            .join(" · ")}
-          right={
-            e.cost != null ? (
-              <span className="text-xs text-muted-foreground">
-                {formatMoney(e.cost, currency)}
-              </span>
-            ) : undefined
-          }
-          onDelete={() => m.removeMaintenance.mutate(e.id)}
-        />
-      ))}
-    </EntrySection>
+      </div>
+    </div>
   );
 }
 

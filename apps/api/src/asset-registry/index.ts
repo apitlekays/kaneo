@@ -12,13 +12,16 @@ import {
   assetDisposalTable,
   assetFileTable,
   assetMaintenanceTable,
+  assetPmScheduleTable,
   assetReminderSentTable,
   assetRenewalTable,
   assetTripTable,
   registeredAssetTable,
   userTable,
+  workOrderTable,
   workspaceUserTable,
 } from "../database/schema";
+import createNotification from "../notification/controllers/create-notification";
 import {
   createAssetFileUploadUrl,
   deleteS3Object,
@@ -116,6 +119,14 @@ function monthsBetween(from: Date, to: Date) {
     (to.getFullYear() - from.getFullYear()) * 12 +
     (to.getMonth() - from.getMonth())
   );
+}
+
+/** Advance a date by a maintenance interval. */
+function addInterval(from: Date, type: string, value: number): Date {
+  const d = new Date(from);
+  if (type === "months") d.setMonth(d.getMonth() + value);
+  else d.setDate(d.getDate() + value);
+  return d;
 }
 
 /** Straight-line depreciation: current NBV + a per-year schedule. */
@@ -430,6 +441,194 @@ const assetRegistry = new Hono<{
       }
     },
   )
+  // ── Work orders: workspace list (cross-asset kanban + Home) ──────────────
+  .get(
+    "/work-orders",
+    validator(
+      "query",
+      v.object({
+        workspaceId: v.string(),
+        assigneeId: v.optional(v.string()),
+        status: v.optional(v.string()),
+      }),
+    ),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { assigneeId, status } = c.req.valid("query");
+      const conditions = [eq(workOrderTable.workspaceId, workspaceId)];
+      if (assigneeId)
+        conditions.push(eq(workOrderTable.assigneeId, assigneeId));
+      if (status) conditions.push(eq(workOrderTable.status, status));
+
+      const rows = await db
+        .select({
+          id: workOrderTable.id,
+          assetId: workOrderTable.assetId,
+          assetName: registeredAssetTable.name,
+          pmScheduleId: workOrderTable.pmScheduleId,
+          title: workOrderTable.title,
+          description: workOrderTable.description,
+          status: workOrderTable.status,
+          priority: workOrderTable.priority,
+          assigneeId: workOrderTable.assigneeId,
+          assigneeName: userTable.name,
+          assigneeImage: userTable.image,
+          dueDate: workOrderTable.dueDate,
+          completedAt: workOrderTable.completedAt,
+          cost: workOrderTable.cost,
+          createdAt: workOrderTable.createdAt,
+        })
+        .from(workOrderTable)
+        .innerJoin(
+          registeredAssetTable,
+          eq(workOrderTable.assetId, registeredAssetTable.id),
+        )
+        .leftJoin(userTable, eq(workOrderTable.assigneeId, userTable.id))
+        .where(and(...conditions))
+        .orderBy(desc(workOrderTable.createdAt));
+      return c.json(rows);
+    },
+  )
+  .put(
+    "/work-orders/:woId",
+    validator("param", v.object({ woId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    validator(
+      "json",
+      v.object({
+        title: v.optional(v.string()),
+        description: optStr,
+        status: v.optional(
+          v.picklist([
+            "requested",
+            "scheduled",
+            "in-progress",
+            "done",
+            "cancelled",
+          ]),
+        ),
+        priority: v.optional(v.picklist(["low", "medium", "high"])),
+        assigneeId: optStr,
+        dueDate: optDate,
+        cost: optNum,
+      }),
+    ),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const actorId = c.get("userId");
+      const { woId } = c.req.valid("param");
+      const body = c.req.valid("json");
+
+      const [wo] = await db
+        .select()
+        .from(workOrderTable)
+        .where(
+          and(
+            eq(workOrderTable.id, woId),
+            eq(workOrderTable.workspaceId, workspaceId),
+          ),
+        )
+        .limit(1);
+      if (!wo) {
+        throw new HTTPException(404, { message: "Work order not found" });
+      }
+
+      const becomingDone = body.status === "done" && wo.status !== "done";
+      const [updated] = await db
+        .update(workOrderTable)
+        .set({
+          ...(body.title !== undefined ? { title: body.title } : {}),
+          ...(body.description !== undefined
+            ? { description: body.description }
+            : {}),
+          ...(body.status !== undefined ? { status: body.status } : {}),
+          ...(body.priority !== undefined ? { priority: body.priority } : {}),
+          ...(body.assigneeId !== undefined
+            ? { assigneeId: body.assigneeId }
+            : {}),
+          ...(body.dueDate !== undefined
+            ? { dueDate: toDate(body.dueDate) }
+            : {}),
+          ...(body.cost !== undefined ? { cost: toCents(body.cost) } : {}),
+          ...(becomingDone ? { completedAt: new Date() } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(workOrderTable.id, woId))
+        .returning();
+
+      if (body.assigneeId && body.assigneeId !== wo.assigneeId) {
+        await createNotification({
+          userId: body.assigneeId,
+          type: "work_order_assigned",
+          title: `Work order assigned — ${updated.title}`,
+          content: updated.title,
+          resourceId: updated.assetId,
+          resourceType: "asset",
+        }).catch(() => {});
+      }
+
+      // Completing a PM-linked work order advances its schedule + logs work.
+      if (becomingDone && wo.pmScheduleId) {
+        const [sched] = await db
+          .select()
+          .from(assetPmScheduleTable)
+          .where(eq(assetPmScheduleTable.id, wo.pmScheduleId))
+          .limit(1);
+        if (sched) {
+          const now = new Date();
+          await db
+            .update(assetPmScheduleTable)
+            .set({
+              lastDoneDate: now,
+              nextDueDate: addInterval(
+                now,
+                sched.intervalType,
+                sched.intervalValue,
+              ),
+              updatedAt: now,
+            })
+            .where(eq(assetPmScheduleTable.id, sched.id));
+          await db.insert(assetMaintenanceTable).values({
+            assetId: wo.assetId,
+            date: now,
+            title: sched.title,
+            notes: "Preventive maintenance completed",
+            cost: updated.cost ?? null,
+            createdBy: actorId,
+          });
+        }
+      }
+      await recordActivity(wo.assetId, "work_order_updated", actorId, {
+        title: updated.title,
+        status: updated.status,
+      });
+      return c.json(updated);
+    },
+  )
+  .delete(
+    "/work-orders/:woId",
+    validator("param", v.object({ woId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { woId } = c.req.valid("param");
+      await db
+        .delete(workOrderTable)
+        .where(
+          and(
+            eq(workOrderTable.id, woId),
+            eq(workOrderTable.workspaceId, workspaceId),
+          ),
+        );
+      return c.json({ success: true });
+    },
+  )
   // ── Create asset ─────────────────────────────────────────────────────────
   .post(
     "/",
@@ -513,64 +712,97 @@ const assetRegistry = new Hono<{
       const { id } = c.req.valid("param");
       const asset = await loadAsset(id, workspaceId);
 
-      const [renewals, maintenance, costs, trips, files, custody, activity] =
-        await Promise.all([
-          db
-            .select()
-            .from(assetRenewalTable)
-            .where(eq(assetRenewalTable.assetId, id))
-            .orderBy(asc(assetRenewalTable.dueDate)),
-          db
-            .select()
-            .from(assetMaintenanceTable)
-            .where(eq(assetMaintenanceTable.assetId, id))
-            .orderBy(desc(assetMaintenanceTable.date)),
-          db
-            .select()
-            .from(assetCostTable)
-            .where(eq(assetCostTable.assetId, id))
-            .orderBy(desc(assetCostTable.date)),
-          db
-            .select()
-            .from(assetTripTable)
-            .where(eq(assetTripTable.assetId, id))
-            .orderBy(desc(assetTripTable.date)),
-          db
-            .select()
-            .from(assetFileTable)
-            .where(eq(assetFileTable.assetId, id))
-            .orderBy(desc(assetFileTable.createdAt)),
-          db
-            .select({
-              id: assetCustodyTable.id,
-              userId: assetCustodyTable.userId,
-              userName: userTable.name,
-              userImage: userTable.image,
-              assignedBy: assetCustodyTable.assignedBy,
-              assignedAt: assetCustodyTable.assignedAt,
-              releasedAt: assetCustodyTable.releasedAt,
-              note: assetCustodyTable.note,
-            })
-            .from(assetCustodyTable)
-            .leftJoin(userTable, eq(assetCustodyTable.userId, userTable.id))
-            .where(eq(assetCustodyTable.assetId, id))
-            .orderBy(desc(assetCustodyTable.assignedAt)),
-          db
-            .select({
-              id: assetActivityTable.id,
-              type: assetActivityTable.type,
-              userId: assetActivityTable.userId,
-              userName: userTable.name,
-              userImage: userTable.image,
-              eventData: assetActivityTable.eventData,
-              createdAt: assetActivityTable.createdAt,
-            })
-            .from(assetActivityTable)
-            .leftJoin(userTable, eq(assetActivityTable.userId, userTable.id))
-            .where(eq(assetActivityTable.assetId, id))
-            .orderBy(desc(assetActivityTable.createdAt))
-            .limit(100),
-        ]);
+      const [
+        renewals,
+        maintenance,
+        costs,
+        trips,
+        files,
+        custody,
+        activity,
+        pmSchedules,
+        workOrders,
+      ] = await Promise.all([
+        db
+          .select()
+          .from(assetRenewalTable)
+          .where(eq(assetRenewalTable.assetId, id))
+          .orderBy(asc(assetRenewalTable.dueDate)),
+        db
+          .select()
+          .from(assetMaintenanceTable)
+          .where(eq(assetMaintenanceTable.assetId, id))
+          .orderBy(desc(assetMaintenanceTable.date)),
+        db
+          .select()
+          .from(assetCostTable)
+          .where(eq(assetCostTable.assetId, id))
+          .orderBy(desc(assetCostTable.date)),
+        db
+          .select()
+          .from(assetTripTable)
+          .where(eq(assetTripTable.assetId, id))
+          .orderBy(desc(assetTripTable.date)),
+        db
+          .select()
+          .from(assetFileTable)
+          .where(eq(assetFileTable.assetId, id))
+          .orderBy(desc(assetFileTable.createdAt)),
+        db
+          .select({
+            id: assetCustodyTable.id,
+            userId: assetCustodyTable.userId,
+            userName: userTable.name,
+            userImage: userTable.image,
+            assignedBy: assetCustodyTable.assignedBy,
+            assignedAt: assetCustodyTable.assignedAt,
+            releasedAt: assetCustodyTable.releasedAt,
+            note: assetCustodyTable.note,
+          })
+          .from(assetCustodyTable)
+          .leftJoin(userTable, eq(assetCustodyTable.userId, userTable.id))
+          .where(eq(assetCustodyTable.assetId, id))
+          .orderBy(desc(assetCustodyTable.assignedAt)),
+        db
+          .select({
+            id: assetActivityTable.id,
+            type: assetActivityTable.type,
+            userId: assetActivityTable.userId,
+            userName: userTable.name,
+            userImage: userTable.image,
+            eventData: assetActivityTable.eventData,
+            createdAt: assetActivityTable.createdAt,
+          })
+          .from(assetActivityTable)
+          .leftJoin(userTable, eq(assetActivityTable.userId, userTable.id))
+          .where(eq(assetActivityTable.assetId, id))
+          .orderBy(desc(assetActivityTable.createdAt))
+          .limit(100),
+        db
+          .select()
+          .from(assetPmScheduleTable)
+          .where(eq(assetPmScheduleTable.assetId, id))
+          .orderBy(asc(assetPmScheduleTable.nextDueDate)),
+        db
+          .select({
+            id: workOrderTable.id,
+            title: workOrderTable.title,
+            status: workOrderTable.status,
+            priority: workOrderTable.priority,
+            assigneeId: workOrderTable.assigneeId,
+            assigneeName: userTable.name,
+            assigneeImage: userTable.image,
+            dueDate: workOrderTable.dueDate,
+            completedAt: workOrderTable.completedAt,
+            pmScheduleId: workOrderTable.pmScheduleId,
+            cost: workOrderTable.cost,
+            createdAt: workOrderTable.createdAt,
+          })
+          .from(workOrderTable)
+          .leftJoin(userTable, eq(workOrderTable.assigneeId, userTable.id))
+          .where(eq(workOrderTable.assetId, id))
+          .orderBy(desc(workOrderTable.createdAt)),
+      ]);
 
       const [disposal] = await db
         .select()
@@ -587,6 +819,8 @@ const assetRegistry = new Hono<{
         files,
         custody,
         activity,
+        pmSchedules,
+        workOrders,
         disposal: disposal ?? null,
         depreciation: computeDepreciation(asset),
       });
@@ -866,6 +1100,220 @@ const assetRegistry = new Hono<{
         .where(eq(registeredAssetTable.id, id));
       await recordActivity(id, "disposal_reverted", actorId);
       return c.json({ success: true });
+    },
+  )
+  // ── Preventive-maintenance schedules ─────────────────────────────────────
+  .post(
+    "/:id/pm-schedules",
+    validator("param", v.object({ id: v.string() })),
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        title: v.string(),
+        intervalType: v.optional(v.picklist(["days", "months"])),
+        intervalValue: v.number(),
+        nextDueDate: v.string(),
+        notes: optStr,
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const userId = c.get("userId");
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      await loadAsset(id, workspaceId);
+      const next = toDate(body.nextDueDate);
+      if (!next) {
+        throw new HTTPException(400, { message: "Invalid next due date" });
+      }
+      const [row] = await db
+        .insert(assetPmScheduleTable)
+        .values({
+          assetId: id,
+          title: body.title,
+          intervalType: body.intervalType ?? "months",
+          intervalValue: Math.max(1, Math.round(body.intervalValue)),
+          nextDueDate: next,
+          notes: body.notes ?? null,
+          createdBy: userId,
+        })
+        .returning();
+      await recordActivity(id, "pm_added", userId, { title: body.title });
+      return c.json(row, 201);
+    },
+  )
+  .put(
+    "/:id/pm-schedules/:scheduleId",
+    validator("param", v.object({ id: v.string(), scheduleId: v.string() })),
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        title: v.optional(v.string()),
+        intervalType: v.optional(v.picklist(["days", "months"])),
+        intervalValue: optNum,
+        nextDueDate: optDate,
+        active: v.optional(v.boolean()),
+        notes: optStr,
+        markDone: v.optional(v.boolean()),
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const userId = c.get("userId");
+      const { id, scheduleId } = c.req.valid("param");
+      const body = c.req.valid("json");
+      await loadAsset(id, workspaceId);
+      const [sched] = await db
+        .select()
+        .from(assetPmScheduleTable)
+        .where(
+          and(
+            eq(assetPmScheduleTable.id, scheduleId),
+            eq(assetPmScheduleTable.assetId, id),
+          ),
+        )
+        .limit(1);
+      if (!sched) {
+        throw new HTTPException(404, { message: "Schedule not found" });
+      }
+
+      if (body.markDone) {
+        const now = new Date();
+        const [row] = await db
+          .update(assetPmScheduleTable)
+          .set({
+            lastDoneDate: now,
+            nextDueDate: addInterval(
+              now,
+              sched.intervalType,
+              sched.intervalValue,
+            ),
+            updatedAt: now,
+          })
+          .where(eq(assetPmScheduleTable.id, scheduleId))
+          .returning();
+        await db.insert(assetMaintenanceTable).values({
+          assetId: id,
+          date: now,
+          title: sched.title,
+          notes: "Preventive maintenance completed",
+          createdBy: userId,
+        });
+        await recordActivity(id, "pm_completed", userId, {
+          title: sched.title,
+        });
+        return c.json(row);
+      }
+
+      const [row] = await db
+        .update(assetPmScheduleTable)
+        .set({
+          ...(body.title !== undefined ? { title: body.title } : {}),
+          ...(body.intervalType !== undefined
+            ? { intervalType: body.intervalType }
+            : {}),
+          ...(body.intervalValue != null
+            ? { intervalValue: Math.max(1, Math.round(body.intervalValue)) }
+            : {}),
+          ...(body.nextDueDate !== undefined
+            ? { nextDueDate: toDate(body.nextDueDate) ?? sched.nextDueDate }
+            : {}),
+          ...(body.active !== undefined ? { active: body.active } : {}),
+          ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(assetPmScheduleTable.id, scheduleId))
+        .returning();
+      return c.json(row);
+    },
+  )
+  .delete(
+    "/:id/pm-schedules/:scheduleId",
+    validator("param", v.object({ id: v.string(), scheduleId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { id, scheduleId } = c.req.valid("param");
+      await loadAsset(id, workspaceId);
+      await db
+        .delete(assetPmScheduleTable)
+        .where(
+          and(
+            eq(assetPmScheduleTable.id, scheduleId),
+            eq(assetPmScheduleTable.assetId, id),
+          ),
+        );
+      return c.json({ success: true });
+    },
+  )
+  // ── Work orders: create for an asset ─────────────────────────────────────
+  .post(
+    "/:id/work-orders",
+    validator("param", v.object({ id: v.string() })),
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        title: v.string(),
+        description: optStr,
+        priority: v.optional(v.picklist(["low", "medium", "high"])),
+        status: v.optional(
+          v.picklist([
+            "requested",
+            "scheduled",
+            "in-progress",
+            "done",
+            "cancelled",
+          ]),
+        ),
+        assigneeId: optStr,
+        dueDate: optDate,
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const userId = c.get("userId");
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      await loadAsset(id, workspaceId);
+      const [row] = await db
+        .insert(workOrderTable)
+        .values({
+          workspaceId,
+          assetId: id,
+          title: body.title,
+          description: body.description ?? null,
+          status: body.status ?? "requested",
+          priority: body.priority ?? "medium",
+          assigneeId: body.assigneeId ?? null,
+          dueDate: toDate(body.dueDate),
+          createdBy: userId,
+        })
+        .returning();
+      if (body.assigneeId) {
+        await createNotification({
+          userId: body.assigneeId,
+          type: "work_order_assigned",
+          title: `Work order assigned — ${body.title}`,
+          content: body.title,
+          resourceId: id,
+          resourceType: "asset",
+        }).catch(() => {});
+      }
+      await recordActivity(id, "work_order_created", userId, {
+        title: body.title,
+      });
+      return c.json(row, 201);
     },
   )
   // ── Renewals ─────────────────────────────────────────────────────────────

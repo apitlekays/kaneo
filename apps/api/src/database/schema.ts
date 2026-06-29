@@ -456,6 +456,75 @@ export const assetDisposalTable = pgTable(
   (table) => [index("asset_disposal_assetId_idx").on(table.assetId)],
 );
 
+// Preventive-maintenance schedule: recurring plan per asset. nextDueDate is
+// stored and advanced when a cycle completes (mark done / linked work order).
+export const assetPmScheduleTable = pgTable(
+  "asset_pm_schedule",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    intervalType: text("interval_type").notNull().default("months"), // days | months
+    intervalValue: integer("interval_value").notNull(),
+    lastDoneDate: timestamp("last_done_date", { mode: "date" }),
+    nextDueDate: timestamp("next_due_date", { mode: "date" }).notNull(),
+    active: boolean("active").notNull().default(true),
+    notes: text("notes"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_pm_schedule_assetId_idx").on(table.assetId)],
+);
+
+// Work order: request → scheduled → in-progress → done lifecycle. Workspace-
+// scoped (for the cross-asset kanban + assignee Home), tied to one asset.
+export const workOrderTable = pgTable(
+  "work_order",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    pmScheduleId: text("pm_schedule_id").references(
+      () => assetPmScheduleTable.id,
+      { onDelete: "set null" },
+    ),
+    title: text("title").notNull(),
+    description: text("description"),
+    // requested | scheduled | in-progress | done | cancelled
+    status: text("status").notNull().default("requested"),
+    priority: text("priority").notNull().default("medium"),
+    assigneeId: text("assignee_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    dueDate: timestamp("due_date", { mode: "date" }),
+    completedAt: timestamp("completed_at", { mode: "date" }),
+    cost: integer("cost"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("work_order_workspaceId_idx").on(table.workspaceId),
+    index("work_order_assigneeId_idx").on(table.assigneeId),
+    index("work_order_assetId_idx").on(table.assetId),
+  ],
+);
+
 export const teamTable = pgTable(
   "team",
   {

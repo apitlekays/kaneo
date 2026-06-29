@@ -134,6 +134,36 @@ export type AssetDisposal = {
   createdAt: string;
 };
 
+export type PmSchedule = {
+  id: string;
+  assetId: string;
+  title: string;
+  intervalType: string;
+  intervalValue: number;
+  lastDoneDate: string | null;
+  nextDueDate: string;
+  active: boolean;
+  notes: string | null;
+};
+
+export type WorkOrder = {
+  id: string;
+  assetId: string;
+  assetName?: string;
+  pmScheduleId: string | null;
+  title: string;
+  description?: string | null;
+  status: string;
+  priority: string;
+  assigneeId: string | null;
+  assigneeName?: string | null;
+  assigneeImage?: string | null;
+  dueDate: string | null;
+  completedAt: string | null;
+  cost: number | null;
+  createdAt: string;
+};
+
 export type AssetDetail = {
   asset: Asset;
   renewals: AssetRenewal[];
@@ -143,6 +173,8 @@ export type AssetDetail = {
   files: AssetFile[];
   custody: AssetCustody[];
   activity: AssetActivity[];
+  pmSchedules: PmSchedule[];
+  workOrders: WorkOrder[];
   depreciation: AssetDepreciation;
   disposal: AssetDisposal | null;
 };
@@ -326,6 +358,80 @@ export async function createDisposal(
 export async function deleteDisposal(workspaceId: string, assetId: string) {
   return jsonOrThrow(
     await fetch(api(`${assetId}/disposal?workspaceId=${workspaceId}`), {
+      method: "DELETE",
+      credentials: "include",
+    }),
+  );
+}
+
+// ── Preventive maintenance schedules ─────────────────────────────────────────
+
+export const addPmSchedule = (
+  ws: string,
+  assetId: string,
+  body: Record<string, unknown>,
+) => postEntry<PmSchedule>(ws, assetId, "pm-schedules", body);
+
+export async function updatePmSchedule(
+  ws: string,
+  assetId: string,
+  scheduleId: string,
+  body: Record<string, unknown>,
+): Promise<PmSchedule> {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/pm-schedules/${scheduleId}`), {
+      method: "PUT",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, ...body }),
+    }),
+  );
+}
+
+export const deletePmSchedule = (
+  ws: string,
+  assetId: string,
+  scheduleId: string,
+) => deleteEntry(ws, assetId, "pm-schedules", scheduleId);
+
+// ── Work orders ──────────────────────────────────────────────────────────────
+
+export const createWorkOrder = (
+  ws: string,
+  assetId: string,
+  body: Record<string, unknown>,
+) => postEntry<WorkOrder>(ws, assetId, "work-orders", body);
+
+export async function listWorkOrders(
+  ws: string,
+  params: { assigneeId?: string; status?: string } = {},
+): Promise<WorkOrder[]> {
+  const q = new URLSearchParams({ workspaceId: ws });
+  if (params.assigneeId) q.set("assigneeId", params.assigneeId);
+  if (params.status) q.set("status", params.status);
+  return jsonOrThrow(
+    await fetch(api(`work-orders?${q.toString()}`), { credentials: "include" }),
+  );
+}
+
+export async function updateWorkOrder(
+  ws: string,
+  woId: string,
+  body: Record<string, unknown>,
+): Promise<WorkOrder> {
+  return jsonOrThrow(
+    await fetch(api(`work-orders/${woId}?workspaceId=${ws}`), {
+      method: "PUT",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function deleteWorkOrder(ws: string, woId: string) {
+  return jsonOrThrow(
+    await fetch(api(`work-orders/${woId}?workspaceId=${ws}`), {
       method: "DELETE",
       credentials: "include",
     }),

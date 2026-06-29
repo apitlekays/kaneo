@@ -94,6 +94,8 @@ export const notificationSchema = v.object({
     "due_date_reminder",
     "task_overdue",
     "asset_renewal_reminder",
+    "asset_maintenance_due",
+    "work_order_assigned",
   ] as const),
   eventData: v.nullable(v.record(v.string(), v.unknown())),
   isRead: v.optional(v.boolean()),

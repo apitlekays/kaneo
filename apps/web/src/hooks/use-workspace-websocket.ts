@@ -42,8 +42,8 @@ const ENTITY_INVALIDATIONS: Record<string, string[][]> = {
   // Page-access toggles: refresh the affected user's own access (sidebar +
   // route guard) and, for any admin watching the matrix, the matrix + members.
   "workspace-access": [["page-access"], ["workspace-members-list"]],
-  // Asset registry: refresh the list, any open detail, and the summary stats.
-  "asset-registry": [["assets"], ["asset"], ["asset-summary"]],
+  // Asset registry: refresh the list, any open detail, summary, work orders.
+  "asset-registry": [["assets"], ["asset"], ["asset-summary"], ["work-orders"]],
   workspace: [
     ["projects"],
     ["workspace"],

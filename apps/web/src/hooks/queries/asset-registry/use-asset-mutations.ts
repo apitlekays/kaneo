@@ -154,5 +154,39 @@ export function useAssetMutations(workspaceId: string, assetId?: string) {
       },
       onError,
     }),
+
+    addPmSchedule: useMutation({
+      mutationFn: (body: Record<string, unknown>) =>
+        api.addPmSchedule(workspaceId, asset, body),
+      onSuccess: invalidate,
+      onError,
+    }),
+    updatePmSchedule: useMutation({
+      mutationFn: ({
+        scheduleId,
+        body,
+      }: {
+        scheduleId: string;
+        body: Record<string, unknown>;
+      }) => api.updatePmSchedule(workspaceId, asset, scheduleId, body),
+      onSuccess: invalidate,
+      onError,
+    }),
+    removePmSchedule: useMutation({
+      mutationFn: (scheduleId: string) =>
+        api.deletePmSchedule(workspaceId, asset, scheduleId),
+      onSuccess: invalidate,
+      onError,
+    }),
+    createWorkOrder: useMutation({
+      mutationFn: (body: Record<string, unknown>) =>
+        api.createWorkOrder(workspaceId, asset, body),
+      onSuccess: () => {
+        invalidate();
+        qc.invalidateQueries({ queryKey: ["work-orders", workspaceId] });
+        toast.success("Work order created");
+      },
+      onError,
+    }),
   };
 }
