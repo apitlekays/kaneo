@@ -1,6 +1,9 @@
+import { UserPlus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
+import { MemberPicker } from "@/components/assets/member-picker";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +24,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { Asset, AssetInput } from "@/fetchers/asset-registry";
 import { useAssetMutations } from "@/hooks/queries/asset-registry/use-asset-mutations";
+import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import {
   ASSET_CATEGORIES,
   ASSET_STATUSES,
@@ -39,7 +43,11 @@ const orNull = (value: string) => (value.trim() ? value.trim() : null);
 export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
   const isEdit = Boolean(asset);
   const [open, setOpen] = useState(false);
-  const { create, update } = useAssetMutations(workspaceId, asset?.id);
+  const { create, update, setCustodian } = useAssetMutations(
+    workspaceId,
+    asset?.id,
+  );
+  const { data: wsUsers } = useGetActiveWorkspaceUsers(workspaceId);
 
   const [name, setName] = useState(asset?.name ?? "");
   const [category, setCategory] = useState(asset?.category ?? "it-equipment");
@@ -50,7 +58,9 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
     asset?.registrationNumber ?? "",
   );
   const [location, setLocation] = useState(asset?.location ?? "");
-  const [assignedTo, setAssignedTo] = useState(asset?.assignedTo ?? "");
+  const [custodianId, setCustodianId] = useState<string | null>(
+    asset?.currentCustodianId ?? null,
+  );
   const [vendor, setVendor] = useState(asset?.vendor ?? "");
   const [purchaseDate, setPurchaseDate] = useState<Date | null>(
     asset?.purchaseDate ? new Date(asset.purchaseDate) : null,
@@ -64,6 +74,15 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
 
   const pending = create.isPending || update.isPending;
 
+  const custodianMember = (
+    (wsUsers?.members ?? []) as {
+      userId: string;
+      user?: { name?: string | null; image?: string | null } | null;
+    }[]
+  ).find((member) => member.userId === custodianId);
+  const custodianName = custodianMember?.user?.name ?? null;
+  const custodianImage = custodianMember?.user?.image ?? null;
+
   const submit = () => {
     if (!name.trim()) return;
     const data: AssetInput = {
@@ -74,7 +93,6 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
       model: orNull(model),
       registrationNumber: orNull(registrationNumber),
       location: orNull(location),
-      assignedTo: orNull(assignedTo),
       vendor: orNull(vendor),
       assetTag: orNull(assetTag),
       notes: orNull(notes),
@@ -82,11 +100,28 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
       purchaseDate: purchaseDate ? purchaseDate.toISOString() : null,
       purchaseCost: toMinorUnits(purchaseCost),
     };
-    const onDone = { onSuccess: () => setOpen(false) };
+    const applyCustodian = (assetId: string) => {
+      if (custodianId && custodianId !== (asset?.currentCustodianId ?? null)) {
+        setCustodian.mutate({ targetAssetId: assetId, userId: custodianId });
+      }
+    };
     if (isEdit && asset) {
-      update.mutate({ id: asset.id, data }, onDone);
+      update.mutate(
+        { id: asset.id, data },
+        {
+          onSuccess: () => {
+            applyCustodian(asset.id);
+            setOpen(false);
+          },
+        },
+      );
     } else {
-      create.mutate(data, onDone);
+      create.mutate(data, {
+        onSuccess: (created) => {
+          applyCustodian(created.id);
+          setOpen(false);
+        },
+      });
     }
   };
 
@@ -178,11 +213,39 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Assigned to</Label>
-            <Input
-              value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)}
-              placeholder="Person or department"
+            <Label>Custodian</Label>
+            <MemberPicker
+              workspaceId={workspaceId}
+              selectedUserId={custodianId}
+              onSelect={setCustodianId}
+              trigger={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start font-normal"
+                >
+                  {custodianName ? (
+                    <>
+                      <ColoredAvatar
+                        name={custodianName}
+                        image={custodianImage}
+                        seed={custodianId ?? ""}
+                        className="mr-1 h-5 w-5"
+                        fallbackClassName="text-[9px]"
+                      />
+                      {custodianName}
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      <span className="text-muted-foreground">
+                        Select a member
+                      </span>
+                    </>
+                  )}
+                </Button>
+              }
             />
           </div>
 

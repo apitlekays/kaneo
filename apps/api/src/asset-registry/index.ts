@@ -1,17 +1,21 @@
 import { createId } from "@paralleldrive/cuid2";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono-openapi";
 import * as v from "valibot";
 import db from "../database";
 import {
+  assetActivityTable,
   assetCostTable,
+  assetCustodyTable,
   assetFileTable,
   assetMaintenanceTable,
   assetRenewalTable,
   assetTripTable,
   registeredAssetTable,
+  userTable,
+  workspaceUserTable,
 } from "../database/schema";
 import {
   createAssetFileUploadUrl,
@@ -88,6 +92,25 @@ async function loadAsset(assetId: string, workspaceId: string) {
   return asset;
 }
 
+/** Append an audit-trail entry. Never throws into the request path. */
+async function recordActivity(
+  assetId: string,
+  type: string,
+  userId: string | null,
+  eventData?: Record<string, unknown>,
+) {
+  try {
+    await db.insert(assetActivityTable).values({
+      assetId,
+      type,
+      userId,
+      eventData: eventData ?? null,
+    });
+  } catch (error) {
+    console.error("recordActivity failed", error);
+  }
+}
+
 const assetRegistry = new Hono<{
   Variables: { userId: string; workspaceId?: string };
 }>()
@@ -126,10 +149,35 @@ const assetRegistry = new Hono<{
         }
       }
 
+      const custodianIds = [
+        ...new Set(
+          assets
+            .map((a) => a.currentCustodianId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      const custodians = custodianIds.length
+        ? await db
+            .select({
+              id: userTable.id,
+              name: userTable.name,
+              image: userTable.image,
+            })
+            .from(userTable)
+            .where(inArray(userTable.id, custodianIds))
+        : [];
+      const custodianMap = new Map(custodians.map((u) => [u.id, u]));
+
       return c.json(
         assets.map((asset) => ({
           ...asset,
           nextRenewalDate: nextByAsset.get(asset.id) ?? null,
+          custodianName: asset.currentCustodianId
+            ? (custodianMap.get(asset.currentCustodianId)?.name ?? null)
+            : null,
+          custodianImage: asset.currentCustodianId
+            ? (custodianMap.get(asset.currentCustodianId)?.image ?? null)
+            : null,
         })),
       );
     },
@@ -324,6 +372,9 @@ const assetRegistry = new Hono<{
               createdBy: userId,
             })
             .returning();
+          await recordActivity(asset.id, "created", userId, {
+            name: asset.name,
+          });
           return c.json(asset, 201);
         } catch (error) {
           lastError = error; // serial collision → retry with a new serial
@@ -346,35 +397,75 @@ const assetRegistry = new Hono<{
       const { id } = c.req.valid("param");
       const asset = await loadAsset(id, workspaceId);
 
-      const [renewals, maintenance, costs, trips, files] = await Promise.all([
-        db
-          .select()
-          .from(assetRenewalTable)
-          .where(eq(assetRenewalTable.assetId, id))
-          .orderBy(asc(assetRenewalTable.dueDate)),
-        db
-          .select()
-          .from(assetMaintenanceTable)
-          .where(eq(assetMaintenanceTable.assetId, id))
-          .orderBy(desc(assetMaintenanceTable.date)),
-        db
-          .select()
-          .from(assetCostTable)
-          .where(eq(assetCostTable.assetId, id))
-          .orderBy(desc(assetCostTable.date)),
-        db
-          .select()
-          .from(assetTripTable)
-          .where(eq(assetTripTable.assetId, id))
-          .orderBy(desc(assetTripTable.date)),
-        db
-          .select()
-          .from(assetFileTable)
-          .where(eq(assetFileTable.assetId, id))
-          .orderBy(desc(assetFileTable.createdAt)),
-      ]);
+      const [renewals, maintenance, costs, trips, files, custody, activity] =
+        await Promise.all([
+          db
+            .select()
+            .from(assetRenewalTable)
+            .where(eq(assetRenewalTable.assetId, id))
+            .orderBy(asc(assetRenewalTable.dueDate)),
+          db
+            .select()
+            .from(assetMaintenanceTable)
+            .where(eq(assetMaintenanceTable.assetId, id))
+            .orderBy(desc(assetMaintenanceTable.date)),
+          db
+            .select()
+            .from(assetCostTable)
+            .where(eq(assetCostTable.assetId, id))
+            .orderBy(desc(assetCostTable.date)),
+          db
+            .select()
+            .from(assetTripTable)
+            .where(eq(assetTripTable.assetId, id))
+            .orderBy(desc(assetTripTable.date)),
+          db
+            .select()
+            .from(assetFileTable)
+            .where(eq(assetFileTable.assetId, id))
+            .orderBy(desc(assetFileTable.createdAt)),
+          db
+            .select({
+              id: assetCustodyTable.id,
+              userId: assetCustodyTable.userId,
+              userName: userTable.name,
+              userImage: userTable.image,
+              assignedBy: assetCustodyTable.assignedBy,
+              assignedAt: assetCustodyTable.assignedAt,
+              releasedAt: assetCustodyTable.releasedAt,
+              note: assetCustodyTable.note,
+            })
+            .from(assetCustodyTable)
+            .leftJoin(userTable, eq(assetCustodyTable.userId, userTable.id))
+            .where(eq(assetCustodyTable.assetId, id))
+            .orderBy(desc(assetCustodyTable.assignedAt)),
+          db
+            .select({
+              id: assetActivityTable.id,
+              type: assetActivityTable.type,
+              userId: assetActivityTable.userId,
+              userName: userTable.name,
+              userImage: userTable.image,
+              eventData: assetActivityTable.eventData,
+              createdAt: assetActivityTable.createdAt,
+            })
+            .from(assetActivityTable)
+            .leftJoin(userTable, eq(assetActivityTable.userId, userTable.id))
+            .where(eq(assetActivityTable.assetId, id))
+            .orderBy(desc(assetActivityTable.createdAt))
+            .limit(100),
+        ]);
 
-      return c.json({ asset, renewals, maintenance, costs, trips, files });
+      return c.json({
+        asset,
+        renewals,
+        maintenance,
+        costs,
+        trips,
+        files,
+        custody,
+        activity,
+      });
     },
   )
   // ── Update asset ─────────────────────────────────────────────────────────
@@ -443,6 +534,9 @@ const assetRegistry = new Hono<{
         .where(eq(registeredAssetTable.id, id))
         .returning();
 
+      await recordActivity(id, "updated", c.get("userId"), {
+        fields: Object.keys(body),
+      });
       return c.json(updated);
     },
   )
@@ -470,6 +564,93 @@ const assetRegistry = new Hono<{
       await db
         .delete(registeredAssetTable)
         .where(eq(registeredAssetTable.id, id));
+      return c.json({ success: true });
+    },
+  )
+  // ── Custody (assign / transfer / release) ────────────────────────────────
+  .post(
+    "/:id/custody",
+    validator("param", v.object({ id: v.string() })),
+    validator(
+      "json",
+      v.object({ workspaceId: v.string(), userId: v.string(), note: optStr }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const actorId = c.get("userId");
+      const { id } = c.req.valid("param");
+      const { userId, note } = c.req.valid("json");
+      await loadAsset(id, workspaceId);
+
+      const [member] = await db
+        .select({ id: workspaceUserTable.id })
+        .from(workspaceUserTable)
+        .where(
+          and(
+            eq(workspaceUserTable.workspaceId, workspaceId),
+            eq(workspaceUserTable.userId, userId),
+          ),
+        )
+        .limit(1);
+      if (!member) {
+        throw new HTTPException(404, {
+          message: "User is not a member of this workspace",
+        });
+      }
+
+      // Close the currently-open custody row, open a new one, denormalize.
+      await db
+        .update(assetCustodyTable)
+        .set({ releasedAt: new Date() })
+        .where(
+          and(
+            eq(assetCustodyTable.assetId, id),
+            isNull(assetCustodyTable.releasedAt),
+          ),
+        );
+      await db.insert(assetCustodyTable).values({
+        assetId: id,
+        userId,
+        assignedBy: actorId,
+        note: note ?? null,
+      });
+      await db
+        .update(registeredAssetTable)
+        .set({ currentCustodianId: userId, updatedAt: new Date() })
+        .where(eq(registeredAssetTable.id, id));
+      await recordActivity(id, "custodian_changed", actorId, {
+        custodianId: userId,
+      });
+      return c.json({ success: true });
+    },
+  )
+  .post(
+    "/:id/custody/release",
+    validator("param", v.object({ id: v.string() })),
+    validator("json", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const actorId = c.get("userId");
+      const { id } = c.req.valid("param");
+      await loadAsset(id, workspaceId);
+      await db
+        .update(assetCustodyTable)
+        .set({ releasedAt: new Date() })
+        .where(
+          and(
+            eq(assetCustodyTable.assetId, id),
+            isNull(assetCustodyTable.releasedAt),
+          ),
+        );
+      await db
+        .update(registeredAssetTable)
+        .set({ currentCustodianId: null, updatedAt: new Date() })
+        .where(eq(registeredAssetTable.id, id));
+      await recordActivity(id, "custodian_released", actorId);
       return c.json({ success: true });
     },
   )

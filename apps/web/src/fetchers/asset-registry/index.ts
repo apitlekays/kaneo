@@ -13,6 +13,7 @@ export type Asset = {
   location: string | null;
   assignedTo: string | null;
   registrationNumber: string | null;
+  currentCustodianId: string | null;
   purchaseDate: string | null;
   purchaseCost: number | null;
   currency: string;
@@ -21,6 +22,29 @@ export type Asset = {
   createdAt: string;
   updatedAt: string;
   nextRenewalDate?: string | null;
+  custodianName?: string | null;
+  custodianImage?: string | null;
+};
+
+export type AssetCustody = {
+  id: string;
+  userId: string | null;
+  userName: string | null;
+  userImage: string | null;
+  assignedBy: string | null;
+  assignedAt: string;
+  releasedAt: string | null;
+  note: string | null;
+};
+
+export type AssetActivity = {
+  id: string;
+  type: string;
+  userId: string | null;
+  userName: string | null;
+  userImage: string | null;
+  eventData: Record<string, unknown> | null;
+  createdAt: string;
 };
 
 export type AssetRenewal = {
@@ -83,6 +107,8 @@ export type AssetDetail = {
   costs: AssetCost[];
   trips: AssetTrip[];
   files: AssetFile[];
+  custody: AssetCustody[];
+  activity: AssetActivity[];
 };
 
 export type RenewalSummaryItem = {
@@ -200,6 +226,33 @@ export async function deleteAsset(workspaceId: string, id: string) {
     await fetch(api(`${id}?workspaceId=${workspaceId}`), {
       method: "DELETE",
       credentials: "include",
+    }),
+  );
+}
+
+export async function setCustodian(
+  workspaceId: string,
+  assetId: string,
+  userId: string,
+  note?: string,
+) {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/custody`), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId, userId, note: note ?? null }),
+    }),
+  );
+}
+
+export async function releaseCustodian(workspaceId: string, assetId: string) {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/custody/release`), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId }),
     }),
   );
 }

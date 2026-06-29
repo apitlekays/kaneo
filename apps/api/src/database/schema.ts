@@ -200,7 +200,13 @@ export const registeredAssetTable = pgTable(
     // active | in-maintenance | retired | disposed
     status: text("status").notNull().default("active"),
     location: text("location"),
+    // Legacy free-text holder (kept for back-compat); superseded by
+    // currentCustodianId + the asset_custody history table.
     assignedTo: text("assigned_to"),
+    currentCustodianId: text("current_custodian_id").references(
+      () => userTable.id,
+      { onDelete: "set null" },
+    ),
     registrationNumber: text("registration_number"),
     purchaseDate: timestamp("purchase_date", { mode: "date" }),
     purchaseCost: integer("purchase_cost"),
@@ -339,6 +345,54 @@ export const assetFileTable = pgTable(
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (table) => [index("asset_file_assetId_idx").on(table.assetId)],
+);
+
+// Custody chain: who held an asset and when. The open row (releasedAt IS NULL)
+// is the current custodian; also denormalized onto registered_asset for lists.
+export const assetCustodyTable = pgTable(
+  "asset_custody",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    assignedBy: text("assigned_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    assignedAt: timestamp("assigned_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+    releasedAt: timestamp("released_at", { mode: "date" }),
+    note: text("note"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_custody_assetId_idx").on(table.assetId)],
+);
+
+// Audit trail: one row per asset change (who/what/when). Mirrors activityTable.
+export const assetActivityTable = pgTable(
+  "asset_activity",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    userId: text("user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    content: text("content"),
+    eventData: jsonb("event_data"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_activity_assetId_idx").on(table.assetId)],
 );
 
 export const teamTable = pgTable(

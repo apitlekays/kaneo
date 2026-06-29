@@ -110,5 +110,31 @@ export function useAssetMutations(workspaceId: string, assetId?: string) {
       onSuccess: invalidate,
       onError,
     }),
+
+    setCustodian: useMutation({
+      mutationFn: ({
+        targetAssetId,
+        userId,
+        note,
+      }: {
+        targetAssetId: string;
+        userId: string;
+        note?: string;
+      }) => api.setCustodian(workspaceId, targetAssetId, userId, note),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Custodian assigned");
+      },
+      onError,
+    }),
+    releaseCustodian: useMutation({
+      mutationFn: (targetAssetId: string) =>
+        api.releaseCustodian(workspaceId, targetAssetId),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Custodian released");
+      },
+      onError,
+    }),
   };
 }

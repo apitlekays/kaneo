@@ -9,6 +9,7 @@ import Layout from "@/components/common/layout";
 import PageTitle from "@/components/page-title";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { getMyPageAccess } from "@/fetchers/workspace-access";
@@ -105,6 +106,7 @@ function AssetsPage() {
                     <th className="px-3 py-2 font-medium">Name</th>
                     <th className="px-3 py-2 font-medium">Category</th>
                     <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Custodian</th>
                     <th className="px-3 py-2 font-medium">Location</th>
                     <th className="px-3 py-2 font-medium">Next renewal</th>
                   </tr>
@@ -129,6 +131,24 @@ function AssetsPage() {
                         >
                           {labelOf(ASSET_STATUSES, asset.status)}
                         </Badge>
+                      </td>
+                      <td className="px-3 py-2">
+                        {asset.custodianName ? (
+                          <span className="flex items-center gap-1.5">
+                            <ColoredAvatar
+                              name={asset.custodianName}
+                              image={asset.custodianImage}
+                              seed={asset.currentCustodianId ?? ""}
+                              className="h-5 w-5"
+                              fallbackClassName="text-[9px]"
+                            />
+                            <span className="truncate">
+                              {asset.custodianName}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
                         {asset.location || "—"}

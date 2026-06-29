@@ -6,12 +6,16 @@ import {
   Plus,
   Trash2,
   Upload,
+  UserMinus,
+  UserPlus,
 } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { AssetBarcode } from "@/components/assets/asset-barcode";
 import { DateField } from "@/components/assets/date-field";
+import { MemberPicker } from "@/components/assets/member-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +45,7 @@ import {
   STATUS_TONES,
 } from "@/lib/asset-constants";
 import { cn } from "@/lib/cn";
-import { formatDateMedium } from "@/lib/format";
+import { formatDateMedium, formatDateTime } from "@/lib/format";
 import { formatMoney, toMinorUnits } from "@/lib/format-currency";
 import { AssetFormDialog } from "./asset-form-dialog";
 
@@ -107,6 +111,7 @@ function DetailBody({
 }) {
   const { asset } = data;
   const currency = asset.currency || "MYR";
+  const currentCustody = data.custody.find((entry) => !entry.releasedAt);
 
   return (
     <>
@@ -168,12 +173,18 @@ function DetailBody({
           </TabsTrigger>
           <TabsTrigger value="costs">Costs ({data.costs.length})</TabsTrigger>
           <TabsTrigger value="trips">Trips ({data.trips.length})</TabsTrigger>
+          <TabsTrigger value="custody">Custody</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="label">Label</TabsTrigger>
         </TabsList>
 
         <div className="min-h-0 flex-1 overflow-y-auto pt-3">
           <TabsContent value="overview">
-            <OverviewTab data={data} currency={currency} />
+            <OverviewTab
+              data={data}
+              currency={currency}
+              custodianName={currentCustody?.userName ?? null}
+            />
           </TabsContent>
           <TabsContent value="files">
             <FilesTab data={data} m={m} />
@@ -189,6 +200,12 @@ function DetailBody({
           </TabsContent>
           <TabsContent value="trips">
             <TripsTab data={data} m={m} currency={currency} />
+          </TabsContent>
+          <TabsContent value="custody">
+            <CustodyTab data={data} m={m} workspaceId={workspaceId} />
+          </TabsContent>
+          <TabsContent value="history">
+            <HistoryTab data={data} />
           </TabsContent>
           <TabsContent value="label">
             <div className="space-y-3 py-2">
@@ -226,9 +243,11 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
 function OverviewTab({
   data,
   currency,
+  custodianName,
 }: {
   data: AssetDetail;
   currency: string;
+  custodianName: string | null;
 }) {
   const a = data.asset;
   return (
@@ -242,7 +261,7 @@ function OverviewTab({
       <Field label="Model" value={a.model} />
       <Field label="Registration / Plate" value={a.registrationNumber} />
       <Field label="Location" value={a.location} />
-      <Field label="Assigned to" value={a.assignedTo} />
+      <Field label="Custodian" value={custodianName} />
       <Field label="Vendor" value={a.vendor} />
       <Field
         label="Purchase date"
@@ -822,5 +841,141 @@ function TripsTab({
         />
       ))}
     </EntrySection>
+  );
+}
+
+function CustodyTab({
+  data,
+  m,
+  workspaceId,
+}: {
+  data: AssetDetail;
+  m: Mutations;
+  workspaceId: string;
+}) {
+  const current = data.custody.find((c) => !c.releasedAt);
+  return (
+    <div className="space-y-4 py-2">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+        <div className="flex items-center gap-2">
+          {current?.userId ? (
+            <>
+              <ColoredAvatar
+                name={current.userName}
+                image={current.userImage}
+                seed={current.userId}
+                className="h-8 w-8"
+              />
+              <div>
+                <div className="text-sm font-medium">
+                  {current.userName ?? current.userId}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Current custodian
+                </div>
+              </div>
+            </>
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              No custodian assigned
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <MemberPicker
+            workspaceId={workspaceId}
+            selectedUserId={current?.userId}
+            onSelect={(userId) =>
+              m.setCustodian.mutate({ targetAssetId: data.asset.id, userId })
+            }
+            trigger={
+              <Button variant="outline" size="sm">
+                <UserPlus className="h-3.5 w-3.5" />{" "}
+                {current ? "Transfer" : "Assign"}
+              </Button>
+            }
+          />
+          {current && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => m.releaseCustodian.mutate(data.asset.id)}
+            >
+              <UserMinus className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <h4 className="text-sm font-medium">History</h4>
+        {data.custody.map((c) => (
+          <div
+            key={c.id}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
+          >
+            <ColoredAvatar
+              name={c.userName}
+              image={c.userImage}
+              seed={c.userId ?? ""}
+              className="h-6 w-6"
+              fallbackClassName="text-[10px]"
+            />
+            <span className="flex-1 truncate">{c.userName ?? "Unknown"}</span>
+            <span className="text-xs text-muted-foreground">
+              {formatDateMedium(c.assignedAt)}
+              {c.releasedAt
+                ? ` → ${formatDateMedium(c.releasedAt)}`
+                : " · current"}
+            </span>
+          </div>
+        ))}
+        {data.custody.length === 0 && (
+          <p className="text-sm text-muted-foreground">No custody history.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const ACTIVITY_VERBS: Record<string, string> = {
+  created: "registered this asset",
+  updated: "updated the details",
+  custodian_changed: "assigned a custodian",
+  custodian_released: "released the custodian",
+};
+
+function HistoryTab({ data }: { data: AssetDetail }) {
+  if (data.activity.length === 0) {
+    return (
+      <p className="py-4 text-sm text-muted-foreground">No history yet.</p>
+    );
+  }
+  return (
+    <div className="space-y-1.5 py-2">
+      {data.activity.map((a) => (
+        <div
+          key={a.id}
+          className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
+        >
+          <ColoredAvatar
+            name={a.userName}
+            image={a.userImage}
+            seed={a.userId ?? ""}
+            className="h-6 w-6"
+            fallbackClassName="text-[10px]"
+          />
+          <span className="flex-1 truncate">
+            <span className="font-medium">{a.userName ?? "Someone"}</span>{" "}
+            <span className="text-muted-foreground">
+              {ACTIVITY_VERBS[a.type] ?? a.type}
+            </span>
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {formatDateTime(a.createdAt)}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
