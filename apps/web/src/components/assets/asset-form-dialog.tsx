@@ -100,7 +100,7 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2 sm:grid-cols-2">
+        <div className="grid gap-4 px-6 pb-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Name *</Label>
             <Input
