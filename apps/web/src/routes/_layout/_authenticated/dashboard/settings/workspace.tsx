@@ -5,7 +5,7 @@ import {
   redirect,
   useLocation,
 } from "@tanstack/react-router";
-import { Settings, Shield } from "lucide-react";
+import { Lock, Settings, Shield } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,7 @@ export const Route = createFileRoute(
 
 function RouteComponent() {
   const { t } = useTranslation();
-  const { workspace, role } = useWorkspacePermission();
+  const { workspace, role, isAdmin } = useWorkspacePermission();
   const location = useLocation();
   const menuItems = [
     {
@@ -61,6 +61,17 @@ function RouteComponent() {
       url: "/dashboard/settings/workspace/roles",
       icon: Shield,
     },
+    // Access Management is owner/global-admin only — both the page and this
+    // entry are gated so non-admins never see it.
+    ...(isAdmin
+      ? [
+          {
+            title: t("settings:workspaceAccess.title"),
+            url: "/dashboard/settings/workspace/access",
+            icon: Lock,
+          },
+        ]
+      : []),
   ];
   const isActivePath = (path: string) => location.pathname === path;
   const workspaceInitials =

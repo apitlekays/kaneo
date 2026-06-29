@@ -64,6 +64,13 @@ export const SIDEBAR_CATEGORIES: SidebarCategory[] = [
   },
 ];
 
+// Flat list of every gateable sub-category slug, in sidebar order. Used by the
+// access-control layer (sidebar filtering, route guard, settings matrix). MUST
+// stay in sync with ACCESS_PAGE_SLUGS in apps/api/src/workspace-access/index.ts.
+export const ALL_CATEGORY_SLUGS = SIDEBAR_CATEGORIES.flatMap((category) =>
+  category.items.map((item) => item.slug),
+);
+
 export function categoryItemPath(slug: string) {
   return `/dashboard/category/${slug}`;
 }

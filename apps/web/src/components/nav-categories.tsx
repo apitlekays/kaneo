@@ -15,6 +15,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
+import { useMyPageAccess } from "@/hooks/queries/workspace-access/use-my-page-access";
 import { categoryItemPath, SIDEBAR_CATEGORIES } from "@/lib/sidebar-categories";
 
 export function NavCategories() {
@@ -25,13 +26,24 @@ export function NavCategories() {
   // leaves the active highlight stuck on the first-clicked item when moving
   // between sub-categories (same `$category` route → no remount).
   const pathname = useLocation({ select: (location) => location.pathname });
+  const { data: access } = useMyPageAccess(workspace?.id ?? "");
 
-  if (!workspace) return null;
+  // Render nothing until access is known — hiding-until-known prevents briefly
+  // flashing pages the user isn't allowed to see.
+  if (!workspace || !access) return null;
+
+  const accessible = new Set(access.pages);
 
   return (
     <>
       {SIDEBAR_CATEGORIES.map((category) => {
-        const containsActive = category.items.some(
+        const items = category.items.filter((item) =>
+          accessible.has(item.slug),
+        );
+        // Hide a whole group when the user can access none of its pages.
+        if (items.length === 0) return null;
+
+        const containsActive = items.some(
           (item) => pathname === categoryItemPath(item.slug),
         );
 
@@ -56,7 +68,7 @@ export function NavCategories() {
               <CollapsiblePanel>
                 <SidebarGroupContent>
                   <SidebarMenu className="gap-0.5">
-                    {category.items.map((item) => {
+                    {items.map((item) => {
                       const label = t(item.titleKey);
                       return (
                         <SidebarMenuItem key={item.slug}>

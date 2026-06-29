@@ -81,6 +81,7 @@ import { seedDefaultWorkspaceRoles } from "./utils/seed-default-workspace-roles"
 import { validateWorkspaceAccess } from "./utils/validate-workspace-access";
 import workflowRule from "./workflow-rule";
 import workspace from "./workspace";
+import workspaceAccess from "./workspace-access";
 import {
   addConnection,
   broadcastToWorkspace,
@@ -586,6 +587,7 @@ export function createApp() {
   api.route("/project-member", projectMember);
   api.route("/user", user);
   api.route("/task-mom", taskMom);
+  api.route("/workspace-access", workspaceAccess);
 
   app.route(
     "/",

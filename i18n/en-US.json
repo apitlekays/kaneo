@@ -1059,6 +1059,13 @@
 			"deny": "Deny",
 			"roleUpdated": "Role updated",
 			"roleUpdateError": "Couldn’t update role"
+		},
+		"workspaceAccess": {
+			"title": "Access Management",
+			"description": "Choose which pages each member can access.",
+			"alwaysAvailable": "Home and Projects are always available to everyone.",
+			"member": "Member",
+			"noAccessBody": "You need owner or admin permissions to manage access."
 		}
 	},
 	"navigation": {

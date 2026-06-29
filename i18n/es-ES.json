@@ -1059,6 +1059,13 @@
 				"chatIdRequired": "Chat ID is required",
 				"threadIdInvalid": "Enter a valid Telegram topic thread ID"
 			}
+		},
+		"workspaceAccess": {
+			"alwaysAvailable": "Home and Projects are always available to everyone.",
+			"description": "Choose which pages each member can access.",
+			"member": "Member",
+			"noAccessBody": "You need owner or admin permissions to manage access.",
+			"title": "Access Management"
 		}
 	},
 	"navigation": {

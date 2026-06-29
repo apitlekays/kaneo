@@ -1,15 +1,34 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Construction } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Layout from "@/components/common/layout";
 import PageTitle from "@/components/page-title";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { getMyPageAccess } from "@/fetchers/workspace-access";
+import { authClient } from "@/lib/auth-client";
 import { findCategoryItem } from "@/lib/sidebar-categories";
 
 export const Route = createFileRoute(
   "/_layout/_authenticated/dashboard/category/$category",
 )({
+  // Enforce page access on direct navigation/deep-link: a user without a grant
+  // for this slug (and who isn't an admin) is redirected to Home. Shares the
+  // sidebar's cached access query so this doesn't double-fetch.
+  beforeLoad: async ({ params, context }) => {
+    const session = await authClient.getSession();
+    const workspaceId = session?.data?.session?.activeOrganizationId;
+    if (!workspaceId) return;
+
+    const access = await context.queryClient.ensureQueryData({
+      queryKey: ["page-access", "me", workspaceId],
+      queryFn: () => getMyPageAccess(workspaceId),
+    });
+
+    if (!access.isAdmin && !access.pages.includes(params.category)) {
+      throw redirect({ to: "/dashboard/home" });
+    }
+  },
   component: CategoryComingSoonPage,
 });
 

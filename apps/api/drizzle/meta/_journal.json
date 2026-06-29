@@ -274,6 +274,13 @@
 			"when": 1782459901445,
 			"tag": "0038_task_mom",
 			"breakpoints": true
+		},
+		{
+			"idx": 39,
+			"version": "7",
+			"when": 1782706089890,
+			"tag": "0039_panoramic_cyclops",
+			"breakpoints": true
 		}
 	]
 }

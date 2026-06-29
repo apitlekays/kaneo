@@ -143,6 +143,40 @@ export const workspaceUserTable = pgTable(
   ],
 );
 
+// Per-user access grants for the gateable sidebar "pages" (the business-domain
+// sub-categories). A row's presence = access granted; absence = denied
+// (default-deny). Owner / global-admins bypass this table entirely. Home and
+// Projects are always available and are NOT represented here.
+export const workspacePageAccessTable = pgTable(
+  "workspace_page_access",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, {
+        onDelete: "cascade",
+      }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => userTable.id, {
+        onDelete: "cascade",
+      }),
+    pageSlug: text("page_slug").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("workspace_page_access_workspaceId_idx").on(table.workspaceId),
+    index("workspace_page_access_userId_idx").on(table.userId),
+    unique("workspace_page_access_unique").on(
+      table.workspaceId,
+      table.userId,
+      table.pageSlug,
+    ),
+  ],
+);
+
 export const teamTable = pgTable(
   "team",
   {
