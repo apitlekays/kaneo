@@ -17,6 +17,10 @@ export type Asset = {
   purchaseDate: string | null;
   purchaseCost: number | null;
   currency: string;
+  depreciationMethod: string;
+  usefulLifeMonths: number | null;
+  salvageValue: number | null;
+  inServiceDate: string | null;
   vendor: string | null;
   notes: string | null;
   createdAt: string;
@@ -100,6 +104,36 @@ export type AssetFile = {
   createdAt: string;
 };
 
+export type DepreciationScheduleRow = {
+  year: number;
+  depreciation: number;
+  openingValue: number;
+  closingValue: number;
+};
+
+export type AssetDepreciation = {
+  method: string;
+  usefulLifeMonths: number | null;
+  salvageValue: number | null;
+  inServiceDate: string | null;
+  monthlyDepreciation: number;
+  accumulatedDepreciation: number;
+  netBookValue: number | null;
+  schedule: DepreciationScheduleRow[];
+};
+
+export type AssetDisposal = {
+  id: string;
+  assetId: string;
+  date: string;
+  method: string;
+  proceeds: number | null;
+  reason: string | null;
+  approvedBy: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
 export type AssetDetail = {
   asset: Asset;
   renewals: AssetRenewal[];
@@ -109,6 +143,8 @@ export type AssetDetail = {
   files: AssetFile[];
   custody: AssetCustody[];
   activity: AssetActivity[];
+  depreciation: AssetDepreciation;
+  disposal: AssetDisposal | null;
 };
 
 export type RenewalSummaryItem = {
@@ -127,6 +163,8 @@ export type AssetSummary = {
   purchaseTotal: number;
   spendTotal: number;
   totalValue: number;
+  totalNetBookValue: number;
+  disposedCount: number;
   overdueRenewals: RenewalSummaryItem[];
   upcomingRenewals: RenewalSummaryItem[];
   overdueCount: number;
@@ -188,6 +226,10 @@ export type AssetInput = {
   purchaseDate?: string | null;
   purchaseCost?: number | null;
   currency?: string;
+  depreciationMethod?: string;
+  usefulLifeMonths?: number | null;
+  salvageValue?: number | null;
+  inServiceDate?: string | null;
   vendor?: string | null;
   notes?: string | null;
 };
@@ -253,6 +295,39 @@ export async function releaseCustodian(workspaceId: string, assetId: string) {
       credentials: "include",
       headers: jsonHeaders,
       body: JSON.stringify({ workspaceId }),
+    }),
+  );
+}
+
+export type DisposalInput = {
+  date: string;
+  method?: string;
+  proceeds?: number | null;
+  reason?: string | null;
+  approvedBy?: string | null;
+  notes?: string | null;
+};
+
+export async function createDisposal(
+  workspaceId: string,
+  assetId: string,
+  body: DisposalInput,
+) {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/disposal`), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId, ...body }),
+    }),
+  );
+}
+
+export async function deleteDisposal(workspaceId: string, assetId: string) {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/disposal?workspaceId=${workspaceId}`), {
+      method: "DELETE",
+      credentials: "include",
     }),
   );
 }

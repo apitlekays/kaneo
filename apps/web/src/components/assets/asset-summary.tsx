@@ -71,9 +71,9 @@ export function AssetSummary({
         />
         <Stat
           icon={<Wallet className="h-4 w-4" />}
-          label="Total value"
-          value={formatMoney(summary.totalValue, currency)}
-          hint={`Purchase ${formatMoney(summary.purchaseTotal, currency)} + spend ${formatMoney(summary.spendTotal, currency)}`}
+          label="Net book value"
+          value={formatMoney(summary.totalNetBookValue, currency)}
+          hint={`Purchase ${formatMoney(summary.purchaseTotal, currency)} · spend ${formatMoney(summary.spendTotal, currency)}`}
         />
         <Stat
           icon={<AlertTriangle className="h-4 w-4" />}

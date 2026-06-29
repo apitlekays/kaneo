@@ -136,5 +136,23 @@ export function useAssetMutations(workspaceId: string, assetId?: string) {
       },
       onError,
     }),
+
+    createDisposal: useMutation({
+      mutationFn: (body: api.DisposalInput) =>
+        api.createDisposal(workspaceId, asset, body),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Asset disposed");
+      },
+      onError,
+    }),
+    removeDisposal: useMutation({
+      mutationFn: () => api.deleteDisposal(workspaceId, asset),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Disposal reverted");
+      },
+      onError,
+    }),
   };
 }

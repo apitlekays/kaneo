@@ -211,6 +211,14 @@ export const registeredAssetTable = pgTable(
     purchaseDate: timestamp("purchase_date", { mode: "date" }),
     purchaseCost: integer("purchase_cost"),
     currency: text("currency").notNull().default("MYR"),
+    // Straight-line depreciation (fixed-asset accounting). usefulLifeMonths
+    // null → not depreciated (NBV stays at cost). Defaults set by category.
+    depreciationMethod: text("depreciation_method")
+      .notNull()
+      .default("straight-line"),
+    usefulLifeMonths: integer("useful_life_months"),
+    salvageValue: integer("salvage_value").default(0),
+    inServiceDate: timestamp("in_service_date", { mode: "date" }),
     vendor: text("vendor"),
     notes: text("notes"),
     createdBy: text("created_by").references(() => userTable.id, {
@@ -417,6 +425,35 @@ export const assetReminderSentTable = pgTable(
     ),
     index("asset_reminder_sent_ref_idx").on(table.refType, table.refId),
   ],
+);
+
+// Disposal / retirement record (one per asset). Setting it flips the asset to
+// status='disposed'. Gain/loss = proceeds − net book value (computed).
+export const assetDisposalTable = pgTable(
+  "asset_disposal",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .unique()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    date: timestamp("date", { mode: "date" }).notNull(),
+    // sold | scrapped | donated | written-off | lost
+    method: text("method").notNull().default("sold"),
+    proceeds: integer("proceeds"),
+    reason: text("reason"),
+    approvedBy: text("approved_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    notes: text("notes"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_disposal_assetId_idx").on(table.assetId)],
 );
 
 export const teamTable = pgTable(

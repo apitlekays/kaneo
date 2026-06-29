@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -46,7 +47,11 @@ import {
 } from "@/lib/asset-constants";
 import { cn } from "@/lib/cn";
 import { formatDateMedium, formatDateTime } from "@/lib/format";
-import { formatMoney, toMinorUnits } from "@/lib/format-currency";
+import {
+  formatMoney,
+  fromMinorUnits,
+  toMinorUnits,
+} from "@/lib/format-currency";
 import { AssetFormDialog } from "./asset-form-dialog";
 
 type Mutations = ReturnType<typeof useAssetMutations>;
@@ -164,6 +169,7 @@ function DetailBody({
       >
         <TabsList className="flex-wrap">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="files">Files ({data.files.length})</TabsTrigger>
           <TabsTrigger value="renewals">
             Renewals ({data.renewals.length})
@@ -185,6 +191,9 @@ function DetailBody({
               currency={currency}
               custodianName={currentCustody?.userName ?? null}
             />
+          </TabsContent>
+          <TabsContent value="financials">
+            <FinancialsTab data={data} m={m} currency={currency} />
           </TabsContent>
           <TabsContent value="files">
             <FilesTab data={data} m={m} />
@@ -934,6 +943,256 @@ function CustodyTab({
           <p className="text-sm text-muted-foreground">No custody history.</p>
         )}
       </div>
+    </div>
+  );
+}
+
+const DISPOSAL_METHODS = [
+  { value: "sold", label: "Sold" },
+  { value: "scrapped", label: "Scrapped" },
+  { value: "donated", label: "Donated" },
+  { value: "written-off", label: "Written off" },
+  { value: "lost", label: "Lost" },
+];
+
+function FinancialsTab({
+  data,
+  m,
+  currency,
+}: {
+  data: AssetDetail;
+  m: Mutations;
+  currency: string;
+}) {
+  const { asset, depreciation: dep, disposal } = data;
+
+  const [method, setMethod] = useState(asset.depreciationMethod);
+  const [life, setLife] = useState(
+    asset.usefulLifeMonths != null ? String(asset.usefulLifeMonths) : "",
+  );
+  const [salvage, setSalvage] = useState(fromMinorUnits(asset.salvageValue));
+  const [inService, setInService] = useState<Date | null>(
+    asset.inServiceDate ? new Date(asset.inServiceDate) : null,
+  );
+
+  const saveDep = () =>
+    m.update.mutate({
+      id: asset.id,
+      data: {
+        depreciationMethod: method,
+        usefulLifeMonths: life ? Number(life) : null,
+        salvageValue: toMinorUnits(salvage),
+        inServiceDate: inService ? inService.toISOString() : null,
+      },
+    });
+
+  const [dDate, setDDate] = useState<Date | null>(new Date());
+  const [dMethod, setDMethod] = useState("sold");
+  const [dProceeds, setDProceeds] = useState("");
+  const [dReason, setDReason] = useState("");
+  const [dNotes, setDNotes] = useState("");
+
+  const dispose = () => {
+    if (!dDate) return;
+    m.createDisposal.mutate({
+      date: dDate.toISOString(),
+      method: dMethod,
+      proceeds: toMinorUnits(dProceeds),
+      reason: dReason.trim() || null,
+      notes: dNotes.trim() || null,
+    });
+  };
+
+  const nbv = dep.netBookValue;
+  const gainLoss =
+    disposal && disposal.proceeds != null && nbv != null
+      ? disposal.proceeds - nbv
+      : null;
+
+  return (
+    <div className="space-y-6 py-2">
+      <section className="space-y-3">
+        <h4 className="text-sm font-medium">Depreciation (straight-line)</h4>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Method</Label>
+            <Select value={method} onValueChange={setMethod}>
+              <SelectTrigger>
+                <SelectValue>
+                  {method === "straight-line" ? "Straight-line" : "None"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="straight-line">Straight-line</SelectItem>
+                <SelectItem value="none">None</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Useful life (months)</Label>
+            <Input
+              type="number"
+              value={life}
+              onChange={(e) => setLife(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Salvage value</Label>
+            <Input
+              type="number"
+              value={salvage}
+              onChange={(e) => setSalvage(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">In-service date</Label>
+            <DateField value={inService} onChange={setInService} />
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={saveDep}
+          disabled={m.update.isPending}
+        >
+          Save depreciation
+        </Button>
+
+        <div className="grid grid-cols-3 gap-3 pt-1">
+          <Field label="Net book value" value={formatMoney(nbv, currency)} />
+          <Field
+            label="Accumulated"
+            value={formatMoney(dep.accumulatedDepreciation, currency)}
+          />
+          <Field
+            label="Monthly"
+            value={formatMoney(dep.monthlyDepreciation, currency)}
+          />
+        </div>
+
+        {dep.schedule.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
+                  <th className="px-3 py-1.5 font-medium">Year</th>
+                  <th className="px-3 py-1.5 font-medium">Opening</th>
+                  <th className="px-3 py-1.5 font-medium">Depreciation</th>
+                  <th className="px-3 py-1.5 font-medium">Closing</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dep.schedule.map((r) => (
+                  <tr
+                    key={r.year}
+                    className="border-b border-border last:border-0"
+                  >
+                    <td className="px-3 py-1.5">{r.year}</td>
+                    <td className="px-3 py-1.5">
+                      {formatMoney(r.openingValue, currency)}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {formatMoney(r.depreciation, currency)}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {formatMoney(r.closingValue, currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <h4 className="text-sm font-medium">Disposal</h4>
+        {disposal ? (
+          <div className="space-y-2 rounded-lg border border-border p-3 text-sm">
+            <div className="flex flex-wrap gap-x-6 gap-y-1">
+              <span>
+                <span className="text-muted-foreground">Method:</span>{" "}
+                {labelOf(DISPOSAL_METHODS, disposal.method)}
+              </span>
+              <span>
+                <span className="text-muted-foreground">Date:</span>{" "}
+                {formatDateMedium(disposal.date)}
+              </span>
+              <span>
+                <span className="text-muted-foreground">Proceeds:</span>{" "}
+                {formatMoney(disposal.proceeds, currency)}
+              </span>
+              {gainLoss != null && (
+                <span
+                  className={cn(
+                    "font-medium",
+                    gainLoss >= 0 ? "text-emerald-600" : "text-rose-600",
+                  )}
+                >
+                  {gainLoss >= 0 ? "Gain" : "Loss"} on disposal:{" "}
+                  {formatMoney(Math.abs(gainLoss), currency)}
+                </span>
+              )}
+            </div>
+            {disposal.reason && (
+              <p className="text-muted-foreground">{disposal.reason}</p>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => m.removeDisposal.mutate()}
+            >
+              Revert disposal
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-2 rounded-lg border border-dashed border-border p-3 sm:grid-cols-2">
+            <DateField
+              value={dDate}
+              onChange={setDDate}
+              placeholder="Disposal date *"
+            />
+            <Select value={dMethod} onValueChange={setDMethod}>
+              <SelectTrigger>
+                <SelectValue>{labelOf(DISPOSAL_METHODS, dMethod)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {DISPOSAL_METHODS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              placeholder="Proceeds"
+              value={dProceeds}
+              onChange={(e) => setDProceeds(e.target.value)}
+            />
+            <Input
+              placeholder="Reason"
+              value={dReason}
+              onChange={(e) => setDReason(e.target.value)}
+            />
+            <Textarea
+              className="sm:col-span-2"
+              rows={2}
+              placeholder="Notes"
+              value={dNotes}
+              onChange={(e) => setDNotes(e.target.value)}
+            />
+            <Button
+              size="sm"
+              className="sm:col-span-2"
+              onClick={dispose}
+              disabled={!dDate || m.createDisposal.isPending}
+            >
+              Dispose asset
+            </Button>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   assetActivityTable,
   assetCostTable,
   assetCustodyTable,
+  assetDisposalTable,
   assetFileTable,
   assetMaintenanceTable,
   assetReminderSentTable,
@@ -91,6 +92,103 @@ async function loadAsset(assetId: string, workspaceId: string) {
     throw new HTTPException(404, { message: "Asset not found" });
   }
   return asset;
+}
+
+// Default useful life (months) by category for straight-line depreciation.
+const DEFAULT_LIFE_BY_CATEGORY: Record<string, number | null> = {
+  "it-equipment": 60,
+  "media-equipment": 60,
+  vehicle: 120,
+  other: null,
+};
+
+type DepreciableAsset = {
+  purchaseCost: number | null;
+  depreciationMethod: string;
+  usefulLifeMonths: number | null;
+  salvageValue: number | null;
+  inServiceDate: Date | null;
+  purchaseDate: Date | null;
+};
+
+function monthsBetween(from: Date, to: Date) {
+  return (
+    (to.getFullYear() - from.getFullYear()) * 12 +
+    (to.getMonth() - from.getMonth())
+  );
+}
+
+/** Straight-line depreciation: current NBV + a per-year schedule. */
+function computeDepreciation(asset: DepreciableAsset) {
+  const cost = asset.purchaseCost;
+  const life = asset.usefulLifeMonths;
+  const salvage = asset.salvageValue ?? 0;
+  const inService = asset.inServiceDate ?? asset.purchaseDate;
+
+  if (
+    asset.depreciationMethod !== "straight-line" ||
+    !cost ||
+    !life ||
+    !inService
+  ) {
+    return {
+      method: asset.depreciationMethod,
+      usefulLifeMonths: life,
+      salvageValue: salvage,
+      inServiceDate: inService,
+      monthlyDepreciation: 0,
+      accumulatedDepreciation: 0,
+      netBookValue: cost,
+      schedule: [] as Array<{
+        year: number;
+        depreciation: number;
+        openingValue: number;
+        closingValue: number;
+      }>,
+    };
+  }
+
+  const base = Math.max(cost - salvage, 0);
+  const monthly = base / life;
+  const elapsed = Math.max(
+    0,
+    Math.min(monthsBetween(inService, new Date()), life),
+  );
+  const accumulated = Math.round(Math.min(elapsed * monthly, base));
+
+  const schedule: Array<{
+    year: number;
+    depreciation: number;
+    openingValue: number;
+    closingValue: number;
+  }> = [];
+  let opening = cost;
+  const startYear = inService.getFullYear();
+  for (let y = 0; y * 12 < life; y++) {
+    const monthsThisYear = Math.min(12, life - y * 12);
+    const dep = Math.round(
+      Math.min(monthly * monthsThisYear, Math.max(opening - salvage, 0)),
+    );
+    const closing = opening - dep;
+    schedule.push({
+      year: startYear + y,
+      depreciation: dep,
+      openingValue: opening,
+      closingValue: closing,
+    });
+    opening = closing;
+  }
+
+  return {
+    method: asset.depreciationMethod,
+    usefulLifeMonths: life,
+    salvageValue: salvage,
+    inServiceDate: inService,
+    monthlyDepreciation: Math.round(monthly),
+    accumulatedDepreciation: accumulated,
+    netBookValue: cost - accumulated,
+    schedule,
+  };
 }
 
 /** Append an audit-trail entry. Never throws into the request path. */
@@ -198,6 +296,11 @@ const assetRegistry = new Hono<{
           category: registeredAssetTable.category,
           status: registeredAssetTable.status,
           purchaseCost: registeredAssetTable.purchaseCost,
+          purchaseDate: registeredAssetTable.purchaseDate,
+          depreciationMethod: registeredAssetTable.depreciationMethod,
+          usefulLifeMonths: registeredAssetTable.usefulLifeMonths,
+          salvageValue: registeredAssetTable.salvageValue,
+          inServiceDate: registeredAssetTable.inServiceDate,
         })
         .from(registeredAssetTable)
         .where(eq(registeredAssetTable.workspaceId, workspaceId));
@@ -268,6 +371,13 @@ const assetRegistry = new Hono<{
       const overdue = renewals.filter((r) => r.dueDate.getTime() < now);
       const upcoming = renewals.filter((r) => r.dueDate.getTime() >= now);
 
+      const activeAssets = assets.filter((a) => a.status !== "disposed");
+      const totalNetBookValue = activeAssets.reduce(
+        (acc, a) => acc + (computeDepreciation(a).netBookValue ?? 0),
+        0,
+      );
+      const disposedCount = assets.length - activeAssets.length;
+
       return c.json({
         totalAssets: assets.length,
         byCategory,
@@ -275,6 +385,8 @@ const assetRegistry = new Hono<{
         purchaseTotal,
         spendTotal: costTotal + maintenanceTotal + tripTotal,
         totalValue: purchaseTotal + costTotal + maintenanceTotal + tripTotal,
+        totalNetBookValue,
+        disposedCount,
         overdueRenewals: overdue,
         upcomingRenewals: upcoming.slice(0, 10),
         overdueCount: overdue.length,
@@ -368,6 +480,9 @@ const assetRegistry = new Hono<{
               purchaseDate: toDate(body.purchaseDate),
               purchaseCost: toCents(body.purchaseCost),
               currency: body.currency || "MYR",
+              usefulLifeMonths:
+                DEFAULT_LIFE_BY_CATEGORY[body.category ?? "other"] ?? null,
+              inServiceDate: toDate(body.purchaseDate),
               vendor: body.vendor ?? null,
               notes: body.notes ?? null,
               createdBy: userId,
@@ -457,6 +572,12 @@ const assetRegistry = new Hono<{
             .limit(100),
         ]);
 
+      const [disposal] = await db
+        .select()
+        .from(assetDisposalTable)
+        .where(eq(assetDisposalTable.assetId, id))
+        .limit(1);
+
       return c.json({
         asset,
         renewals,
@@ -466,6 +587,8 @@ const assetRegistry = new Hono<{
         files,
         custody,
         activity,
+        disposal: disposal ?? null,
+        depreciation: computeDepreciation(asset),
       });
     },
   )
@@ -489,6 +612,10 @@ const assetRegistry = new Hono<{
         purchaseDate: optDate,
         purchaseCost: optNum,
         currency: v.optional(v.string()),
+        depreciationMethod: v.optional(v.picklist(["none", "straight-line"])),
+        usefulLifeMonths: optNum,
+        salvageValue: optNum,
+        inServiceDate: optDate,
         vendor: optStr,
         notes: optStr,
       }),
@@ -527,6 +654,18 @@ const assetRegistry = new Hono<{
             : {}),
           ...(body.currency !== undefined
             ? { currency: body.currency || "MYR" }
+            : {}),
+          ...(body.depreciationMethod !== undefined
+            ? { depreciationMethod: body.depreciationMethod }
+            : {}),
+          ...(body.usefulLifeMonths !== undefined
+            ? { usefulLifeMonths: body.usefulLifeMonths }
+            : {}),
+          ...(body.salvageValue !== undefined
+            ? { salvageValue: toCents(body.salvageValue) }
+            : {}),
+          ...(body.inServiceDate !== undefined
+            ? { inServiceDate: toDate(body.inServiceDate) }
             : {}),
           ...(body.vendor !== undefined ? { vendor: body.vendor } : {}),
           ...(body.notes !== undefined ? { notes: body.notes } : {}),
@@ -652,6 +791,80 @@ const assetRegistry = new Hono<{
         .set({ currentCustodianId: null, updatedAt: new Date() })
         .where(eq(registeredAssetTable.id, id));
       await recordActivity(id, "custodian_released", actorId);
+      return c.json({ success: true });
+    },
+  )
+  // ── Disposal / retirement ────────────────────────────────────────────────
+  .post(
+    "/:id/disposal",
+    validator("param", v.object({ id: v.string() })),
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        date: v.string(),
+        method: v.optional(
+          v.picklist(["sold", "scrapped", "donated", "written-off", "lost"]),
+        ),
+        proceeds: optNum,
+        reason: optStr,
+        approvedBy: optStr,
+        notes: optStr,
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const userId = c.get("userId");
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      await loadAsset(id, workspaceId);
+
+      const values = {
+        date: toDate(body.date) ?? new Date(),
+        method: body.method ?? "sold",
+        proceeds: toCents(body.proceeds),
+        reason: body.reason ?? null,
+        approvedBy: body.approvedBy ?? null,
+        notes: body.notes ?? null,
+      };
+      const [row] = await db
+        .insert(assetDisposalTable)
+        .values({ assetId: id, createdBy: userId, ...values })
+        .onConflictDoUpdate({
+          target: assetDisposalTable.assetId,
+          set: values,
+        })
+        .returning();
+
+      await db
+        .update(registeredAssetTable)
+        .set({ status: "disposed", updatedAt: new Date() })
+        .where(eq(registeredAssetTable.id, id));
+      await recordActivity(id, "disposed", userId, { method: values.method });
+      return c.json(row, 201);
+    },
+  )
+  .delete(
+    "/:id/disposal",
+    validator("param", v.object({ id: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const actorId = c.get("userId");
+      const { id } = c.req.valid("param");
+      await loadAsset(id, workspaceId);
+      await db
+        .delete(assetDisposalTable)
+        .where(eq(assetDisposalTable.assetId, id));
+      await db
+        .update(registeredAssetTable)
+        .set({ status: "active", updatedAt: new Date() })
+        .where(eq(registeredAssetTable.id, id));
+      await recordActivity(id, "disposal_reverted", actorId);
       return c.json({ success: true });
     },
   )
