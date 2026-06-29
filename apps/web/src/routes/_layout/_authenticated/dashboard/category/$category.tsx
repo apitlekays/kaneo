@@ -1,11 +1,14 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { Construction } from "lucide-react";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import Layout from "@/components/common/layout";
 import PageTitle from "@/components/page-title";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { getMyPageAccess } from "@/fetchers/workspace-access";
+import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
+import { useMyPageAccess } from "@/hooks/queries/workspace-access/use-my-page-access";
 import { authClient } from "@/lib/auth-client";
 import { findCategoryItem } from "@/lib/sidebar-categories";
 
@@ -35,6 +38,20 @@ export const Route = createFileRoute(
 function CategoryComingSoonPage() {
   const { t } = useTranslation();
   const { category } = Route.useParams();
+  const navigate = useNavigate();
+  const { data: workspace } = useActiveWorkspace();
+  const { data: access } = useMyPageAccess(workspace?.id ?? "");
+
+  // Live revocation: if an admin removes this page while the user is on it, the
+  // WS invalidation refetches access and this bounces them to Home. Admins (and
+  // still-granted users) are never affected.
+  useEffect(() => {
+    if (!access || access.isAdmin) return;
+    if (!access.pages.includes(category)) {
+      navigate({ to: "/dashboard/home" });
+    }
+  }, [access, category, navigate]);
+
   const match = findCategoryItem(category);
   const title = match ? t(match.item.titleKey) : category;
 

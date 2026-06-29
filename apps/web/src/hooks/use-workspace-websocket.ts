@@ -39,6 +39,9 @@ const ENTITY_INVALIDATIONS: Record<string, string[][]> = {
     ["my-tasks"],
   ],
   "workflow-rule": [["workflow-rules"]],
+  // Page-access toggles: refresh the affected user's own access (sidebar +
+  // route guard) and, for any admin watching the matrix, the matrix + members.
+  "workspace-access": [["page-access"], ["workspace-members-list"]],
   workspace: [
     ["projects"],
     ["workspace"],
