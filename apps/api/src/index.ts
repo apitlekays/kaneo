@@ -16,6 +16,7 @@ import {
 } from "hono-openapi";
 import * as v from "valibot";
 import activity from "./activity";
+import assetRegistry from "./asset-registry";
 import { auth } from "./auth";
 import column from "./column";
 import comment from "./comment";
@@ -588,6 +589,7 @@ export function createApp() {
   api.route("/user", user);
   api.route("/task-mom", taskMom);
   api.route("/workspace-access", workspaceAccess);
+  api.route("/asset-registry", assetRegistry);
 
   app.route(
     "/",

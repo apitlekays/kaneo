@@ -331,6 +331,64 @@ export function assertTaskImageKeyMatchesContext(
   return key.startsWith(fullPrefix);
 }
 
+type AssetFileUploadContext = {
+  workspaceId: string;
+  assetId: string;
+  kind: "image" | "document";
+  filename: string;
+  contentType: string;
+};
+
+/** Object key for a registered-asset file: workspace/<ws>/asset/<id>/<folder>/<name>. */
+export function buildAssetFileObjectKey(context: AssetFileUploadContext) {
+  const extension = getFileExtension(context.filename);
+  const folder = context.kind === "image" ? "images" : "documents";
+  const prefix = [
+    "workspace",
+    sanitizePathSegment(context.workspaceId),
+    "asset",
+    sanitizePathSegment(context.assetId),
+    folder,
+  ].join("/");
+  const timestamp = Date.now();
+  const randomId = createId();
+  const baseName = sanitizePathSegment(
+    context.filename.replace(/\.[^/.]+$/, "") || "file",
+  ).slice(0, 64);
+  const fileName = extension
+    ? `${baseName}-${timestamp}-${randomId}.${extension}`
+    : `${baseName}-${timestamp}-${randomId}`;
+  return `${prefix}/${fileName}`;
+}
+
+/** Presigned PUT URL for a registered-asset image/document. */
+export async function createAssetFileUploadUrl(
+  context: AssetFileUploadContext,
+): Promise<TaskImageUploadUrl> {
+  const config = getStorageConfig();
+  const client = getClient(config);
+  const key = applyKeyPrefix(
+    config.keyPrefix,
+    buildAssetFileObjectKey(context),
+  );
+
+  const command = new PutObjectCommand({
+    Bucket: config.bucket,
+    Key: key,
+    ContentType: context.contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(client, command, {
+    expiresIn: config.presignTtlSeconds,
+  });
+
+  return {
+    key,
+    uploadUrl,
+    headers: { "Content-Type": context.contentType },
+  };
+}
+
 export async function getPrivateObject(key: string): Promise<AssetObject> {
   const config = getStorageConfig();
   const client = getClient(config);

@@ -36,6 +36,7 @@ import { Route as LayoutAuthenticatedDashboardWorkspaceWorkspaceIdRouteImport } 
 import { Route as LayoutAuthenticatedDashboardSettingsWorkspaceRouteImport } from './routes/_layout/_authenticated/dashboard/settings/workspace'
 import { Route as LayoutAuthenticatedDashboardSettingsProjectsRouteImport } from './routes/_layout/_authenticated/dashboard/settings/projects'
 import { Route as LayoutAuthenticatedDashboardSettingsAccountRouteImport } from './routes/_layout/_authenticated/dashboard/settings/account'
+import { Route as LayoutAuthenticatedDashboardCategoryAssetsManagementRouteImport } from './routes/_layout/_authenticated/dashboard/category/assets-management'
 import { Route as LayoutAuthenticatedDashboardCategoryCategoryRouteImport } from './routes/_layout/_authenticated/dashboard/category/$category'
 import { Route as LayoutAuthenticatedDashboardWorkspaceWorkspaceIdIndexRouteImport } from './routes/_layout/_authenticated/dashboard/workspace/$workspaceId/index'
 import { Route as LayoutAuthenticatedDashboardWorkspaceWorkspaceIdSearchRouteImport } from './routes/_layout/_authenticated/dashboard/workspace/$workspaceId/search'
@@ -206,6 +207,12 @@ const LayoutAuthenticatedDashboardSettingsAccountRoute =
     id: '/account',
     path: '/account',
     getParentRoute: () => LayoutAuthenticatedDashboardSettingsRoute,
+  } as any)
+const LayoutAuthenticatedDashboardCategoryAssetsManagementRoute =
+  LayoutAuthenticatedDashboardCategoryAssetsManagementRouteImport.update({
+    id: '/category/assets-management',
+    path: '/category/assets-management',
+    getParentRoute: () => LayoutAuthenticatedDashboardRoute,
   } as any)
 const LayoutAuthenticatedDashboardCategoryCategoryRoute =
   LayoutAuthenticatedDashboardCategoryCategoryRouteImport.update({
@@ -396,6 +403,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/settings': typeof LayoutAuthenticatedDashboardSettingsRouteWithChildren
   '/dashboard/': typeof LayoutAuthenticatedDashboardIndexRoute
   '/dashboard/category/$category': typeof LayoutAuthenticatedDashboardCategoryCategoryRoute
+  '/dashboard/category/assets-management': typeof LayoutAuthenticatedDashboardCategoryAssetsManagementRoute
   '/dashboard/settings/account': typeof LayoutAuthenticatedDashboardSettingsAccountRouteWithChildren
   '/dashboard/settings/projects': typeof LayoutAuthenticatedDashboardSettingsProjectsRouteWithChildren
   '/dashboard/settings/workspace': typeof LayoutAuthenticatedDashboardSettingsWorkspaceRouteWithChildren
@@ -444,6 +452,7 @@ export interface FileRoutesByTo {
   '/dashboard/settings': typeof LayoutAuthenticatedDashboardSettingsRouteWithChildren
   '/dashboard': typeof LayoutAuthenticatedDashboardIndexRoute
   '/dashboard/category/$category': typeof LayoutAuthenticatedDashboardCategoryCategoryRoute
+  '/dashboard/category/assets-management': typeof LayoutAuthenticatedDashboardCategoryAssetsManagementRoute
   '/dashboard/settings/account': typeof LayoutAuthenticatedDashboardSettingsAccountRouteWithChildren
   '/dashboard/settings/projects': typeof LayoutAuthenticatedDashboardSettingsProjectsRouteWithChildren
   '/dashboard/settings/workspace': typeof LayoutAuthenticatedDashboardSettingsWorkspaceRouteWithChildren
@@ -496,6 +505,7 @@ export interface FileRoutesById {
   '/_layout/_authenticated/dashboard/settings': typeof LayoutAuthenticatedDashboardSettingsRouteWithChildren
   '/_layout/_authenticated/dashboard/': typeof LayoutAuthenticatedDashboardIndexRoute
   '/_layout/_authenticated/dashboard/category/$category': typeof LayoutAuthenticatedDashboardCategoryCategoryRoute
+  '/_layout/_authenticated/dashboard/category/assets-management': typeof LayoutAuthenticatedDashboardCategoryAssetsManagementRoute
   '/_layout/_authenticated/dashboard/settings/account': typeof LayoutAuthenticatedDashboardSettingsAccountRouteWithChildren
   '/_layout/_authenticated/dashboard/settings/projects': typeof LayoutAuthenticatedDashboardSettingsProjectsRouteWithChildren
   '/_layout/_authenticated/dashboard/settings/workspace': typeof LayoutAuthenticatedDashboardSettingsWorkspaceRouteWithChildren
@@ -548,6 +558,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/'
     | '/dashboard/category/$category'
+    | '/dashboard/category/assets-management'
     | '/dashboard/settings/account'
     | '/dashboard/settings/projects'
     | '/dashboard/settings/workspace'
@@ -596,6 +607,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard'
     | '/dashboard/category/$category'
+    | '/dashboard/category/assets-management'
     | '/dashboard/settings/account'
     | '/dashboard/settings/projects'
     | '/dashboard/settings/workspace'
@@ -647,6 +659,7 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/dashboard/settings'
     | '/_layout/_authenticated/dashboard/'
     | '/_layout/_authenticated/dashboard/category/$category'
+    | '/_layout/_authenticated/dashboard/category/assets-management'
     | '/_layout/_authenticated/dashboard/settings/account'
     | '/_layout/_authenticated/dashboard/settings/projects'
     | '/_layout/_authenticated/dashboard/settings/workspace'
@@ -876,6 +889,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/dashboard/settings/account'
       preLoaderRoute: typeof LayoutAuthenticatedDashboardSettingsAccountRouteImport
       parentRoute: typeof LayoutAuthenticatedDashboardSettingsRoute
+    }
+    '/_layout/_authenticated/dashboard/category/assets-management': {
+      id: '/_layout/_authenticated/dashboard/category/assets-management'
+      path: '/category/assets-management'
+      fullPath: '/dashboard/category/assets-management'
+      preLoaderRoute: typeof LayoutAuthenticatedDashboardCategoryAssetsManagementRouteImport
+      parentRoute: typeof LayoutAuthenticatedDashboardRoute
     }
     '/_layout/_authenticated/dashboard/category/$category': {
       id: '/_layout/_authenticated/dashboard/category/$category'
@@ -1182,6 +1202,7 @@ interface LayoutAuthenticatedDashboardRouteChildren {
   LayoutAuthenticatedDashboardSettingsRoute: typeof LayoutAuthenticatedDashboardSettingsRouteWithChildren
   LayoutAuthenticatedDashboardIndexRoute: typeof LayoutAuthenticatedDashboardIndexRoute
   LayoutAuthenticatedDashboardCategoryCategoryRoute: typeof LayoutAuthenticatedDashboardCategoryCategoryRoute
+  LayoutAuthenticatedDashboardCategoryAssetsManagementRoute: typeof LayoutAuthenticatedDashboardCategoryAssetsManagementRoute
   LayoutAuthenticatedDashboardWorkspaceWorkspaceIdRoute: typeof LayoutAuthenticatedDashboardWorkspaceWorkspaceIdRouteWithChildren
   LayoutAuthenticatedDashboardWorkspaceCreateRoute: typeof LayoutAuthenticatedDashboardWorkspaceCreateRoute
 }
@@ -1198,6 +1219,8 @@ const LayoutAuthenticatedDashboardRouteChildren: LayoutAuthenticatedDashboardRou
       LayoutAuthenticatedDashboardIndexRoute,
     LayoutAuthenticatedDashboardCategoryCategoryRoute:
       LayoutAuthenticatedDashboardCategoryCategoryRoute,
+    LayoutAuthenticatedDashboardCategoryAssetsManagementRoute:
+      LayoutAuthenticatedDashboardCategoryAssetsManagementRoute,
     LayoutAuthenticatedDashboardWorkspaceWorkspaceIdRoute:
       LayoutAuthenticatedDashboardWorkspaceWorkspaceIdRouteWithChildren,
     LayoutAuthenticatedDashboardWorkspaceCreateRoute:

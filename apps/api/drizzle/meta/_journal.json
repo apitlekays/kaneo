@@ -281,6 +281,13 @@
 			"when": 1782706089890,
 			"tag": "0039_panoramic_cyclops",
 			"breakpoints": true
+		},
+		{
+			"idx": 40,
+			"version": "7",
+			"when": 1782713574373,
+			"tag": "0040_cooing_wolverine",
+			"breakpoints": true
 		}
 	]
 }

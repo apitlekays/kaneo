@@ -177,6 +177,170 @@ export const workspacePageAccessTable = pgTable(
   ],
 );
 
+// ── Asset registry (user-facing "Assets Management") ─────────────────────────
+// NOTE: distinct from `assetTable` ("asset"), which stores task file blobs.
+// Money is stored as integer minor units (e.g. sen/cents); currency per asset.
+
+export const registeredAssetTable = pgTable(
+  "registered_asset",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    serialNumber: text("serial_number").notNull(),
+    assetTag: text("asset_tag"),
+    name: text("name").notNull(),
+    // it-equipment | media-equipment | vehicle | other
+    category: text("category").notNull().default("other"),
+    manufacturer: text("manufacturer"),
+    model: text("model"),
+    // active | in-maintenance | retired | disposed
+    status: text("status").notNull().default("active"),
+    location: text("location"),
+    assignedTo: text("assigned_to"),
+    registrationNumber: text("registration_number"),
+    purchaseDate: timestamp("purchase_date", { mode: "date" }),
+    purchaseCost: integer("purchase_cost"),
+    currency: text("currency").notNull().default("MYR"),
+    vendor: text("vendor"),
+    notes: text("notes"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("registered_asset_workspaceId_idx").on(table.workspaceId),
+    unique("registered_asset_serial_unique").on(
+      table.workspaceId,
+      table.serialNumber,
+    ),
+  ],
+);
+
+export const assetRenewalTable = pgTable(
+  "asset_renewal",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    // road-tax | insurance | inspection | licence | warranty | other
+    type: text("type").notNull().default("other"),
+    label: text("label"),
+    dueDate: timestamp("due_date", { mode: "date" }).notNull(),
+    lastRenewedDate: timestamp("last_renewed_date", { mode: "date" }),
+    cost: integer("cost"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("asset_renewal_assetId_idx").on(table.assetId),
+    index("asset_renewal_dueDate_idx").on(table.dueDate),
+  ],
+);
+
+export const assetMaintenanceTable = pgTable(
+  "asset_maintenance",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    date: timestamp("date", { mode: "date" }).notNull(),
+    title: text("title").notNull(),
+    notes: text("notes"),
+    cost: integer("cost"),
+    vendor: text("vendor"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_maintenance_assetId_idx").on(table.assetId)],
+);
+
+export const assetCostTable = pgTable(
+  "asset_cost",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    date: timestamp("date", { mode: "date" }).notNull(),
+    // purchase | maintenance | insurance | road-tax | fuel | repair | accessory | other
+    category: text("category").notNull().default("other"),
+    amount: integer("amount").notNull(),
+    note: text("note"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_cost_assetId_idx").on(table.assetId)],
+);
+
+export const assetTripTable = pgTable(
+  "asset_trip",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    date: timestamp("date", { mode: "date" }).notNull(),
+    origin: text("origin"),
+    destination: text("destination"),
+    distanceKm: integer("distance_km"),
+    purpose: text("purpose"),
+    driver: text("driver"),
+    cost: integer("cost"),
+    notes: text("notes"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_trip_assetId_idx").on(table.assetId)],
+);
+
+export const assetFileTable = pgTable(
+  "asset_file",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull().unique(),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    // image | document
+    kind: text("kind").notNull().default("document"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_file_assetId_idx").on(table.assetId)],
+);
+
 export const teamTable = pgTable(
   "team",
   {

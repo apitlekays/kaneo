@@ -1,0 +1,171 @@
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { Boxes, Loader2, Plus } from "lucide-react";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { AssetDetailDialog } from "@/components/assets/asset-detail-dialog";
+import { AssetFormDialog } from "@/components/assets/asset-form-dialog";
+import { AssetSummary } from "@/components/assets/asset-summary";
+import Layout from "@/components/common/layout";
+import PageTitle from "@/components/page-title";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { getMyPageAccess } from "@/fetchers/workspace-access";
+import { useAsset } from "@/hooks/queries/asset-registry/use-asset";
+import {
+  useAssetSummary,
+  useAssets,
+} from "@/hooks/queries/asset-registry/use-assets";
+import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
+import {
+  ASSET_CATEGORIES,
+  ASSET_STATUSES,
+  labelOf,
+  STATUS_TONES,
+} from "@/lib/asset-constants";
+import { authClient } from "@/lib/auth-client";
+import { cn } from "@/lib/cn";
+import { formatDateMedium } from "@/lib/format";
+
+const SLUG = "assets-management";
+
+export const Route = createFileRoute(
+  "/_layout/_authenticated/dashboard/category/assets-management",
+)({
+  beforeLoad: async ({ context }) => {
+    const session = await authClient.getSession();
+    const workspaceId = session?.data?.session?.activeOrganizationId;
+    if (!workspaceId) return;
+    const access = await context.queryClient.ensureQueryData({
+      queryKey: ["page-access", "me", workspaceId],
+      queryFn: () => getMyPageAccess(workspaceId),
+    });
+    if (!access.isAdmin && !access.pages.includes(SLUG)) {
+      throw redirect({ to: "/dashboard/home" });
+    }
+  },
+  component: AssetsPage,
+});
+
+function AssetsPage() {
+  const { t } = useTranslation();
+  const { data: workspace } = useActiveWorkspace();
+  const workspaceId = workspace?.id ?? "";
+  const { data: assets = [], isLoading } = useAssets(workspaceId);
+  const { data: summary } = useAssetSummary(workspaceId);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Prefetch detail when a row is hovered/opened for snappier UX.
+  useAsset(workspaceId, selectedId);
+
+  const title = t("navigation:sidebar.categories.assetsManagement", {
+    defaultValue: "Assets Management",
+  });
+
+  return (
+    <>
+      <PageTitle title={title} />
+      <Layout>
+        <Layout.Header>
+          <div className="flex w-full items-center gap-1">
+            <SidebarTrigger className="-ml-1 h-6 w-6" />
+            <Separator
+              orientation="vertical"
+              className="mx-1.5 data-[orientation=vertical]:h-2.5"
+            />
+            <h1 className="text-xs text-card-foreground">{title}</h1>
+          </div>
+        </Layout.Header>
+        <Layout.Content>
+          <div className="mx-auto w-full max-w-6xl space-y-6 p-6">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Asset registry</h2>
+                <p className="text-sm text-muted-foreground">
+                  Register and track equipment, vehicles, licences and more.
+                </p>
+              </div>
+              <AssetFormDialog
+                workspaceId={workspaceId}
+                trigger={
+                  <Button size="sm">
+                    <Plus className="h-4 w-4" /> Register asset
+                  </Button>
+                }
+              />
+            </div>
+
+            {summary && <AssetSummary summary={summary} />}
+
+            <div className="overflow-x-auto rounded-xl border border-border">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
+                    <th className="px-3 py-2 font-medium">Serial</th>
+                    <th className="px-3 py-2 font-medium">Name</th>
+                    <th className="px-3 py-2 font-medium">Category</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Location</th>
+                    <th className="px-3 py-2 font-medium">Next renewal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assets.map((asset) => (
+                    <tr
+                      key={asset.id}
+                      onClick={() => setSelectedId(asset.id)}
+                      className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/30"
+                    >
+                      <td className="px-3 py-2 font-mono text-xs">
+                        {asset.serialNumber}
+                      </td>
+                      <td className="px-3 py-2 font-medium">{asset.name}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {labelOf(ASSET_CATEGORIES, asset.category)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge
+                          className={cn("border", STATUS_TONES[asset.status])}
+                        >
+                          {labelOf(ASSET_STATUSES, asset.status)}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {asset.location || "—"}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {asset.nextRenewalDate
+                          ? formatDateMedium(asset.nextRenewalDate)
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {isLoading && (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {!isLoading && assets.length === 0 && (
+                <div className="flex flex-col items-center gap-2 py-12 text-center">
+                  <Boxes className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    No assets registered yet.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </Layout.Content>
+      </Layout>
+
+      <AssetDetailDialog
+        workspaceId={workspaceId}
+        assetId={selectedId}
+        onClose={() => setSelectedId(null)}
+      />
+    </>
+  );
+}
