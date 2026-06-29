@@ -11,6 +11,7 @@ import {
   assetCustodyTable,
   assetFileTable,
   assetMaintenanceTable,
+  assetReminderSentTable,
   assetRenewalTable,
   assetTripTable,
   registeredAssetTable,
@@ -740,6 +741,17 @@ const assetRegistry = new Hono<{
         )
         .returning();
       if (!row) throw new HTTPException(404, { message: "Renewal not found" });
+      // A changed due date re-arms reminders for the new cycle.
+      if (body.dueDate !== undefined) {
+        await db
+          .delete(assetReminderSentTable)
+          .where(
+            and(
+              eq(assetReminderSentTable.refType, "renewal"),
+              eq(assetReminderSentTable.refId, renewalId),
+            ),
+          );
+      }
       return c.json(row);
     },
   )

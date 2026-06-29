@@ -395,6 +395,30 @@ export const assetActivityTable = pgTable(
   (table) => [index("asset_activity_assetId_idx").on(table.assetId)],
 );
 
+// Dedup ledger for asset reminders: one row per (refType, refId, window) so a
+// given reminder window fires at most once. refType is polymorphic (renewal
+// now; pm-schedule / warranty later) — no FK so it stays generic.
+export const assetReminderSentTable = pgTable(
+  "asset_reminder_sent",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    refType: text("ref_type").notNull(),
+    refId: text("ref_id").notNull(),
+    reminderWindow: text("reminder_window").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("asset_reminder_sent_unique").on(
+      table.refType,
+      table.refId,
+      table.reminderWindow,
+    ),
+    index("asset_reminder_sent_ref_idx").on(table.refType, table.refId),
+  ],
+);
+
 export const teamTable = pgTable(
   "team",
   {
