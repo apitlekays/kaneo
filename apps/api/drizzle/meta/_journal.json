@@ -330,6 +330,13 @@
 			"when": 1782789192028,
 			"tag": "0046_slow_changeling",
 			"breakpoints": true
+		},
+		{
+			"idx": 47,
+			"version": "7",
+			"when": 1782795800697,
+			"tag": "0047_mysterious_shinko_yamashiro",
+			"breakpoints": true
 		}
 	]
 }

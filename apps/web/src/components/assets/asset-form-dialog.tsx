@@ -1,4 +1,4 @@
-import { UserPlus } from "lucide-react";
+import { Trash2, UserPlus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
 import { MemberPicker } from "@/components/assets/member-picker";
@@ -79,6 +79,17 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
   const [currency, setCurrency] = useState(asset?.currency ?? "MYR");
   const [assetTag, setAssetTag] = useState(asset?.assetTag ?? "");
   const [notes, setNotes] = useState(asset?.notes ?? "");
+  const [customFields, setCustomFields] = useState<
+    Array<{ id: string; key: string; value: string }>
+  >(() =>
+    Object.entries((asset?.customFields ?? {}) as Record<string, unknown>).map(
+      ([key, value]) => ({
+        id: Math.random().toString(36).slice(2),
+        key,
+        value: String(value ?? ""),
+      }),
+    ),
+  );
 
   const pending = create.isPending || update.isPending;
 
@@ -93,6 +104,11 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
 
   const submit = () => {
     if (!name.trim()) return;
+    const cf = Object.fromEntries(
+      customFields
+        .filter((r) => r.key.trim())
+        .map((r) => [r.key.trim(), r.value]),
+    );
     const data: AssetInput = {
       name: name.trim(),
       category,
@@ -104,6 +120,7 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
       vendor: orNull(vendor),
       assetTag: orNull(assetTag),
       notes: orNull(notes),
+      customFields: Object.keys(cf).length ? cf : null,
       currency: currency.trim() || "MYR",
       purchaseDate: purchaseDate ? purchaseDate.toISOString() : null,
       purchaseCost: toMinorUnits(purchaseCost),
@@ -308,6 +325,64 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
             />
+          </div>
+
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Custom fields</Label>
+            {customFields.map((row) => (
+              <div key={row.id} className="flex items-center gap-2">
+                <Input
+                  placeholder="Field"
+                  value={row.key}
+                  onChange={(e) =>
+                    setCustomFields((prev) =>
+                      prev.map((r) =>
+                        r.id === row.id ? { ...r, key: e.target.value } : r,
+                      ),
+                    )
+                  }
+                />
+                <Input
+                  placeholder="Value"
+                  value={row.value}
+                  onChange={(e) =>
+                    setCustomFields((prev) =>
+                      prev.map((r) =>
+                        r.id === row.id ? { ...r, value: e.target.value } : r,
+                      ),
+                    )
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCustomFields((prev) =>
+                      prev.filter((r) => r.id !== row.id),
+                    )
+                  }
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setCustomFields((prev) => [
+                  ...prev,
+                  {
+                    id: Math.random().toString(36).slice(2),
+                    key: "",
+                    value: "",
+                  },
+                ])
+              }
+            >
+              Add field
+            </Button>
           </div>
         </div>
 

@@ -724,6 +724,180 @@ const assetRegistry = new Hono<{
       return c.json({ success: true });
     },
   )
+  // ── Export (flattened asset register) ────────────────────────────────────
+  .get(
+    "/export",
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const assets = await db
+        .select()
+        .from(registeredAssetTable)
+        .where(eq(registeredAssetTable.workspaceId, workspaceId))
+        .orderBy(asc(registeredAssetTable.serialNumber));
+
+      const custodianIds = [
+        ...new Set(
+          assets
+            .map((a) => a.currentCustodianId)
+            .filter((x): x is string => Boolean(x)),
+        ),
+      ];
+      const custodians = custodianIds.length
+        ? await db
+            .select({ id: userTable.id, name: userTable.name })
+            .from(userTable)
+            .where(inArray(userTable.id, custodianIds))
+        : [];
+      const custodianMap = new Map(custodians.map((u) => [u.id, u.name]));
+
+      const locations = await db
+        .select()
+        .from(assetLocationTable)
+        .where(eq(assetLocationTable.workspaceId, workspaceId));
+      const locById = new Map(locations.map((l) => [l.id, l]));
+      const locPath = (id: string | null): string | null => {
+        if (!id) return null;
+        const parts: string[] = [];
+        let cur = locById.get(id);
+        let guard = 0;
+        while (cur && guard++ < 20) {
+          parts.unshift(cur.name);
+          cur = cur.parentId ? locById.get(cur.parentId) : undefined;
+        }
+        return parts.join(" / ") || null;
+      };
+
+      const renewals = await db
+        .select({
+          assetId: assetRenewalTable.assetId,
+          dueDate: assetRenewalTable.dueDate,
+        })
+        .from(assetRenewalTable)
+        .innerJoin(
+          registeredAssetTable,
+          eq(assetRenewalTable.assetId, registeredAssetTable.id),
+        )
+        .where(eq(registeredAssetTable.workspaceId, workspaceId))
+        .orderBy(asc(assetRenewalTable.dueDate));
+      const nextByAsset = new Map<string, Date>();
+      for (const r of renewals) {
+        if (!nextByAsset.has(r.assetId)) nextByAsset.set(r.assetId, r.dueDate);
+      }
+
+      const money = (cents: number | null) =>
+        cents == null ? null : cents / 100;
+      const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+
+      return c.json(
+        assets.map((a) => ({
+          serialNumber: a.serialNumber,
+          assetTag: a.assetTag,
+          name: a.name,
+          category: a.category,
+          status: a.status,
+          manufacturer: a.manufacturer,
+          model: a.model,
+          registrationNumber: a.registrationNumber,
+          location: locPath(a.locationId) ?? a.location,
+          custodian: a.currentCustodianId
+            ? (custodianMap.get(a.currentCustodianId) ?? null)
+            : null,
+          purchaseDate: day(a.purchaseDate),
+          purchaseCost: money(a.purchaseCost),
+          currency: a.currency,
+          netBookValue: money(computeDepreciation(a).netBookValue ?? null),
+          vendor: a.vendor,
+          nextRenewal: day(nextByAsset.get(a.id) ?? null),
+          notes: a.notes,
+        })),
+      );
+    },
+  )
+  // ── Import (bulk create from rows) ───────────────────────────────────────
+  .post(
+    "/import",
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        assets: v.array(
+          v.object({
+            name: v.string(),
+            category: optStr,
+            status: optStr,
+            manufacturer: optStr,
+            model: optStr,
+            registrationNumber: optStr,
+            location: optStr,
+            purchaseDate: optStr,
+            purchaseCost: optNum,
+            currency: optStr,
+            vendor: optStr,
+            notes: optStr,
+          }),
+        ),
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const userId = c.get("userId");
+      const { assets } = c.req.valid("json");
+      const validCat = new Set<string>(CATEGORIES);
+      const validStatus = new Set<string>(STATUSES);
+      let imported = 0;
+      let failed = 0;
+
+      for (const a of assets) {
+        if (!a.name?.trim()) {
+          failed++;
+          continue;
+        }
+        const category =
+          a.category && validCat.has(a.category) ? a.category : "other";
+        const status =
+          a.status && validStatus.has(a.status) ? a.status : "active";
+        const purchaseDate = toDate(a.purchaseDate ?? null);
+        let ok = false;
+        for (let attempt = 0; attempt < 5 && !ok; attempt++) {
+          try {
+            await db.insert(registeredAssetTable).values({
+              workspaceId,
+              serialNumber: generateSerial(),
+              name: a.name.trim(),
+              category,
+              status,
+              manufacturer: a.manufacturer ?? null,
+              model: a.model ?? null,
+              registrationNumber: a.registrationNumber ?? null,
+              location: a.location ?? null,
+              purchaseDate,
+              purchaseCost:
+                a.purchaseCost != null
+                  ? Math.round(a.purchaseCost * 100)
+                  : null,
+              currency: a.currency || "MYR",
+              vendor: a.vendor ?? null,
+              notes: a.notes ?? null,
+              usefulLifeMonths: DEFAULT_LIFE_BY_CATEGORY[category] ?? null,
+              inServiceDate: purchaseDate,
+              createdBy: userId,
+            });
+            ok = true;
+          } catch {
+            // serial collision → retry
+          }
+        }
+        if (ok) imported++;
+        else failed++;
+      }
+      return c.json({ imported, failed });
+    },
+  )
   // ── Locations (hierarchy) ────────────────────────────────────────────────
   .get(
     "/locations",
@@ -1027,6 +1201,7 @@ const assetRegistry = new Hono<{
         currency: v.optional(v.string()),
         vendor: optStr,
         notes: optStr,
+        customFields: v.optional(v.nullable(v.record(v.string(), v.unknown()))),
       }),
     ),
     workspaceAccess.fromBody("workspaceId"),
@@ -1062,6 +1237,7 @@ const assetRegistry = new Hono<{
               inServiceDate: toDate(body.purchaseDate),
               vendor: body.vendor ?? null,
               notes: body.notes ?? null,
+              customFields: body.customFields ?? null,
               createdBy: userId,
             })
             .returning();
@@ -1256,6 +1432,7 @@ const assetRegistry = new Hono<{
         inServiceDate: optDate,
         vendor: optStr,
         notes: optStr,
+        customFields: v.optional(v.nullable(v.record(v.string(), v.unknown()))),
       }),
     ),
     workspaceAccess.fromQuery("workspaceId"),
@@ -1310,6 +1487,9 @@ const assetRegistry = new Hono<{
             : {}),
           ...(body.vendor !== undefined ? { vendor: body.vendor } : {}),
           ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          ...(body.customFields !== undefined
+            ? { customFields: body.customFields }
+            : {}),
           updatedAt: new Date(),
         })
         .where(eq(registeredAssetTable.id, id))

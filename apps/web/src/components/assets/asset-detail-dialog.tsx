@@ -311,6 +311,12 @@ function OverviewTab({
       <div className="sm:col-span-2">
         <Field label="Notes" value={a.notes} />
       </div>
+      {a.customFields &&
+        Object.entries(a.customFields as Record<string, unknown>).map(
+          ([k, val]) => (
+            <Field key={k} label={k} value={val != null ? String(val) : null} />
+          ),
+        )}
     </div>
   );
 }

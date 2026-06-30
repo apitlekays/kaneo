@@ -222,6 +222,7 @@ export const registeredAssetTable = pgTable(
     inServiceDate: timestamp("in_service_date", { mode: "date" }),
     vendor: text("vendor"),
     notes: text("notes"),
+    customFields: jsonb("custom_fields"),
     createdBy: text("created_by").references(() => userTable.id, {
       onDelete: "set null",
     }),

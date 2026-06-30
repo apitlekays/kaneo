@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AssetDetailDialog } from "@/components/assets/asset-detail-dialog";
 import { AssetFormDialog } from "@/components/assets/asset-form-dialog";
+import { AssetImportExport } from "@/components/assets/asset-import-export";
 import { AssetSummary } from "@/components/assets/asset-summary";
 import { DriverRegistry } from "@/components/assets/driver-registry";
 import { LocationsManager } from "@/components/assets/locations-manager";
@@ -146,14 +147,17 @@ function AssetsPage() {
                 </button>
               </div>
               {view === "registry" && (
-                <AssetFormDialog
-                  workspaceId={workspaceId}
-                  trigger={
-                    <Button size="sm">
-                      <Plus className="h-4 w-4" /> Register asset
-                    </Button>
-                  }
-                />
+                <div className="flex items-center gap-1.5">
+                  <AssetImportExport workspaceId={workspaceId} />
+                  <AssetFormDialog
+                    workspaceId={workspaceId}
+                    trigger={
+                      <Button size="sm">
+                        <Plus className="h-4 w-4" /> Register asset
+                      </Button>
+                    }
+                  />
+                </div>
               )}
             </div>
 

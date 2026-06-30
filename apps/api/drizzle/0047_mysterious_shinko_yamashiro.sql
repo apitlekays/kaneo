@@ -1,0 +1,1 @@
+ALTER TABLE "registered_asset" ADD COLUMN "custom_fields" jsonb;

@@ -24,6 +24,7 @@ export type Asset = {
   inServiceDate: string | null;
   vendor: string | null;
   notes: string | null;
+  customFields: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
   nextRenewalDate?: string | null;
@@ -339,6 +340,7 @@ export type AssetInput = {
   inServiceDate?: string | null;
   vendor?: string | null;
   notes?: string | null;
+  customFields?: Record<string, unknown> | null;
 };
 
 export async function createAsset(
@@ -660,6 +662,30 @@ export async function deleteAuditSession(ws: string, sessionId: string) {
     await fetch(api(`audit-sessions/${sessionId}?workspaceId=${ws}`), {
       method: "DELETE",
       credentials: "include",
+    }),
+  );
+}
+
+// ── Export / import ──────────────────────────────────────────────────────────
+
+export type ExportRow = Record<string, string | number | null>;
+
+export async function exportAssets(ws: string): Promise<ExportRow[]> {
+  return jsonOrThrow(
+    await fetch(api(`export?workspaceId=${ws}`), { credentials: "include" }),
+  );
+}
+
+export async function importAssets(
+  ws: string,
+  assets: Array<Record<string, unknown>>,
+): Promise<{ imported: number; failed: number }> {
+  return jsonOrThrow(
+    await fetch(api("import"), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, assets }),
     }),
   );
 }
