@@ -43,7 +43,16 @@ const ENTITY_INVALIDATIONS: Record<string, string[][]> = {
   // route guard) and, for any admin watching the matrix, the matrix + members.
   "workspace-access": [["page-access"], ["workspace-members-list"]],
   // Asset registry: refresh the list, any open detail, summary, work orders.
-  "asset-registry": [["assets"], ["asset"], ["asset-summary"], ["work-orders"]],
+  "asset-registry": [
+    ["assets"],
+    ["asset"],
+    ["asset-summary"],
+    ["work-orders"],
+    ["asset-locations"],
+    ["audit-sessions"],
+    ["audit-session"],
+    ["drivers"],
+  ],
   workspace: [
     ["projects"],
     ["workspace"],

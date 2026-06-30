@@ -37,6 +37,10 @@ import type { AssetDetail } from "@/fetchers/asset-registry";
 import { assetFileUrl } from "@/fetchers/asset-registry";
 import { useAsset } from "@/hooks/queries/asset-registry/use-asset";
 import { useAssetMutations } from "@/hooks/queries/asset-registry/use-asset-mutations";
+import {
+  buildLocationPaths,
+  useLocations,
+} from "@/hooks/queries/asset-registry/use-locations";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import {
   ASSET_CATEGORIES,
@@ -118,6 +122,10 @@ function DetailBody({
   const { asset } = data;
   const currency = asset.currency || "MYR";
   const currentCustody = data.custody.find((entry) => !entry.releasedAt);
+  const { data: locations = [] } = useLocations(workspaceId);
+  const locationName = asset.locationId
+    ? (buildLocationPaths(locations).get(asset.locationId) ?? null)
+    : asset.location;
 
   return (
     <>
@@ -192,6 +200,7 @@ function DetailBody({
               data={data}
               currency={currency}
               custodianName={currentCustody?.userName ?? null}
+              locationName={locationName}
             />
           </TabsContent>
           <TabsContent value="financials">
@@ -268,10 +277,12 @@ function OverviewTab({
   data,
   currency,
   custodianName,
+  locationName,
 }: {
   data: AssetDetail;
   currency: string;
   custodianName: string | null;
+  locationName: string | null;
 }) {
   const a = data.asset;
   return (
@@ -284,7 +295,7 @@ function OverviewTab({
       <Field label="Manufacturer / Make" value={a.manufacturer} />
       <Field label="Model" value={a.model} />
       <Field label="Registration / Plate" value={a.registrationNumber} />
-      <Field label="Location" value={a.location} />
+      <Field label="Location" value={locationName} />
       <Field label="Custodian" value={custodianName} />
       <Field label="Vendor" value={a.vendor} />
       <Field

@@ -11,6 +11,7 @@ export type Asset = {
   model: string | null;
   status: string;
   location: string | null;
+  locationId: string | null;
   assignedTo: string | null;
   registrationNumber: string | null;
   currentCustodianId: string | null;
@@ -179,6 +180,42 @@ export type Driver = {
   licenceClass: string | null;
   licenceExpiry: string | null;
   phone: string | null;
+};
+
+export type AssetLocation = {
+  id: string;
+  workspaceId: string;
+  parentId: string | null;
+  name: string;
+  type: string;
+};
+
+export type AuditSession = {
+  id: string;
+  name: string;
+  startedBy: string | null;
+  startedAt: string;
+  closedAt: string | null;
+};
+
+export type AuditScan = {
+  id: string;
+  assetId: string | null;
+  assetName: string | null;
+  scannedSerial: string;
+  status: string;
+  scannedAt: string;
+};
+
+export type AuditSessionDetail = {
+  session: AuditSession;
+  scans: AuditScan[];
+  missing: Array<{
+    id: string;
+    name: string;
+    serialNumber: string;
+    status: string;
+  }>;
 };
 
 export type WorkOrder = {
@@ -520,6 +557,107 @@ export async function upsertDriver(
 export async function deleteDriver(ws: string, userId: string) {
   return jsonOrThrow(
     await fetch(api(`drivers/${userId}?workspaceId=${ws}`), {
+      method: "DELETE",
+      credentials: "include",
+    }),
+  );
+}
+
+// ── Locations ────────────────────────────────────────────────────────────────
+
+export async function listLocations(ws: string): Promise<AssetLocation[]> {
+  return jsonOrThrow(
+    await fetch(api(`locations?workspaceId=${ws}`), { credentials: "include" }),
+  );
+}
+
+export async function createLocation(
+  ws: string,
+  body: Record<string, unknown>,
+): Promise<AssetLocation> {
+  return jsonOrThrow(
+    await fetch(api("locations"), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, ...body }),
+    }),
+  );
+}
+
+export async function deleteLocation(ws: string, locId: string) {
+  return jsonOrThrow(
+    await fetch(api(`locations/${locId}?workspaceId=${ws}`), {
+      method: "DELETE",
+      credentials: "include",
+    }),
+  );
+}
+
+// ── Stock-take ───────────────────────────────────────────────────────────────
+
+export async function listAuditSessions(ws: string): Promise<AuditSession[]> {
+  return jsonOrThrow(
+    await fetch(api(`audit-sessions?workspaceId=${ws}`), {
+      credentials: "include",
+    }),
+  );
+}
+
+export async function createAuditSession(
+  ws: string,
+  name: string,
+): Promise<AuditSession> {
+  return jsonOrThrow(
+    await fetch(api("audit-sessions"), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, name }),
+    }),
+  );
+}
+
+export async function getAuditSession(
+  ws: string,
+  sessionId: string,
+): Promise<AuditSessionDetail> {
+  return jsonOrThrow(
+    await fetch(api(`audit-sessions/${sessionId}?workspaceId=${ws}`), {
+      credentials: "include",
+    }),
+  );
+}
+
+export async function scanAudit(
+  ws: string,
+  sessionId: string,
+  serial: string,
+): Promise<{ found: boolean; status: string }> {
+  return jsonOrThrow(
+    await fetch(api(`audit-sessions/${sessionId}/scan`), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, serial }),
+    }),
+  );
+}
+
+export async function closeAuditSession(ws: string, sessionId: string) {
+  return jsonOrThrow(
+    await fetch(api(`audit-sessions/${sessionId}/close`), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws }),
+    }),
+  );
+}
+
+export async function deleteAuditSession(ws: string, sessionId: string) {
+  return jsonOrThrow(
+    await fetch(api(`audit-sessions/${sessionId}?workspaceId=${ws}`), {
       method: "DELETE",
       credentials: "include",
     }),

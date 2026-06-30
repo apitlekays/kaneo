@@ -7,11 +7,14 @@ import * as v from "valibot";
 import db from "../database";
 import {
   assetActivityTable,
+  assetAuditScanTable,
+  assetAuditSessionTable,
   assetCostTable,
   assetCustodyTable,
   assetDisposalTable,
   assetFileTable,
   assetFuelLogTable,
+  assetLocationTable,
   assetMaintenanceTable,
   assetMeterReadingTable,
   assetPmScheduleTable,
@@ -721,6 +724,287 @@ const assetRegistry = new Hono<{
       return c.json({ success: true });
     },
   )
+  // ── Locations (hierarchy) ────────────────────────────────────────────────
+  .get(
+    "/locations",
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const rows = await db
+        .select()
+        .from(assetLocationTable)
+        .where(eq(assetLocationTable.workspaceId, workspaceId))
+        .orderBy(asc(assetLocationTable.name));
+      return c.json(rows);
+    },
+  )
+  .post(
+    "/locations",
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        name: v.string(),
+        type: v.optional(v.picklist(["site", "building", "floor", "room"])),
+        parentId: optStr,
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const body = c.req.valid("json");
+      const [row] = await db
+        .insert(assetLocationTable)
+        .values({
+          workspaceId,
+          name: body.name,
+          type: body.type ?? "room",
+          parentId: body.parentId ?? null,
+        })
+        .returning();
+      return c.json(row, 201);
+    },
+  )
+  .delete(
+    "/locations/:locId",
+    validator("param", v.object({ locId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { locId } = c.req.valid("param");
+      // Re-parent children and detach assets, then delete.
+      await db
+        .update(assetLocationTable)
+        .set({ parentId: null })
+        .where(
+          and(
+            eq(assetLocationTable.parentId, locId),
+            eq(assetLocationTable.workspaceId, workspaceId),
+          ),
+        );
+      await db
+        .update(registeredAssetTable)
+        .set({ locationId: null })
+        .where(
+          and(
+            eq(registeredAssetTable.locationId, locId),
+            eq(registeredAssetTable.workspaceId, workspaceId),
+          ),
+        );
+      await db
+        .delete(assetLocationTable)
+        .where(
+          and(
+            eq(assetLocationTable.id, locId),
+            eq(assetLocationTable.workspaceId, workspaceId),
+          ),
+        );
+      return c.json({ success: true });
+    },
+  )
+  // ── Stock-take (physical audit) ──────────────────────────────────────────
+  .get(
+    "/audit-sessions",
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const rows = await db
+        .select()
+        .from(assetAuditSessionTable)
+        .where(eq(assetAuditSessionTable.workspaceId, workspaceId))
+        .orderBy(desc(assetAuditSessionTable.startedAt));
+      return c.json(rows);
+    },
+  )
+  .post(
+    "/audit-sessions",
+    validator("json", v.object({ workspaceId: v.string(), name: v.string() })),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const userId = c.get("userId");
+      const body = c.req.valid("json");
+      const [row] = await db
+        .insert(assetAuditSessionTable)
+        .values({ workspaceId, name: body.name, startedBy: userId })
+        .returning();
+      return c.json(row, 201);
+    },
+  )
+  .get(
+    "/audit-sessions/:sessionId",
+    validator("param", v.object({ sessionId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { sessionId } = c.req.valid("param");
+      const [session] = await db
+        .select()
+        .from(assetAuditSessionTable)
+        .where(
+          and(
+            eq(assetAuditSessionTable.id, sessionId),
+            eq(assetAuditSessionTable.workspaceId, workspaceId),
+          ),
+        )
+        .limit(1);
+      if (!session) {
+        throw new HTTPException(404, { message: "Session not found" });
+      }
+
+      const scans = await db
+        .select({
+          id: assetAuditScanTable.id,
+          assetId: assetAuditScanTable.assetId,
+          assetName: registeredAssetTable.name,
+          scannedSerial: assetAuditScanTable.scannedSerial,
+          status: assetAuditScanTable.status,
+          scannedAt: assetAuditScanTable.scannedAt,
+        })
+        .from(assetAuditScanTable)
+        .leftJoin(
+          registeredAssetTable,
+          eq(assetAuditScanTable.assetId, registeredAssetTable.id),
+        )
+        .where(eq(assetAuditScanTable.sessionId, sessionId))
+        .orderBy(desc(assetAuditScanTable.scannedAt));
+
+      const scannedAssetIds = new Set(
+        scans.map((s) => s.assetId).filter((x): x is string => Boolean(x)),
+      );
+      const allAssets = await db
+        .select({
+          id: registeredAssetTable.id,
+          name: registeredAssetTable.name,
+          serialNumber: registeredAssetTable.serialNumber,
+          status: registeredAssetTable.status,
+        })
+        .from(registeredAssetTable)
+        .where(eq(registeredAssetTable.workspaceId, workspaceId));
+      const missing = allAssets.filter(
+        (a) => a.status !== "disposed" && !scannedAssetIds.has(a.id),
+      );
+
+      return c.json({ session, scans, missing });
+    },
+  )
+  .post(
+    "/audit-sessions/:sessionId/scan",
+    validator("param", v.object({ sessionId: v.string() })),
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        serial: v.string(),
+        locationId: optStr,
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const userId = c.get("userId");
+      const { sessionId } = c.req.valid("param");
+      const body = c.req.valid("json");
+      const [session] = await db
+        .select({ id: assetAuditSessionTable.id })
+        .from(assetAuditSessionTable)
+        .where(
+          and(
+            eq(assetAuditSessionTable.id, sessionId),
+            eq(assetAuditSessionTable.workspaceId, workspaceId),
+          ),
+        )
+        .limit(1);
+      if (!session) {
+        throw new HTTPException(404, { message: "Session not found" });
+      }
+
+      const serial = body.serial.trim();
+      const [asset] = await db
+        .select({ id: registeredAssetTable.id })
+        .from(registeredAssetTable)
+        .where(
+          and(
+            eq(registeredAssetTable.workspaceId, workspaceId),
+            eq(registeredAssetTable.serialNumber, serial),
+          ),
+        )
+        .limit(1);
+
+      const [row] = await db
+        .insert(assetAuditScanTable)
+        .values({
+          sessionId,
+          assetId: asset?.id ?? null,
+          scannedSerial: serial,
+          status: asset ? "found" : "unexpected",
+          locationId: body.locationId ?? null,
+          scannedBy: userId,
+        })
+        .returning();
+
+      // A scan with a location updates the asset's current location.
+      if (asset && body.locationId) {
+        await db
+          .update(registeredAssetTable)
+          .set({ locationId: body.locationId })
+          .where(eq(registeredAssetTable.id, asset.id));
+      }
+      return c.json({ ...row, found: Boolean(asset) }, 201);
+    },
+  )
+  .post(
+    "/audit-sessions/:sessionId/close",
+    validator("param", v.object({ sessionId: v.string() })),
+    validator("json", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { sessionId } = c.req.valid("param");
+      await db
+        .update(assetAuditSessionTable)
+        .set({ closedAt: new Date() })
+        .where(
+          and(
+            eq(assetAuditSessionTable.id, sessionId),
+            eq(assetAuditSessionTable.workspaceId, workspaceId),
+          ),
+        );
+      return c.json({ success: true });
+    },
+  )
+  .delete(
+    "/audit-sessions/:sessionId",
+    validator("param", v.object({ sessionId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { sessionId } = c.req.valid("param");
+      await db
+        .delete(assetAuditSessionTable)
+        .where(
+          and(
+            eq(assetAuditSessionTable.id, sessionId),
+            eq(assetAuditSessionTable.workspaceId, workspaceId),
+          ),
+        );
+      return c.json({ success: true });
+    },
+  )
   // ── Create asset ─────────────────────────────────────────────────────────
   .post(
     "/",
@@ -735,6 +1019,7 @@ const assetRegistry = new Hono<{
         manufacturer: optStr,
         model: optStr,
         location: optStr,
+        locationId: optStr,
         assignedTo: optStr,
         registrationNumber: optStr,
         purchaseDate: optDate,
@@ -766,6 +1051,7 @@ const assetRegistry = new Hono<{
               manufacturer: body.manufacturer ?? null,
               model: body.model ?? null,
               location: body.location ?? null,
+              locationId: body.locationId ?? null,
               assignedTo: body.assignedTo ?? null,
               registrationNumber: body.registrationNumber ?? null,
               purchaseDate: toDate(body.purchaseDate),
@@ -958,6 +1244,7 @@ const assetRegistry = new Hono<{
         manufacturer: optStr,
         model: optStr,
         location: optStr,
+        locationId: optStr,
         assignedTo: optStr,
         registrationNumber: optStr,
         purchaseDate: optDate,
@@ -991,6 +1278,9 @@ const assetRegistry = new Hono<{
             : {}),
           ...(body.model !== undefined ? { model: body.model } : {}),
           ...(body.location !== undefined ? { location: body.location } : {}),
+          ...(body.locationId !== undefined
+            ? { locationId: body.locationId }
+            : {}),
           ...(body.assignedTo !== undefined
             ? { assignedTo: body.assignedTo }
             : {}),

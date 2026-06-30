@@ -24,6 +24,10 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { Asset, AssetInput } from "@/fetchers/asset-registry";
 import { useAssetMutations } from "@/hooks/queries/asset-registry/use-asset-mutations";
+import {
+  buildLocationPaths,
+  useLocations,
+} from "@/hooks/queries/asset-registry/use-locations";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import {
   ASSET_CATEGORIES,
@@ -48,6 +52,8 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
     asset?.id,
   );
   const { data: wsUsers } = useGetActiveWorkspaceUsers(workspaceId);
+  const { data: locations = [] } = useLocations(workspaceId);
+  const locationPaths = buildLocationPaths(locations);
 
   const [name, setName] = useState(asset?.name ?? "");
   const [category, setCategory] = useState(asset?.category ?? "it-equipment");
@@ -57,7 +63,9 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
   const [registrationNumber, setRegistrationNumber] = useState(
     asset?.registrationNumber ?? "",
   );
-  const [location, setLocation] = useState(asset?.location ?? "");
+  const [locationId, setLocationId] = useState<string | null>(
+    asset?.locationId ?? null,
+  );
   const [custodianId, setCustodianId] = useState<string | null>(
     asset?.currentCustodianId ?? null,
   );
@@ -92,7 +100,7 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
       manufacturer: orNull(manufacturer),
       model: orNull(model),
       registrationNumber: orNull(registrationNumber),
-      location: orNull(location),
+      locationId,
       vendor: orNull(vendor),
       assetTag: orNull(assetTag),
       notes: orNull(notes),
@@ -207,10 +215,26 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
 
           <div className="space-y-1.5">
             <Label>Location</Label>
-            <Input
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
+            <Select
+              value={locationId ?? "none"}
+              onValueChange={(v) => setLocationId(v === "none" ? null : v)}
+            >
+              <SelectTrigger>
+                <SelectValue>
+                  {locationId
+                    ? (locationPaths.get(locationId) ?? "Location")
+                    : "No location"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No location</SelectItem>
+                {locations.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {locationPaths.get(l.id)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Custodian</Label>

@@ -6,6 +6,8 @@ import { AssetDetailDialog } from "@/components/assets/asset-detail-dialog";
 import { AssetFormDialog } from "@/components/assets/asset-form-dialog";
 import { AssetSummary } from "@/components/assets/asset-summary";
 import { DriverRegistry } from "@/components/assets/driver-registry";
+import { LocationsManager } from "@/components/assets/locations-manager";
+import { StockTakeView } from "@/components/assets/stock-take-view";
 import { WorkOrderBoard } from "@/components/assets/work-order-board";
 import Layout from "@/components/common/layout";
 import PageTitle from "@/components/page-title";
@@ -20,6 +22,10 @@ import {
   useAssetSummary,
   useAssets,
 } from "@/hooks/queries/asset-registry/use-assets";
+import {
+  buildLocationPaths,
+  useLocations,
+} from "@/hooks/queries/asset-registry/use-locations";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import {
   ASSET_CATEGORIES,
@@ -56,11 +62,13 @@ function AssetsPage() {
   const { data: workspace } = useActiveWorkspace();
   const workspaceId = workspace?.id ?? "";
   const { data: assets = [], isLoading } = useAssets(workspaceId);
+  const { data: locations = [] } = useLocations(workspaceId);
+  const locationPaths = buildLocationPaths(locations);
   const { data: summary } = useAssetSummary(workspaceId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"registry" | "work-orders" | "drivers">(
-    "registry",
-  );
+  const [view, setView] = useState<
+    "registry" | "work-orders" | "drivers" | "locations" | "stock-take"
+  >("registry");
   // Prefetch detail when a row is hovered/opened for snappier UX.
   useAsset(workspaceId, selectedId);
 
@@ -115,6 +123,26 @@ function AssetsPage() {
                   )}
                 >
                   Drivers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("locations")}
+                  className={cn(
+                    "rounded-md px-3 py-1",
+                    view === "locations" && "bg-muted font-medium",
+                  )}
+                >
+                  Locations
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("stock-take")}
+                  className={cn(
+                    "rounded-md px-3 py-1",
+                    view === "stock-take" && "bg-muted font-medium",
+                  )}
+                >
+                  Stock-take
                 </button>
               </div>
               {view === "registry" && (
@@ -191,7 +219,9 @@ function AssetsPage() {
                             )}
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">
-                            {asset.location || "—"}
+                            {asset.locationId
+                              ? (locationPaths.get(asset.locationId) ?? "—")
+                              : asset.location || "—"}
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">
                             {asset.nextRenewalDate
@@ -223,8 +253,12 @@ function AssetsPage() {
                 workspaceId={workspaceId}
                 onOpenAsset={setSelectedId}
               />
-            ) : (
+            ) : view === "drivers" ? (
               <DriverRegistry workspaceId={workspaceId} />
+            ) : view === "locations" ? (
+              <LocationsManager workspaceId={workspaceId} />
+            ) : (
+              <StockTakeView workspaceId={workspaceId} />
             )}
           </div>
         </Layout.Content>

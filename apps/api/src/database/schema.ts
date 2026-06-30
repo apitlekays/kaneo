@@ -199,7 +199,8 @@ export const registeredAssetTable = pgTable(
     model: text("model"),
     // active | in-maintenance | retired | disposed
     status: text("status").notNull().default("active"),
-    location: text("location"),
+    location: text("location"), // legacy free-text; superseded by locationId
+    locationId: text("location_id"),
     // Legacy free-text holder (kept for back-compat); superseded by
     // currentCustodianId + the asset_custody history table.
     assignedTo: text("assigned_to"),
@@ -606,6 +607,71 @@ export const driverProfileTable = pgTable(
       table.userId,
     ),
   ],
+);
+
+// Hierarchical location tree (site → building → floor → room). parentId is a
+// self-reference (no FK — children are re-parented to null on delete in code).
+export const assetLocationTable = pgTable(
+  "asset_location",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    parentId: text("parent_id"),
+    name: text("name").notNull(),
+    type: text("type").notNull().default("room"), // site | building | floor | room
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_location_workspaceId_idx").on(table.workspaceId)],
+);
+
+// Physical stock-take session: scan assets to reconcile against the registry.
+export const assetAuditSessionTable = pgTable(
+  "asset_audit_session",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    startedBy: text("started_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    startedAt: timestamp("started_at", { mode: "date" }).defaultNow().notNull(),
+    closedAt: timestamp("closed_at", { mode: "date" }),
+  },
+  (table) => [
+    index("asset_audit_session_workspaceId_idx").on(table.workspaceId),
+  ],
+);
+
+export const assetAuditScanTable = pgTable(
+  "asset_audit_scan",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => assetAuditSessionTable.id, { onDelete: "cascade" }),
+    assetId: text("asset_id").references(() => registeredAssetTable.id, {
+      onDelete: "set null",
+    }),
+    scannedSerial: text("scanned_serial").notNull(),
+    // found | unexpected
+    status: text("status").notNull().default("found"),
+    locationId: text("location_id"),
+    scannedBy: text("scanned_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    scannedAt: timestamp("scanned_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_audit_scan_sessionId_idx").on(table.sessionId)],
 );
 
 export const teamTable = pgTable(
