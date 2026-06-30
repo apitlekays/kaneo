@@ -730,6 +730,23 @@ async function postEntry<T>(
   );
 }
 
+async function putEntry<T>(
+  workspaceId: string,
+  assetId: string,
+  resource: string,
+  entryId: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/${resource}/${entryId}`), {
+      method: "PUT",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId, ...body }),
+    }),
+  );
+}
+
 async function deleteEntry(
   workspaceId: string,
   assetId: string,
@@ -749,6 +766,12 @@ export const addRenewal = (
   assetId: string,
   body: Partial<AssetRenewal>,
 ) => postEntry<AssetRenewal>(ws, assetId, "renewals", body);
+export const updateRenewal = (
+  ws: string,
+  assetId: string,
+  id: string,
+  body: Partial<AssetRenewal>,
+) => putEntry<AssetRenewal>(ws, assetId, "renewals", id, body);
 export const deleteRenewal = (ws: string, assetId: string, id: string) =>
   deleteEntry(ws, assetId, "renewals", id);
 

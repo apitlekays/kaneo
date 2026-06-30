@@ -350,11 +350,13 @@ function EntryRow({
   primary,
   secondary,
   right,
+  onEdit,
   onDelete,
 }: {
   primary: ReactNode;
   secondary?: ReactNode;
   right?: ReactNode;
+  onEdit?: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -369,6 +371,15 @@ function EntryRow({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {right}
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onDelete}
@@ -472,30 +483,47 @@ function RenewalsTab({
   m: Mutations;
   currency: string;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [type, setType] = useState("road-tax");
   const [label, setLabel] = useState("");
   const [due, setDue] = useState<Date | null>(null);
   const [cost, setCost] = useState("");
   const now = Date.now();
 
-  const add = () => {
-    if (!due) return;
-    m.addRenewal.mutate(
-      {
-        type,
-        label: label.trim() || null,
-        dueDate: due.toISOString(),
-        cost: toMinorUnits(cost),
-      },
-      {
-        onSuccess: () => {
-          setLabel("");
-          setDue(null);
-          setCost("");
-        },
-      },
-    );
+  const reset = () => {
+    setEditingId(null);
+    setType("road-tax");
+    setLabel("");
+    setDue(null);
+    setCost("");
   };
+
+  const startEdit = (r: AssetDetail["renewals"][number]) => {
+    setEditingId(r.id);
+    setType(r.type);
+    setLabel(r.label ?? "");
+    setDue(new Date(r.dueDate));
+    setCost(r.cost != null ? fromMinorUnits(r.cost) : "");
+  };
+
+  const submit = () => {
+    if (!due) return;
+    const body = {
+      type,
+      label: label.trim() || null,
+      dueDate: due.toISOString(),
+      cost: toMinorUnits(cost),
+    };
+    if (editingId) {
+      m.updateRenewal.mutate({ id: editingId, body }, { onSuccess: reset });
+    } else {
+      m.addRenewal.mutate(body, { onSuccess: reset });
+    }
+  };
+
+  const pending = editingId
+    ? m.updateRenewal.isPending
+    : m.addRenewal.isPending;
 
   return (
     <EntrySection
@@ -526,14 +554,29 @@ function RenewalsTab({
             value={cost}
             onChange={(e) => setCost(e.target.value)}
           />
-          <Button
-            size="sm"
-            className="sm:col-span-2"
-            disabled={!due || m.addRenewal.isPending}
-            onClick={add}
-          >
-            <Plus className="h-3.5 w-3.5" /> Add renewal
-          </Button>
+          <div className="flex gap-2 sm:col-span-2">
+            <Button
+              size="sm"
+              className="flex-1"
+              disabled={!due || pending}
+              onClick={submit}
+            >
+              {editingId ? (
+                <>
+                  <Pencil className="h-3.5 w-3.5" /> Save changes
+                </>
+              ) : (
+                <>
+                  <Plus className="h-3.5 w-3.5" /> Add renewal
+                </>
+              )}
+            </Button>
+            {editingId && (
+              <Button size="sm" variant="outline" onClick={reset}>
+                Cancel
+              </Button>
+            )}
+          </div>
         </div>
       }
     >
@@ -559,6 +602,7 @@ function RenewalsTab({
                 {formatDateMedium(r.dueDate)}
               </span>
             }
+            onEdit={() => startEdit(r)}
             onDelete={() => m.removeRenewal.mutate(r.id)}
           />
         );
@@ -1454,16 +1498,24 @@ function FleetTab({
     );
   };
 
-  const odoVals = data.fuelLogs
+  // Fill-to-full economy: only fills with an odometer count, and the earliest
+  // fill establishes the baseline distance — its fuel was burned before the
+  // measured window, so it's excluded from both volume and cost. This avoids
+  // the bias of dividing every litre ever logged by the odometer span.
+  const odoLogs = data.fuelLogs
     .filter((f) => f.odometer != null)
-    .map((f) => f.odometer as number);
+    .sort((a, b) => (a.odometer as number) - (b.odometer as number));
   const kmRange =
-    odoVals.length >= 2 ? Math.max(...odoVals) - Math.min(...odoVals) : 0;
-  const totalVolumeL =
-    data.fuelLogs.reduce((a, f) => a + (f.volume ?? 0), 0) / 100;
-  const totalFuelCost = data.fuelLogs.reduce((a, f) => a + (f.cost ?? 0), 0);
-  const avgL100 = kmRange > 0 ? (totalVolumeL / kmRange) * 100 : null;
-  const costPerKm = kmRange > 0 ? totalFuelCost / kmRange : null;
+    odoLogs.length >= 2
+      ? (odoLogs[odoLogs.length - 1].odometer as number) -
+        (odoLogs[0].odometer as number)
+      : 0;
+  const consumed = odoLogs.slice(1);
+  const consumedVolumeL =
+    consumed.reduce((a, f) => a + (f.volume ?? 0), 0) / 100;
+  const consumedFuelCost = consumed.reduce((a, f) => a + (f.cost ?? 0), 0);
+  const avgL100 = kmRange > 0 ? (consumedVolumeL / kmRange) * 100 : null;
+  const costPerKm = kmRange > 0 ? consumedFuelCost / kmRange : null;
 
   return (
     <div className="space-y-6 py-2">

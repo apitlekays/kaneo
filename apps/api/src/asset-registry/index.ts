@@ -204,6 +204,7 @@ function computeDepreciation(asset: DepreciableAsset) {
     asset.depreciationMethod !== "straight-line" ||
     !cost ||
     !life ||
+    life <= 0 ||
     !inService
   ) {
     return {
@@ -239,11 +240,17 @@ function computeDepreciation(asset: DepreciableAsset) {
   }> = [];
   let opening = cost;
   const startYear = inService.getFullYear();
+  const lastYearIndex = Math.ceil(life / 12) - 1;
   for (let y = 0; y * 12 < life; y++) {
     const monthsThisYear = Math.min(12, life - y * 12);
-    const dep = Math.round(
-      Math.min(monthly * monthsThisYear, Math.max(opening - salvage, 0)),
-    );
+    // The final row depreciates whatever is left down to salvage exactly, so
+    // rounding drift across years never leaves a few sen above/below salvage.
+    const dep =
+      y === lastYearIndex
+        ? Math.max(opening - salvage, 0)
+        : Math.round(
+            Math.min(monthly * monthsThisYear, Math.max(opening - salvage, 0)),
+          );
     const closing = opening - dep;
     schedule.push({
       year: startYear + y,
@@ -1311,6 +1318,8 @@ const assetRegistry = new Hono<{
       const userId = c.get("userId");
       const body = c.req.valid("json");
       await assertLocation(body.locationId, workspaceId);
+      const name = body.name.trim();
+      if (!name) throw new HTTPException(400, { message: "Name is required" });
 
       let lastError: unknown;
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -1320,7 +1329,7 @@ const assetRegistry = new Hono<{
             .values({
               workspaceId,
               serialNumber: generateSerial(),
-              name: body.name,
+              name,
               category: body.category ?? "other",
               status: body.status ?? "active",
               assetTag: body.assetTag ?? null,
@@ -1548,7 +1557,7 @@ const assetRegistry = new Hono<{
       const [updated] = await db
         .update(registeredAssetTable)
         .set({
-          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.name !== undefined ? { name: body.name.trim() } : {}),
           ...(body.category !== undefined ? { category: body.category } : {}),
           ...(body.status !== undefined ? { status: body.status } : {}),
           ...(body.assetTag !== undefined ? { assetTag: body.assetTag } : {}),

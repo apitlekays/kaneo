@@ -58,6 +58,17 @@ export function useAssetMutations(workspaceId: string, assetId?: string) {
       onSuccess: invalidate,
       onError,
     }),
+    updateRenewal: useMutation({
+      mutationFn: ({
+        id,
+        body,
+      }: {
+        id: string;
+        body: Partial<api.AssetRenewal>;
+      }) => api.updateRenewal(workspaceId, asset, id, body),
+      onSuccess: invalidate,
+      onError,
+    }),
     removeRenewal: useMutation({
       mutationFn: (id: string) => api.deleteRenewal(workspaceId, asset, id),
       onSuccess: invalidate,
