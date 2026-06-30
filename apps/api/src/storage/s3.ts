@@ -339,6 +339,14 @@ type AssetFileUploadContext = {
   contentType: string;
 };
 
+/**
+ * The owner-scoping segment every asset file key must contain. Used to reject a
+ * client-supplied `objectKey` at finalize that points outside the workspace/asset.
+ */
+export function assetFileKeyOwnerSegment(workspaceId: string, assetId: string) {
+  return `workspace/${sanitizePathSegment(workspaceId)}/asset/${sanitizePathSegment(assetId)}/`;
+}
+
 /** Object key for a registered-asset file: workspace/<ws>/asset/<id>/<folder>/<name>. */
 export function buildAssetFileObjectKey(context: AssetFileUploadContext) {
   const extension = getFileExtension(context.filename);

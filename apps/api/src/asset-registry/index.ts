@@ -29,6 +29,7 @@ import {
 } from "../database/schema";
 import createNotification from "../notification/controllers/create-notification";
 import {
+  assetFileKeyOwnerSegment,
   createAssetFileUploadUrl,
   deleteS3Object,
   getPrivateObject,
@@ -104,6 +105,60 @@ async function loadAsset(assetId: string, workspaceId: string) {
     throw new HTTPException(404, { message: "Asset not found" });
   }
   return asset;
+}
+
+/** True if the user is a member of the workspace. */
+async function isWorkspaceMember(userId: string, workspaceId: string) {
+  const [member] = await db
+    .select({ id: workspaceUserTable.id })
+    .from(workspaceUserTable)
+    .where(
+      and(
+        eq(workspaceUserTable.workspaceId, workspaceId),
+        eq(workspaceUserTable.userId, userId),
+      ),
+    )
+    .limit(1);
+  return Boolean(member);
+}
+
+/** True if the location id exists and belongs to the workspace. */
+async function isWorkspaceLocation(locationId: string, workspaceId: string) {
+  const [loc] = await db
+    .select({ id: assetLocationTable.id })
+    .from(assetLocationTable)
+    .where(
+      and(
+        eq(assetLocationTable.id, locationId),
+        eq(assetLocationTable.workspaceId, workspaceId),
+      ),
+    )
+    .limit(1);
+  return Boolean(loc);
+}
+
+/** Reject a referenced workspace member that isn't in this workspace. */
+async function assertMember(
+  userId: string | null | undefined,
+  workspaceId: string,
+) {
+  if (userId && !(await isWorkspaceMember(userId, workspaceId))) {
+    throw new HTTPException(400, {
+      message: "Referenced user is not a member of this workspace",
+    });
+  }
+}
+
+/** Reject a referenced location that isn't in this workspace. */
+async function assertLocation(
+  locationId: string | null | undefined,
+  workspaceId: string,
+) {
+  if (locationId && !(await isWorkspaceLocation(locationId, workspaceId))) {
+    throw new HTTPException(400, {
+      message: "Referenced location is not in this workspace",
+    });
+  }
 }
 
 // Default useful life (months) by category for straight-line depreciation.
@@ -545,6 +600,7 @@ const assetRegistry = new Hono<{
       if (!wo) {
         throw new HTTPException(404, { message: "Work order not found" });
       }
+      await assertMember(body.assigneeId, workspaceId);
 
       const becomingDone = body.status === "done" && wo.status !== "done";
       const [updated] = await db
@@ -689,6 +745,7 @@ const assetRegistry = new Hono<{
     async (c) => {
       const workspaceId = c.get("workspaceId") as string;
       const { userId } = c.req.valid("param");
+      await assertMember(userId, workspaceId);
       const body = c.req.valid("json");
       const values = {
         licenceNo: body.licenceNo ?? null,
@@ -704,6 +761,15 @@ const assetRegistry = new Hono<{
           set: { ...values, updatedAt: new Date() },
         })
         .returning();
+      // Re-arm licence-expiry reminders for the new cycle (mirror renewals).
+      await db
+        .delete(assetReminderSentTable)
+        .where(
+          and(
+            eq(assetReminderSentTable.refType, "driver-licence"),
+            eq(assetReminderSentTable.refId, row.id),
+          ),
+        );
       return c.json(row);
     },
   )
@@ -1135,6 +1201,7 @@ const assetRegistry = new Hono<{
       if (!session) {
         throw new HTTPException(404, { message: "Session not found" });
       }
+      await assertLocation(body.locationId, workspaceId);
 
       const serial = body.serial.trim();
       const [asset] = await db
@@ -1242,6 +1309,7 @@ const assetRegistry = new Hono<{
       const workspaceId = c.get("workspaceId") as string;
       const userId = c.get("userId");
       const body = c.req.valid("json");
+      await assertLocation(body.locationId, workspaceId);
 
       let lastError: unknown;
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -1474,6 +1542,7 @@ const assetRegistry = new Hono<{
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
       await loadAsset(id, workspaceId);
+      await assertLocation(body.locationId, workspaceId);
 
       const [updated] = await db
         .update(registeredAssetTable)
@@ -1931,6 +2000,7 @@ const assetRegistry = new Hono<{
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
       await loadAsset(id, workspaceId);
+      await assertMember(body.assigneeId, workspaceId);
       const [row] = await db
         .insert(workOrderTable)
         .values({
@@ -2222,6 +2292,7 @@ const assetRegistry = new Hono<{
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
       await loadAsset(id, workspaceId);
+      await assertMember(body.driverId, workspaceId);
       const [row] = await db
         .insert(assetTripTable)
         .values({
@@ -2341,6 +2412,7 @@ const assetRegistry = new Hono<{
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
       await loadAsset(id, workspaceId);
+      await assertMember(body.driverId, workspaceId);
       const [row] = await db
         .insert(assetFuelLogTable)
         .values({
@@ -2443,6 +2515,15 @@ const assetRegistry = new Hono<{
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
       await loadAsset(id, workspaceId);
+
+      // Reject a client-supplied key that points outside this workspace/asset
+      // (the presign step issues keys under workspace/<ws>/asset/<id>/…).
+      if (
+        body.objectKey.includes("..") ||
+        !body.objectKey.includes(assetFileKeyOwnerSegment(workspaceId, id))
+      ) {
+        throw new HTTPException(400, { message: "Invalid object key" });
+      }
 
       const [row] = await db
         .insert(assetFileTable)
