@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono-openapi";
@@ -1028,6 +1028,7 @@ const assetRegistry = new Hono<{
     async (c) => {
       const workspaceId = c.get("workspaceId") as string;
       const body = c.req.valid("json");
+      await assertLocation(body.parentId, workspaceId);
       const [row] = await db
         .insert(assetLocationTable)
         .values({
@@ -1896,8 +1897,17 @@ const assetRegistry = new Hono<{
             .where(eq(assetMeterReadingTable.assetId, id))
             .orderBy(desc(assetMeterReadingTable.date))
             .limit(1);
-          doneMeter = latest?.value ?? sched.lastDoneMeter ?? 0;
-          nextMeter = doneMeter + sched.intervalValue;
+          // Need a current meter to set the next target; without one we'd set
+          // nextDueMeter=intervalValue and fire on the first real reading.
+          const current = latest?.value ?? sched.lastDoneMeter ?? null;
+          if (current == null) {
+            throw new HTTPException(400, {
+              message:
+                "Add an odometer/meter reading before completing a meter-based schedule",
+            });
+          }
+          doneMeter = current;
+          nextMeter = current + sched.intervalValue;
         } else {
           nextDate = addInterval(now, sched.intervalType, sched.intervalValue);
         }
@@ -1919,6 +1929,17 @@ const assetRegistry = new Hono<{
           notes: "Preventive maintenance completed",
           createdBy: userId,
         });
+        // Close any open auto-raised work order for this schedule so it doesn't
+        // linger and suppress the next cycle.
+        await db
+          .update(workOrderTable)
+          .set({ status: "done", completedAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(workOrderTable.pmScheduleId, scheduleId),
+              notInArray(workOrderTable.status, ["done", "cancelled"]),
+            ),
+          );
         await recordActivity(id, "pm_completed", userId, {
           title: sched.title,
         });
@@ -2095,14 +2116,20 @@ const assetRegistry = new Hono<{
       const body = c.req.valid("json");
       await loadAsset(id, workspaceId);
 
+      let nextDue: Date | undefined;
+      if (body.dueDate !== undefined) {
+        const parsed = toDate(body.dueDate);
+        if (!parsed)
+          throw new HTTPException(400, { message: "Invalid due date" });
+        nextDue = parsed;
+      }
+
       const [row] = await db
         .update(assetRenewalTable)
         .set({
           ...(body.type !== undefined ? { type: body.type } : {}),
           ...(body.label !== undefined ? { label: body.label } : {}),
-          ...(body.dueDate !== undefined
-            ? { dueDate: toDate(body.dueDate) ?? new Date() }
-            : {}),
+          ...(nextDue !== undefined ? { dueDate: nextDue } : {}),
           ...(body.lastRenewedDate !== undefined
             ? { lastRenewedDate: toDate(body.lastRenewedDate) }
             : {}),
