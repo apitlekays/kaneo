@@ -37,6 +37,7 @@ import type { AssetDetail } from "@/fetchers/asset-registry";
 import { assetFileUrl } from "@/fetchers/asset-registry";
 import { useAsset } from "@/hooks/queries/asset-registry/use-asset";
 import { useAssetMutations } from "@/hooks/queries/asset-registry/use-asset-mutations";
+import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import {
   ASSET_CATEGORIES,
   ASSET_STATUSES,
@@ -179,6 +180,7 @@ function DetailBody({
           </TabsTrigger>
           <TabsTrigger value="costs">Costs ({data.costs.length})</TabsTrigger>
           <TabsTrigger value="trips">Trips ({data.trips.length})</TabsTrigger>
+          <TabsTrigger value="fleet">Fleet</TabsTrigger>
           <TabsTrigger value="custody">Custody</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="label">Label</TabsTrigger>
@@ -208,7 +210,20 @@ function DetailBody({
             <CostsTab data={data} m={m} currency={currency} />
           </TabsContent>
           <TabsContent value="trips">
-            <TripsTab data={data} m={m} currency={currency} />
+            <TripsTab
+              data={data}
+              m={m}
+              currency={currency}
+              workspaceId={workspaceId}
+            />
+          </TabsContent>
+          <TabsContent value="fleet">
+            <FleetTab
+              data={data}
+              m={m}
+              currency={currency}
+              workspaceId={workspaceId}
+            />
           </TabsContent>
           <TabsContent value="custody">
             <CustodyTab data={data} m={m} workspaceId={workspaceId} />
@@ -640,21 +655,27 @@ function PmSchedulesSection({ data, m }: { data: AssetDetail; m: Mutations }) {
   const [intervalValue, setIntervalValue] = useState("6");
   const [intervalType, setIntervalType] = useState("months");
   const [nextDue, setNextDue] = useState<Date | null>(null);
+  const [nextMeter, setNextMeter] = useState("");
+  const isMeter = intervalType === "km" || intervalType === "hours";
   const now = Date.now();
 
   const add = () => {
-    if (!title.trim() || !nextDue) return;
+    if (!title.trim()) return;
+    if (isMeter ? !nextMeter : !nextDue) return;
     m.addPmSchedule.mutate(
       {
         title: title.trim(),
         intervalType,
         intervalValue: Number(intervalValue) || 1,
-        nextDueDate: nextDue.toISOString(),
+        ...(isMeter
+          ? { nextDueMeter: Number(nextMeter) }
+          : { nextDueDate: nextDue?.toISOString() }),
       },
       {
         onSuccess: () => {
           setTitle("");
           setNextDue(null);
+          setNextMeter("");
         },
       },
     );
@@ -665,7 +686,11 @@ function PmSchedulesSection({ data, m }: { data: AssetDetail; m: Mutations }) {
       <h4 className="text-sm font-medium">Preventive maintenance schedules</h4>
       <div className="space-y-1.5">
         {data.pmSchedules.map((s) => {
-          const overdue = new Date(s.nextDueDate).getTime() < now;
+          const meterBased = s.nextDueMeter != null;
+          const overdue =
+            !meterBased &&
+            s.nextDueDate != null &&
+            new Date(s.nextDueDate).getTime() < now;
           return (
             <div
               key={s.id}
@@ -675,10 +700,18 @@ function PmSchedulesSection({ data, m }: { data: AssetDetail; m: Mutations }) {
                 <div className="truncate">{s.title}</div>
                 <div className="text-xs text-muted-foreground">
                   Every {s.intervalValue} {s.intervalType} · next{" "}
-                  <span className={cn(overdue && "font-medium text-rose-500")}>
-                    {formatDateMedium(s.nextDueDate)}
-                    {overdue ? " (due)" : ""}
-                  </span>
+                  {meterBased ? (
+                    <span>
+                      at {s.nextDueMeter?.toLocaleString()} {s.intervalType}
+                    </span>
+                  ) : (
+                    <span
+                      className={cn(overdue && "font-medium text-rose-500")}
+                    >
+                      {s.nextDueDate ? formatDateMedium(s.nextDueDate) : "—"}
+                      {overdue ? " (due)" : ""}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
@@ -712,11 +745,20 @@ function PmSchedulesSection({ data, m }: { data: AssetDetail; m: Mutations }) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
-        <DateField
-          value={nextDue}
-          onChange={setNextDue}
-          placeholder="First due *"
-        />
+        {isMeter ? (
+          <Input
+            type="number"
+            placeholder={`Next due (${intervalType}) *`}
+            value={nextMeter}
+            onChange={(e) => setNextMeter(e.target.value)}
+          />
+        ) : (
+          <DateField
+            value={nextDue}
+            onChange={setNextDue}
+            placeholder="First due *"
+          />
+        )}
         <div className="flex items-center gap-2 sm:col-span-2">
           <span className="text-sm text-muted-foreground">Every</span>
           <Input
@@ -732,12 +774,18 @@ function PmSchedulesSection({ data, m }: { data: AssetDetail; m: Mutations }) {
             <SelectContent>
               <SelectItem value="months">months</SelectItem>
               <SelectItem value="days">days</SelectItem>
+              <SelectItem value="km">km</SelectItem>
+              <SelectItem value="hours">hours</SelectItem>
             </SelectContent>
           </Select>
           <Button
             size="sm"
             className="ml-auto"
-            disabled={!title.trim() || !nextDue || m.addPmSchedule.isPending}
+            disabled={
+              !title.trim() ||
+              (isMeter ? !nextMeter : !nextDue) ||
+              m.addPmSchedule.isPending
+            }
             onClick={add}
           >
             <Plus className="h-3.5 w-3.5" /> Add schedule
@@ -851,16 +899,26 @@ function TripsTab({
   data,
   m,
   currency,
+  workspaceId,
 }: {
   data: AssetDetail;
   m: Mutations;
   currency: string;
+  workspaceId: string;
 }) {
+  const { data: wsUsers } = useGetActiveWorkspaceUsers(workspaceId);
+  const members = (wsUsers?.members ?? []) as Array<{
+    userId: string;
+    user?: { name?: string | null } | null;
+  }>;
+  const driverName = (id: string | null) =>
+    id ? (members.find((mm) => mm.userId === id)?.user?.name ?? null) : null;
+
   const [date, setDate] = useState<Date | null>(new Date());
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [distance, setDistance] = useState("");
-  const [driver, setDriver] = useState("");
+  const [driverId, setDriverId] = useState<string | null>(null);
   const [purpose, setPurpose] = useState("");
   const [cost, setCost] = useState("");
 
@@ -872,7 +930,7 @@ function TripsTab({
         origin: origin.trim() || null,
         destination: destination.trim() || null,
         distanceKm: distance ? Number(distance) : null,
-        driver: driver.trim() || null,
+        driverId,
         purpose: purpose.trim() || null,
         cost: toMinorUnits(cost),
       },
@@ -881,7 +939,7 @@ function TripsTab({
           setOrigin("");
           setDestination("");
           setDistance("");
-          setDriver("");
+          setDriverId(null);
           setPurpose("");
           setCost("");
         },
@@ -895,10 +953,20 @@ function TripsTab({
       form={
         <div className="grid gap-2 sm:grid-cols-2">
           <DateField value={date} onChange={setDate} placeholder="Date *" />
-          <Input
-            placeholder="Driver"
-            value={driver}
-            onChange={(e) => setDriver(e.target.value)}
+          <MemberPicker
+            workspaceId={workspaceId}
+            selectedUserId={driverId}
+            onSelect={setDriverId}
+            trigger={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="justify-start font-normal"
+              >
+                {driverId ? (driverName(driverId) ?? "Driver") : "Driver"}
+              </Button>
+            }
           />
           <Input
             placeholder="Origin"
@@ -949,7 +1017,7 @@ function TripsTab({
           }
           secondary={[
             formatDateMedium(t.date),
-            t.driver,
+            driverName(t.driverId) ?? t.driver,
             t.distanceKm != null ? `${t.distanceKm} km` : null,
             t.purpose,
           ]
@@ -1308,6 +1376,210 @@ function FinancialsTab({
             </Button>
           </div>
         )}
+      </section>
+    </div>
+  );
+}
+
+function FleetTab({
+  data,
+  m,
+  currency,
+  workspaceId,
+}: {
+  data: AssetDetail;
+  m: Mutations;
+  currency: string;
+  workspaceId: string;
+}) {
+  const { data: wsUsers } = useGetActiveWorkspaceUsers(workspaceId);
+  const members = (wsUsers?.members ?? []) as Array<{
+    userId: string;
+    user?: { name?: string | null } | null;
+  }>;
+  const driverName = (id: string | null) =>
+    id ? (members.find((mm) => mm.userId === id)?.user?.name ?? null) : null;
+
+  const [mDate, setMDate] = useState<Date | null>(new Date());
+  const [mValue, setMValue] = useState("");
+  const [mUnit, setMUnit] = useState("km");
+  const addMeter = () => {
+    if (!mValue || !mDate) return;
+    m.addMeter.mutate(
+      { date: mDate.toISOString(), value: Number(mValue), unit: mUnit },
+      { onSuccess: () => setMValue("") },
+    );
+  };
+
+  const [fDate, setFDate] = useState<Date | null>(new Date());
+  const [fVolume, setFVolume] = useState("");
+  const [fCost, setFCost] = useState("");
+  const [fOdo, setFOdo] = useState("");
+  const [fDriver, setFDriver] = useState<string | null>(null);
+  const addFuel = () => {
+    if (!fDate) return;
+    m.addFuel.mutate(
+      {
+        date: fDate.toISOString(),
+        volume: fVolume ? Math.round(Number(fVolume) * 100) : null,
+        cost: toMinorUnits(fCost),
+        odometer: fOdo ? Number(fOdo) : null,
+        driverId: fDriver,
+      },
+      {
+        onSuccess: () => {
+          setFVolume("");
+          setFCost("");
+          setFOdo("");
+          setFDriver(null);
+        },
+      },
+    );
+  };
+
+  const odoVals = data.fuelLogs
+    .filter((f) => f.odometer != null)
+    .map((f) => f.odometer as number);
+  const kmRange =
+    odoVals.length >= 2 ? Math.max(...odoVals) - Math.min(...odoVals) : 0;
+  const totalVolumeL =
+    data.fuelLogs.reduce((a, f) => a + (f.volume ?? 0), 0) / 100;
+  const totalFuelCost = data.fuelLogs.reduce((a, f) => a + (f.cost ?? 0), 0);
+  const avgL100 = kmRange > 0 ? (totalVolumeL / kmRange) * 100 : null;
+  const costPerKm = kmRange > 0 ? totalFuelCost / kmRange : null;
+
+  return (
+    <div className="space-y-6 py-2">
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium">Odometer / meter readings</h4>
+          {data.currentOdometer != null && (
+            <span className="text-sm text-muted-foreground">
+              Current: {data.currentOdometer.toLocaleString()}
+            </span>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          {data.meterReadings.map((r) => (
+            <EntryRow
+              key={r.id}
+              primary={`${r.value.toLocaleString()} ${r.unit}`}
+              secondary={formatDateMedium(r.date)}
+              onDelete={() => m.removeMeter.mutate(r.id)}
+            />
+          ))}
+        </div>
+        <div className="grid gap-2 rounded-lg border border-dashed border-border p-3 sm:grid-cols-2">
+          <DateField value={mDate} onChange={setMDate} placeholder="Date *" />
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              placeholder="Reading *"
+              value={mValue}
+              onChange={(e) => setMValue(e.target.value)}
+            />
+            <Select value={mUnit} onValueChange={setMUnit}>
+              <SelectTrigger className="w-24">
+                <SelectValue>{mUnit}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="km">km</SelectItem>
+                <SelectItem value="hours">hours</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            size="sm"
+            className="sm:col-span-2"
+            disabled={!mValue || !mDate || m.addMeter.isPending}
+            onClick={addMeter}
+          >
+            <Plus className="h-3.5 w-3.5" /> Add reading
+          </Button>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium">Fuel log</h4>
+          {avgL100 != null && (
+            <span className="text-xs text-muted-foreground">
+              {avgL100.toFixed(1)} L/100km ·{" "}
+              {costPerKm != null
+                ? `${formatMoney(Math.round(costPerKm), currency)}/km`
+                : "—"}
+            </span>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          {data.fuelLogs.map((f) => (
+            <EntryRow
+              key={f.id}
+              primary={
+                f.volume != null ? `${(f.volume / 100).toFixed(2)} L` : "Fuel"
+              }
+              secondary={[
+                formatDateMedium(f.date),
+                driverName(f.driverId) ?? f.driverName,
+                f.odometer != null ? `${f.odometer.toLocaleString()} km` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              right={
+                f.cost != null ? (
+                  <span className="text-xs text-muted-foreground">
+                    {formatMoney(f.cost, currency)}
+                  </span>
+                ) : undefined
+              }
+              onDelete={() => m.removeFuel.mutate(f.id)}
+            />
+          ))}
+        </div>
+        <div className="grid gap-2 rounded-lg border border-dashed border-border p-3 sm:grid-cols-2">
+          <DateField value={fDate} onChange={setFDate} placeholder="Date *" />
+          <Input
+            type="number"
+            placeholder="Volume (L)"
+            value={fVolume}
+            onChange={(e) => setFVolume(e.target.value)}
+          />
+          <Input
+            type="number"
+            placeholder="Cost"
+            value={fCost}
+            onChange={(e) => setFCost(e.target.value)}
+          />
+          <Input
+            type="number"
+            placeholder="Odometer (km)"
+            value={fOdo}
+            onChange={(e) => setFOdo(e.target.value)}
+          />
+          <MemberPicker
+            workspaceId={workspaceId}
+            selectedUserId={fDriver}
+            onSelect={setFDriver}
+            trigger={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="justify-start font-normal sm:col-span-2"
+              >
+                {fDriver ? (driverName(fDriver) ?? "Driver") : "Driver"}
+              </Button>
+            }
+          />
+          <Button
+            size="sm"
+            className="sm:col-span-2"
+            disabled={!fDate || m.addFuel.isPending}
+            onClick={addFuel}
+          >
+            <Plus className="h-3.5 w-3.5" /> Add fuel entry
+          </Button>
+        </div>
       </section>
     </div>
   );

@@ -1,9 +1,11 @@
-import { and, eq, isNotNull, lte, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
 import db from "../database";
 import {
+  assetMeterReadingTable,
   assetPmScheduleTable,
   assetReminderSentTable,
   assetRenewalTable,
+  driverProfileTable,
   registeredAssetTable,
   workOrderTable,
 } from "../database/schema";
@@ -158,18 +160,21 @@ export async function checkAssetRemindersDue(): Promise<void> {
   }
 
   await raisePreventiveMaintenanceWorkOrders();
+  await checkDriverLicenceReminders();
 }
 
 /**
- * For each active PM schedule whose nextDueDate has arrived and that has no open
- * work order yet, raise a "scheduled" work order assigned to the custodian and
- * notify them. The open-work-order check is the dedup.
+ * Raise a "scheduled" work order for each active PM schedule that is due —
+ * time-based (nextDueDate passed) or meter-based (latest reading ≥ nextDueMeter)
+ * — and that has no open work order. The open-work-order check is the dedup.
  */
 async function raisePreventiveMaintenanceWorkOrders(): Promise<void> {
+  const now = new Date();
   let schedules: Array<{
     scheduleId: string;
     title: string;
-    nextDueDate: Date;
+    nextDueDate: Date | null;
+    nextDueMeter: number | null;
     assetId: string;
     assetName: string;
     workspaceId: string;
@@ -182,6 +187,7 @@ async function raisePreventiveMaintenanceWorkOrders(): Promise<void> {
         scheduleId: assetPmScheduleTable.id,
         title: assetPmScheduleTable.title,
         nextDueDate: assetPmScheduleTable.nextDueDate,
+        nextDueMeter: assetPmScheduleTable.nextDueMeter,
         assetId: registeredAssetTable.id,
         assetName: registeredAssetTable.name,
         workspaceId: registeredAssetTable.workspaceId,
@@ -193,18 +199,42 @@ async function raisePreventiveMaintenanceWorkOrders(): Promise<void> {
         registeredAssetTable,
         eq(assetPmScheduleTable.assetId, registeredAssetTable.id),
       )
-      .where(
-        and(
-          eq(assetPmScheduleTable.active, true),
-          lte(assetPmScheduleTable.nextDueDate, new Date()),
-        ),
-      );
+      .where(eq(assetPmScheduleTable.active, true));
   } catch (error) {
     console.error("Failed to query PM schedules", error);
     return;
   }
 
+  // Latest meter value per asset, for meter-based schedules.
+  const meterAssetIds = [
+    ...new Set(
+      schedules.filter((s) => s.nextDueMeter != null).map((s) => s.assetId),
+    ),
+  ];
+  const meterMax = new Map<string, number>();
+  if (meterAssetIds.length) {
+    const readings = await db
+      .select({
+        assetId: assetMeterReadingTable.assetId,
+        value: assetMeterReadingTable.value,
+      })
+      .from(assetMeterReadingTable)
+      .where(inArray(assetMeterReadingTable.assetId, meterAssetIds));
+    for (const r of readings) {
+      if (r.value > (meterMax.get(r.assetId) ?? Number.NEGATIVE_INFINITY)) {
+        meterMax.set(r.assetId, r.value);
+      }
+    }
+  }
+
   for (const s of schedules) {
+    const due =
+      s.nextDueMeter != null
+        ? (meterMax.get(s.assetId) ?? Number.NEGATIVE_INFINITY) >=
+          s.nextDueMeter
+        : s.nextDueDate != null && s.nextDueDate.getTime() <= now.getTime();
+    if (!due) continue;
+
     try {
       const open = await db
         .select({ id: workOrderTable.id })
@@ -226,7 +256,7 @@ async function raisePreventiveMaintenanceWorkOrders(): Promise<void> {
         status: "scheduled",
         priority: "medium",
         assigneeId: s.custodianId ?? null,
-        dueDate: s.nextDueDate,
+        dueDate: s.nextDueDate ?? null,
       });
 
       const recipient = s.custodianId ?? s.createdBy;
@@ -243,6 +273,75 @@ async function raisePreventiveMaintenanceWorkOrders(): Promise<void> {
     } catch (error) {
       console.error("Failed to raise PM work order", {
         scheduleId: s.scheduleId,
+        error,
+      });
+    }
+  }
+}
+
+/**
+ * Notify drivers whose licence is entering an expiry window (30/7/1 days /
+ * overdue). Deduped per (profile, window) via asset_reminder_sent.
+ */
+async function checkDriverLicenceReminders(): Promise<void> {
+  const today = new Date();
+  let drivers: Array<{
+    profileId: string;
+    userId: string;
+    licenceExpiry: Date | null;
+  }>;
+  try {
+    drivers = await db
+      .select({
+        profileId: driverProfileTable.id,
+        userId: driverProfileTable.userId,
+        licenceExpiry: driverProfileTable.licenceExpiry,
+      })
+      .from(driverProfileTable)
+      .where(isNotNull(driverProfileTable.licenceExpiry));
+  } catch (error) {
+    console.error("Failed to query driver licences", error);
+    return;
+  }
+
+  for (const d of drivers) {
+    if (!d.licenceExpiry) continue;
+    const window = windowFor(daysUntil(d.licenceExpiry, today));
+    if (!window) continue;
+
+    try {
+      const [inserted] = await db
+        .insert(assetReminderSentTable)
+        .values({
+          refType: "driver-licence",
+          refId: d.profileId,
+          reminderWindow: window,
+        })
+        .onConflictDoNothing({
+          target: [
+            assetReminderSentTable.refType,
+            assetReminderSentTable.refId,
+            assetReminderSentTable.reminderWindow,
+          ],
+        })
+        .returning();
+      if (!inserted) continue;
+    } catch {
+      continue;
+    }
+
+    const dueStr = d.licenceExpiry.toISOString().slice(0, 10);
+    try {
+      await createNotification({
+        userId: d.userId,
+        type: "asset_renewal_reminder",
+        title: `Driving licence ${phraseFor(window)}`,
+        content: `Your driving licence expires ${dueStr}.`,
+        resourceType: "driver",
+      });
+    } catch (error) {
+      console.error("Failed to send driver licence reminder", {
+        profileId: d.profileId,
         error,
       });
     }

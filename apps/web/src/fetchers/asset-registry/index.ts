@@ -90,6 +90,7 @@ export type AssetTrip = {
   distanceKm: number | null;
   purpose: string | null;
   driver: string | null;
+  driverId: string | null;
   cost: number | null;
   notes: string | null;
 };
@@ -141,9 +142,43 @@ export type PmSchedule = {
   intervalType: string;
   intervalValue: number;
   lastDoneDate: string | null;
-  nextDueDate: string;
+  nextDueDate: string | null;
+  lastDoneMeter: number | null;
+  nextDueMeter: number | null;
   active: boolean;
   notes: string | null;
+};
+
+export type MeterReading = {
+  id: string;
+  assetId: string;
+  date: string;
+  value: number;
+  unit: string;
+  note: string | null;
+};
+
+export type FuelLog = {
+  id: string;
+  date: string;
+  volume: number | null;
+  cost: number | null;
+  odometer: number | null;
+  driverId: string | null;
+  driverName: string | null;
+  note: string | null;
+};
+
+export type Driver = {
+  userId: string;
+  name: string;
+  email: string;
+  image: string | null;
+  profileId: string | null;
+  licenceNo: string | null;
+  licenceClass: string | null;
+  licenceExpiry: string | null;
+  phone: string | null;
 };
 
 export type WorkOrder = {
@@ -175,6 +210,9 @@ export type AssetDetail = {
   activity: AssetActivity[];
   pmSchedules: PmSchedule[];
   workOrders: WorkOrder[];
+  meterReadings: MeterReading[];
+  fuelLogs: FuelLog[];
+  currentOdometer: number | null;
   depreciation: AssetDepreciation;
   disposal: AssetDisposal | null;
 };
@@ -432,6 +470,56 @@ export async function updateWorkOrder(
 export async function deleteWorkOrder(ws: string, woId: string) {
   return jsonOrThrow(
     await fetch(api(`work-orders/${woId}?workspaceId=${ws}`), {
+      method: "DELETE",
+      credentials: "include",
+    }),
+  );
+}
+
+// ── Fleet: meter readings + fuel log ─────────────────────────────────────────
+
+export const addMeterReading = (
+  ws: string,
+  assetId: string,
+  body: Record<string, unknown>,
+) => postEntry<MeterReading>(ws, assetId, "meter", body);
+export const deleteMeterReading = (ws: string, assetId: string, id: string) =>
+  deleteEntry(ws, assetId, "meter", id);
+
+export const addFuelLog = (
+  ws: string,
+  assetId: string,
+  body: Record<string, unknown>,
+) => postEntry<FuelLog>(ws, assetId, "fuel", body);
+export const deleteFuelLog = (ws: string, assetId: string, id: string) =>
+  deleteEntry(ws, assetId, "fuel", id);
+
+// ── Drivers ──────────────────────────────────────────────────────────────────
+
+export async function listDrivers(ws: string): Promise<Driver[]> {
+  return jsonOrThrow(
+    await fetch(api(`drivers?workspaceId=${ws}`), { credentials: "include" }),
+  );
+}
+
+export async function upsertDriver(
+  ws: string,
+  userId: string,
+  body: Record<string, unknown>,
+) {
+  return jsonOrThrow(
+    await fetch(api(`drivers/${userId}?workspaceId=${ws}`), {
+      method: "PUT",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function deleteDriver(ws: string, userId: string) {
+  return jsonOrThrow(
+    await fetch(api(`drivers/${userId}?workspaceId=${ws}`), {
       method: "DELETE",
       credentials: "include",
     }),

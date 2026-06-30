@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { AssetDetailDialog } from "@/components/assets/asset-detail-dialog";
 import { AssetFormDialog } from "@/components/assets/asset-form-dialog";
 import { AssetSummary } from "@/components/assets/asset-summary";
+import { DriverRegistry } from "@/components/assets/driver-registry";
 import { WorkOrderBoard } from "@/components/assets/work-order-board";
 import Layout from "@/components/common/layout";
 import PageTitle from "@/components/page-title";
@@ -57,7 +58,9 @@ function AssetsPage() {
   const { data: assets = [], isLoading } = useAssets(workspaceId);
   const { data: summary } = useAssetSummary(workspaceId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"registry" | "work-orders">("registry");
+  const [view, setView] = useState<"registry" | "work-orders" | "drivers">(
+    "registry",
+  );
   // Prefetch detail when a row is hovered/opened for snappier UX.
   useAsset(workspaceId, selectedId);
 
@@ -102,6 +105,16 @@ function AssetsPage() {
                   )}
                 >
                   Work orders
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("drivers")}
+                  className={cn(
+                    "rounded-md px-3 py-1",
+                    view === "drivers" && "bg-muted font-medium",
+                  )}
+                >
+                  Drivers
                 </button>
               </div>
               {view === "registry" && (
@@ -205,11 +218,13 @@ function AssetsPage() {
                   )}
                 </div>
               </>
-            ) : (
+            ) : view === "work-orders" ? (
               <WorkOrderBoard
                 workspaceId={workspaceId}
                 onOpenAsset={setSelectedId}
               />
+            ) : (
+              <DriverRegistry workspaceId={workspaceId} />
             )}
           </div>
         </Layout.Content>

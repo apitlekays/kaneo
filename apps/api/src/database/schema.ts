@@ -318,7 +318,10 @@ export const assetTripTable = pgTable(
     destination: text("destination"),
     distanceKm: integer("distance_km"),
     purpose: text("purpose"),
-    driver: text("driver"),
+    driver: text("driver"), // legacy free-text; superseded by driverId
+    driverId: text("driver_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
     cost: integer("cost"),
     notes: text("notes"),
     createdBy: text("created_by").references(() => userTable.id, {
@@ -468,10 +471,13 @@ export const assetPmScheduleTable = pgTable(
       .notNull()
       .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    intervalType: text("interval_type").notNull().default("months"), // days | months
+    intervalType: text("interval_type").notNull().default("months"), // days | months | km | hours
     intervalValue: integer("interval_value").notNull(),
     lastDoneDate: timestamp("last_done_date", { mode: "date" }),
-    nextDueDate: timestamp("next_due_date", { mode: "date" }).notNull(),
+    // Time-based schedules use nextDueDate; meter-based use nextDueMeter.
+    nextDueDate: timestamp("next_due_date", { mode: "date" }),
+    lastDoneMeter: integer("last_done_meter"),
+    nextDueMeter: integer("next_due_meter"),
     active: boolean("active").notNull().default(true),
     notes: text("notes"),
     createdBy: text("created_by").references(() => userTable.id, {
@@ -522,6 +528,83 @@ export const workOrderTable = pgTable(
     index("work_order_workspaceId_idx").on(table.workspaceId),
     index("work_order_assigneeId_idx").on(table.assigneeId),
     index("work_order_assetId_idx").on(table.assetId),
+  ],
+);
+
+// Cumulative meter readings (odometer km / run hours). Latest = current value.
+export const assetMeterReadingTable = pgTable(
+  "asset_meter_reading",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    date: timestamp("date", { mode: "date" }).notNull(),
+    value: integer("value").notNull(),
+    unit: text("unit").notNull().default("km"), // km | hours
+    note: text("note"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_meter_reading_assetId_idx").on(table.assetId)],
+);
+
+// Fuel log. volume stored in centilitres (1 L = 100); cost in minor units.
+export const assetFuelLogTable = pgTable(
+  "asset_fuel_log",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, { onDelete: "cascade" }),
+    date: timestamp("date", { mode: "date" }).notNull(),
+    volume: integer("volume"),
+    cost: integer("cost"),
+    odometer: integer("odometer"),
+    driverId: text("driver_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    note: text("note"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_fuel_log_assetId_idx").on(table.assetId)],
+);
+
+// Driver profile: licence details for a workspace user who drives assets.
+export const driverProfileTable = pgTable(
+  "driver_profile",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    licenceNo: text("licence_no"),
+    licenceClass: text("licence_class"),
+    licenceExpiry: timestamp("licence_expiry", { mode: "date" }),
+    phone: text("phone"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("driver_profile_workspaceId_idx").on(table.workspaceId),
+    unique("driver_profile_workspace_user_unique").on(
+      table.workspaceId,
+      table.userId,
+    ),
   ],
 );
 

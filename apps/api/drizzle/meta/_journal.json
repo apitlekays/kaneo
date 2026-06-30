@@ -316,6 +316,13 @@
 			"when": 1782750164983,
 			"tag": "0044_glossy_shadow_king",
 			"breakpoints": true
+		},
+		{
+			"idx": 45,
+			"version": "7",
+			"when": 1782784189285,
+			"tag": "0045_broken_justice",
+			"breakpoints": true
 		}
 	]
 }

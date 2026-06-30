@@ -188,5 +188,29 @@ export function useAssetMutations(workspaceId: string, assetId?: string) {
       },
       onError,
     }),
+
+    addMeter: useMutation({
+      mutationFn: (body: Record<string, unknown>) =>
+        api.addMeterReading(workspaceId, asset, body),
+      onSuccess: invalidate,
+      onError,
+    }),
+    removeMeter: useMutation({
+      mutationFn: (id: string) =>
+        api.deleteMeterReading(workspaceId, asset, id),
+      onSuccess: invalidate,
+      onError,
+    }),
+    addFuel: useMutation({
+      mutationFn: (body: Record<string, unknown>) =>
+        api.addFuelLog(workspaceId, asset, body),
+      onSuccess: invalidate,
+      onError,
+    }),
+    removeFuel: useMutation({
+      mutationFn: (id: string) => api.deleteFuelLog(workspaceId, asset, id),
+      onSuccess: invalidate,
+      onError,
+    }),
   };
 }

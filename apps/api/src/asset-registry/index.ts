@@ -11,11 +11,14 @@ import {
   assetCustodyTable,
   assetDisposalTable,
   assetFileTable,
+  assetFuelLogTable,
   assetMaintenanceTable,
+  assetMeterReadingTable,
   assetPmScheduleTable,
   assetReminderSentTable,
   assetRenewalTable,
   assetTripTable,
+  driverProfileTable,
   registeredAssetTable,
   userTable,
   workOrderTable,
@@ -629,6 +632,95 @@ const assetRegistry = new Hono<{
       return c.json({ success: true });
     },
   )
+  // ── Drivers (workspace members + licence details) ────────────────────────
+  .get(
+    "/drivers",
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const rows = await db
+        .select({
+          userId: workspaceUserTable.userId,
+          name: userTable.name,
+          email: userTable.email,
+          image: userTable.image,
+          profileId: driverProfileTable.id,
+          licenceNo: driverProfileTable.licenceNo,
+          licenceClass: driverProfileTable.licenceClass,
+          licenceExpiry: driverProfileTable.licenceExpiry,
+          phone: driverProfileTable.phone,
+        })
+        .from(workspaceUserTable)
+        .innerJoin(userTable, eq(workspaceUserTable.userId, userTable.id))
+        .leftJoin(
+          driverProfileTable,
+          and(
+            eq(driverProfileTable.userId, workspaceUserTable.userId),
+            eq(driverProfileTable.workspaceId, workspaceId),
+          ),
+        )
+        .where(eq(workspaceUserTable.workspaceId, workspaceId));
+      return c.json(rows);
+    },
+  )
+  .put(
+    "/drivers/:userId",
+    validator("param", v.object({ userId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    validator(
+      "json",
+      v.object({
+        licenceNo: optStr,
+        licenceClass: optStr,
+        licenceExpiry: optDate,
+        phone: optStr,
+      }),
+    ),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { userId } = c.req.valid("param");
+      const body = c.req.valid("json");
+      const values = {
+        licenceNo: body.licenceNo ?? null,
+        licenceClass: body.licenceClass ?? null,
+        licenceExpiry: toDate(body.licenceExpiry),
+        phone: body.phone ?? null,
+      };
+      const [row] = await db
+        .insert(driverProfileTable)
+        .values({ workspaceId, userId, ...values })
+        .onConflictDoUpdate({
+          target: [driverProfileTable.workspaceId, driverProfileTable.userId],
+          set: { ...values, updatedAt: new Date() },
+        })
+        .returning();
+      return c.json(row);
+    },
+  )
+  .delete(
+    "/drivers/:userId",
+    validator("param", v.object({ userId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { userId } = c.req.valid("param");
+      await db
+        .delete(driverProfileTable)
+        .where(
+          and(
+            eq(driverProfileTable.workspaceId, workspaceId),
+            eq(driverProfileTable.userId, userId),
+          ),
+        );
+      return c.json({ success: true });
+    },
+  )
   // ── Create asset ─────────────────────────────────────────────────────────
   .post(
     "/",
@@ -722,6 +814,8 @@ const assetRegistry = new Hono<{
         activity,
         pmSchedules,
         workOrders,
+        meterReadings,
+        fuelLogs,
       ] = await Promise.all([
         db
           .select()
@@ -802,6 +896,26 @@ const assetRegistry = new Hono<{
           .leftJoin(userTable, eq(workOrderTable.assigneeId, userTable.id))
           .where(eq(workOrderTable.assetId, id))
           .orderBy(desc(workOrderTable.createdAt)),
+        db
+          .select()
+          .from(assetMeterReadingTable)
+          .where(eq(assetMeterReadingTable.assetId, id))
+          .orderBy(desc(assetMeterReadingTable.date)),
+        db
+          .select({
+            id: assetFuelLogTable.id,
+            date: assetFuelLogTable.date,
+            volume: assetFuelLogTable.volume,
+            cost: assetFuelLogTable.cost,
+            odometer: assetFuelLogTable.odometer,
+            driverId: assetFuelLogTable.driverId,
+            driverName: userTable.name,
+            note: assetFuelLogTable.note,
+          })
+          .from(assetFuelLogTable)
+          .leftJoin(userTable, eq(assetFuelLogTable.driverId, userTable.id))
+          .where(eq(assetFuelLogTable.assetId, id))
+          .orderBy(desc(assetFuelLogTable.date)),
       ]);
 
       const [disposal] = await db
@@ -821,6 +935,9 @@ const assetRegistry = new Hono<{
         activity,
         pmSchedules,
         workOrders,
+        meterReadings,
+        fuelLogs,
+        currentOdometer: meterReadings[0]?.value ?? null,
         disposal: disposal ?? null,
         depreciation: computeDepreciation(asset),
       });
@@ -1111,9 +1228,10 @@ const assetRegistry = new Hono<{
       v.object({
         workspaceId: v.string(),
         title: v.string(),
-        intervalType: v.optional(v.picklist(["days", "months"])),
+        intervalType: v.optional(v.picklist(["days", "months", "km", "hours"])),
         intervalValue: v.number(),
-        nextDueDate: v.string(),
+        nextDueDate: optDate,
+        nextDueMeter: optNum,
         notes: optStr,
       }),
     ),
@@ -1125,18 +1243,27 @@ const assetRegistry = new Hono<{
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
       await loadAsset(id, workspaceId);
+      const intervalType = body.intervalType ?? "months";
+      const isMeter = intervalType === "km" || intervalType === "hours";
       const next = toDate(body.nextDueDate);
-      if (!next) {
+      if (!isMeter && !next) {
         throw new HTTPException(400, { message: "Invalid next due date" });
+      }
+      if (isMeter && body.nextDueMeter == null) {
+        throw new HTTPException(400, { message: "Next due meter required" });
       }
       const [row] = await db
         .insert(assetPmScheduleTable)
         .values({
           assetId: id,
           title: body.title,
-          intervalType: body.intervalType ?? "months",
+          intervalType,
           intervalValue: Math.max(1, Math.round(body.intervalValue)),
-          nextDueDate: next,
+          nextDueDate: isMeter ? null : next,
+          nextDueMeter:
+            isMeter && body.nextDueMeter != null
+              ? Math.round(body.nextDueMeter)
+              : null,
           notes: body.notes ?? null,
           createdBy: userId,
         })
@@ -1153,9 +1280,10 @@ const assetRegistry = new Hono<{
       v.object({
         workspaceId: v.string(),
         title: v.optional(v.string()),
-        intervalType: v.optional(v.picklist(["days", "months"])),
+        intervalType: v.optional(v.picklist(["days", "months", "km", "hours"])),
         intervalValue: optNum,
         nextDueDate: optDate,
+        nextDueMeter: optNum,
         active: v.optional(v.boolean()),
         notes: optStr,
         markDone: v.optional(v.boolean()),
@@ -1185,15 +1313,30 @@ const assetRegistry = new Hono<{
 
       if (body.markDone) {
         const now = new Date();
+        const isMeter =
+          sched.intervalType === "km" || sched.intervalType === "hours";
+        let nextDate = sched.nextDueDate;
+        let nextMeter = sched.nextDueMeter;
+        let doneMeter = sched.lastDoneMeter;
+        if (isMeter) {
+          const [latest] = await db
+            .select({ value: assetMeterReadingTable.value })
+            .from(assetMeterReadingTable)
+            .where(eq(assetMeterReadingTable.assetId, id))
+            .orderBy(desc(assetMeterReadingTable.date))
+            .limit(1);
+          doneMeter = latest?.value ?? sched.lastDoneMeter ?? 0;
+          nextMeter = doneMeter + sched.intervalValue;
+        } else {
+          nextDate = addInterval(now, sched.intervalType, sched.intervalValue);
+        }
         const [row] = await db
           .update(assetPmScheduleTable)
           .set({
             lastDoneDate: now,
-            nextDueDate: addInterval(
-              now,
-              sched.intervalType,
-              sched.intervalValue,
-            ),
+            lastDoneMeter: doneMeter,
+            nextDueDate: nextDate,
+            nextDueMeter: nextMeter,
             updatedAt: now,
           })
           .where(eq(assetPmScheduleTable.id, scheduleId))
@@ -1564,6 +1707,7 @@ const assetRegistry = new Hono<{
         distanceKm: optNum,
         purpose: optStr,
         driver: optStr,
+        driverId: optStr,
         cost: optNum,
         notes: optStr,
       }),
@@ -1587,6 +1731,7 @@ const assetRegistry = new Hono<{
             body.distanceKm != null ? Math.round(body.distanceKm) : null,
           purpose: body.purpose ?? null,
           driver: body.driver ?? null,
+          driverId: body.driverId ?? null,
           cost: toCents(body.cost),
           notes: body.notes ?? null,
           createdBy: userId,
@@ -1609,6 +1754,124 @@ const assetRegistry = new Hono<{
         .delete(assetTripTable)
         .where(
           and(eq(assetTripTable.id, entryId), eq(assetTripTable.assetId, id)),
+        );
+      return c.json({ success: true });
+    },
+  )
+  // ── Meter readings (odometer / run hours) ────────────────────────────────
+  .post(
+    "/:id/meter",
+    validator("param", v.object({ id: v.string() })),
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        date: v.string(),
+        value: v.number(),
+        unit: v.optional(v.picklist(["km", "hours"])),
+        note: optStr,
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const userId = c.get("userId");
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      await loadAsset(id, workspaceId);
+      const [row] = await db
+        .insert(assetMeterReadingTable)
+        .values({
+          assetId: id,
+          date: toDate(body.date) ?? new Date(),
+          value: Math.round(body.value),
+          unit: body.unit ?? "km",
+          note: body.note ?? null,
+          createdBy: userId,
+        })
+        .returning();
+      return c.json(row, 201);
+    },
+  )
+  .delete(
+    "/:id/meter/:entryId",
+    validator("param", v.object({ id: v.string(), entryId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { id, entryId } = c.req.valid("param");
+      await loadAsset(id, workspaceId);
+      await db
+        .delete(assetMeterReadingTable)
+        .where(
+          and(
+            eq(assetMeterReadingTable.id, entryId),
+            eq(assetMeterReadingTable.assetId, id),
+          ),
+        );
+      return c.json({ success: true });
+    },
+  )
+  // ── Fuel log ─────────────────────────────────────────────────────────────
+  .post(
+    "/:id/fuel",
+    validator("param", v.object({ id: v.string() })),
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        date: v.string(),
+        volume: optNum,
+        cost: optNum,
+        odometer: optNum,
+        driverId: optStr,
+        note: optStr,
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const userId = c.get("userId");
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      await loadAsset(id, workspaceId);
+      const [row] = await db
+        .insert(assetFuelLogTable)
+        .values({
+          assetId: id,
+          date: toDate(body.date) ?? new Date(),
+          volume: body.volume != null ? Math.round(body.volume) : null,
+          cost: toCents(body.cost),
+          odometer: body.odometer != null ? Math.round(body.odometer) : null,
+          driverId: body.driverId ?? null,
+          note: body.note ?? null,
+          createdBy: userId,
+        })
+        .returning();
+      return c.json(row, 201);
+    },
+  )
+  .delete(
+    "/:id/fuel/:entryId",
+    validator("param", v.object({ id: v.string(), entryId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const { id, entryId } = c.req.valid("param");
+      await loadAsset(id, workspaceId);
+      await db
+        .delete(assetFuelLogTable)
+        .where(
+          and(
+            eq(assetFuelLogTable.id, entryId),
+            eq(assetFuelLogTable.assetId, id),
+          ),
         );
       return c.json({ success: true });
     },
