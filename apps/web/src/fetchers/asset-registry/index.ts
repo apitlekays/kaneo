@@ -285,7 +285,10 @@ async function jsonOrThrow<T>(response: Response): Promise<T> {
 }
 
 function api(path: string) {
-  return getApiUrl(`asset-registry/${path}`);
+  // Avoid a trailing slash on the bare collection (`asset-registry?…` /
+  // `asset-registry`) — the mounted Hono router doesn't match `/asset-registry/`.
+  const sep = path === "" || path.startsWith("?") ? "" : "/";
+  return getApiUrl(`asset-registry${sep}${path}`);
 }
 
 const jsonHeaders = { "Content-Type": "application/json" };
