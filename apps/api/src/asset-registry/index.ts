@@ -58,6 +58,9 @@ const RENEWAL_TYPES = [
   "inspection",
   "licence",
   "warranty",
+  "software-licence",
+  "support-contract",
+  "subscription",
   "other",
 ] as const;
 const COST_CATEGORIES = [
@@ -722,6 +725,35 @@ const assetRegistry = new Hono<{
           ),
         );
       return c.json({ success: true });
+    },
+  )
+  // ── Renewals register (cross-asset: warranties, licences, road tax…) ─────
+  .get(
+    "/renewals",
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    pageAccess,
+    async (c) => {
+      const workspaceId = c.get("workspaceId") as string;
+      const rows = await db
+        .select({
+          id: assetRenewalTable.id,
+          assetId: assetRenewalTable.assetId,
+          assetName: registeredAssetTable.name,
+          type: assetRenewalTable.type,
+          label: assetRenewalTable.label,
+          dueDate: assetRenewalTable.dueDate,
+          cost: assetRenewalTable.cost,
+          currency: registeredAssetTable.currency,
+        })
+        .from(assetRenewalTable)
+        .innerJoin(
+          registeredAssetTable,
+          eq(assetRenewalTable.assetId, registeredAssetTable.id),
+        )
+        .where(eq(registeredAssetTable.workspaceId, workspaceId))
+        .orderBy(asc(assetRenewalTable.dueDate));
+      return c.json(rows);
     },
   )
   // ── Export (flattened asset register) ────────────────────────────────────

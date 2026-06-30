@@ -20,6 +20,9 @@ export const RENEWAL_TYPES: Option[] = [
   { value: "inspection", label: "Inspection" },
   { value: "licence", label: "Licence" },
   { value: "warranty", label: "Warranty" },
+  { value: "software-licence", label: "Software Licence" },
+  { value: "support-contract", label: "Support Contract" },
+  { value: "subscription", label: "Subscription" },
   { value: "other", label: "Other" },
 ];
 

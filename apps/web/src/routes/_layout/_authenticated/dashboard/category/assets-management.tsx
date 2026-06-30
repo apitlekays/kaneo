@@ -8,6 +8,7 @@ import { AssetImportExport } from "@/components/assets/asset-import-export";
 import { AssetSummary } from "@/components/assets/asset-summary";
 import { DriverRegistry } from "@/components/assets/driver-registry";
 import { LocationsManager } from "@/components/assets/locations-manager";
+import { RenewalsView } from "@/components/assets/renewals-view";
 import { StockTakeView } from "@/components/assets/stock-take-view";
 import { WorkOrderBoard } from "@/components/assets/work-order-board";
 import Layout from "@/components/common/layout";
@@ -68,7 +69,12 @@ function AssetsPage() {
   const { data: summary } = useAssetSummary(workspaceId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<
-    "registry" | "work-orders" | "drivers" | "locations" | "stock-take"
+    | "registry"
+    | "work-orders"
+    | "renewals"
+    | "drivers"
+    | "locations"
+    | "stock-take"
   >("registry");
   // Prefetch detail when a row is hovered/opened for snappier UX.
   useAsset(workspaceId, selectedId);
@@ -114,6 +120,16 @@ function AssetsPage() {
                   )}
                 >
                   Work orders
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("renewals")}
+                  className={cn(
+                    "rounded-md px-3 py-1",
+                    view === "renewals" && "bg-muted font-medium",
+                  )}
+                >
+                  Renewals
                 </button>
                 <button
                   type="button"
@@ -254,6 +270,11 @@ function AssetsPage() {
               </>
             ) : view === "work-orders" ? (
               <WorkOrderBoard
+                workspaceId={workspaceId}
+                onOpenAsset={setSelectedId}
+              />
+            ) : view === "renewals" ? (
+              <RenewalsView
                 workspaceId={workspaceId}
                 onOpenAsset={setSelectedId}
               />

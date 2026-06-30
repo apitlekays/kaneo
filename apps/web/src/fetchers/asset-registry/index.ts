@@ -690,6 +690,25 @@ export async function importAssets(
   );
 }
 
+export type RenewalRegisterItem = {
+  id: string;
+  assetId: string;
+  assetName: string;
+  type: string;
+  label: string | null;
+  dueDate: string;
+  cost: number | null;
+  currency: string;
+};
+
+export async function listAllRenewals(
+  ws: string,
+): Promise<RenewalRegisterItem[]> {
+  return jsonOrThrow(
+    await fetch(api(`renewals?workspaceId=${ws}`), { credentials: "include" }),
+  );
+}
+
 // ── Sub-resources ──────────────────────────────────────────────────────────
 
 async function postEntry<T>(

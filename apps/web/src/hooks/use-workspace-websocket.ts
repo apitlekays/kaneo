@@ -52,6 +52,7 @@ const ENTITY_INVALIDATIONS: Record<string, string[][]> = {
     ["audit-sessions"],
     ["audit-session"],
     ["drivers"],
+    ["all-renewals"],
   ],
   workspace: [
     ["projects"],
