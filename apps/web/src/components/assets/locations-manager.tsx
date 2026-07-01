@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -18,6 +19,7 @@ import {
 const TYPES = ["site", "building", "floor", "room"];
 
 export function LocationsManager({ workspaceId }: { workspaceId: string }) {
+  const confirm = useConfirm();
   const { data: locations = [], isLoading } = useLocations(workspaceId);
   const { create, remove } = useLocationMutations(workspaceId);
   const paths = buildLocationPaths(locations);
@@ -62,7 +64,17 @@ export function LocationsManager({ workspaceId }: { workspaceId: string }) {
             </div>
             <button
               type="button"
-              onClick={() => remove.mutate(l.id)}
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Delete location?",
+                    description:
+                      "Assets here will be detached and any child locations moved up.",
+                  })
+                ) {
+                  remove.mutate(l.id);
+                }
+              }}
               className="text-muted-foreground hover:text-destructive"
             >
               <Trash2 className="h-3.5 w-3.5" />

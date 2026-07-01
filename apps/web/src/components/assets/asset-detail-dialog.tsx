@@ -19,6 +19,7 @@ import { MemberPicker } from "@/components/assets/member-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   Dialog,
   DialogContent,
@@ -123,6 +124,7 @@ function DetailBody({
   onClose: () => void;
 }) {
   const { asset } = data;
+  const confirm = useConfirm();
   const currency = asset.currency || "MYR";
   const currentCustody = data.custody.find((entry) => !entry.releasedAt);
   const { data: locations = [] } = useLocations(workspaceId);
@@ -158,11 +160,12 @@ function DetailBody({
               variant="outline"
               size="sm"
               className="text-destructive"
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  window.confirm(
-                    `Delete "${asset.name}"? This cannot be undone.`,
-                  )
+                  await confirm({
+                    title: "Delete asset?",
+                    description: `This permanently deletes "${asset.name}" and all its records. This cannot be undone.`,
+                  })
                 ) {
                   m.remove.mutate(asset.id, { onSuccess: onClose });
                 }
@@ -469,6 +472,7 @@ function EntryRow({
 }
 
 function FilesTab({ data, m }: { data: AssetDetail; m: Mutations }) {
+  const confirm = useConfirm();
   const inputRef = useRef<HTMLInputElement>(null);
   const images = data.files.filter((f) => f.kind === "image");
   const documents = data.files.filter((f) => f.kind !== "image");
@@ -513,7 +517,16 @@ function FilesTab({ data, m }: { data: AssetDetail; m: Mutations }) {
               />
               <button
                 type="button"
-                onClick={() => m.removeFile.mutate(f.id)}
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: "Remove file?",
+                      description: "This permanently deletes this file.",
+                    })
+                  ) {
+                    m.removeFile.mutate(f.id);
+                  }
+                }}
                 className="absolute right-1 top-1 rounded bg-background/80 p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -537,7 +550,16 @@ function FilesTab({ data, m }: { data: AssetDetail; m: Mutations }) {
                 <FileText className="h-3.5 w-3.5" /> {f.filename}
               </a>
             }
-            onDelete={() => m.removeFile.mutate(f.id)}
+            onDelete={async () => {
+              if (
+                await confirm({
+                  title: "Remove file?",
+                  description: "This permanently deletes this file.",
+                })
+              ) {
+                m.removeFile.mutate(f.id);
+              }
+            }}
           />
         ))}
         {data.files.length === 0 && (
@@ -559,6 +581,7 @@ function RenewalsTab({
   m: Mutations;
   currency: string;
 }) {
+  const confirm = useConfirm();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [type, setType] = useState("road-tax");
   const [label, setLabel] = useState("");
@@ -679,7 +702,16 @@ function RenewalsTab({
               </span>
             }
             onEdit={() => startEdit(r)}
-            onDelete={() => m.removeRenewal.mutate(r.id)}
+            onDelete={async () => {
+              if (
+                await confirm({
+                  title: "Remove renewal?",
+                  description: "This permanently deletes this renewal entry.",
+                })
+              ) {
+                m.removeRenewal.mutate(r.id);
+              }
+            }}
           />
         );
       })}
@@ -696,6 +728,7 @@ function MaintenanceTab({
   m: Mutations;
   currency: string;
 }) {
+  const confirm = useConfirm();
   const [date, setDate] = useState<Date | null>(new Date());
   const [title, setTitle] = useState("");
   const [vendor, setVendor] = useState("");
@@ -779,7 +812,17 @@ function MaintenanceTab({
                 </span>
               ) : undefined
             }
-            onDelete={() => m.removeMaintenance.mutate(e.id)}
+            onDelete={async () => {
+              if (
+                await confirm({
+                  title: "Remove maintenance record?",
+                  description:
+                    "This permanently deletes this maintenance record.",
+                })
+              ) {
+                m.removeMaintenance.mutate(e.id);
+              }
+            }}
           />
         ))}
       </EntrySection>
@@ -788,6 +831,7 @@ function MaintenanceTab({
 }
 
 function PmSchedulesSection({ data, m }: { data: AssetDetail; m: Mutations }) {
+  const confirm = useConfirm();
   const [title, setTitle] = useState("");
   const [intervalValue, setIntervalValue] = useState("6");
   const [intervalType, setIntervalType] = useState("months");
@@ -866,7 +910,17 @@ function PmSchedulesSection({ data, m }: { data: AssetDetail; m: Mutations }) {
                 </Button>
                 <button
                   type="button"
-                  onClick={() => m.removePmSchedule.mutate(s.id)}
+                  onClick={async () => {
+                    if (
+                      await confirm({
+                        title: "Remove PM schedule?",
+                        description:
+                          "This permanently deletes this PM schedule.",
+                      })
+                    ) {
+                      m.removePmSchedule.mutate(s.id);
+                    }
+                  }}
                   className="text-muted-foreground hover:text-destructive"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -942,6 +996,7 @@ function CostsTab({
   m: Mutations;
   currency: string;
 }) {
+  const confirm = useConfirm();
   const [date, setDate] = useState<Date | null>(new Date());
   const [category, setCategory] = useState("maintenance");
   const [amount, setAmount] = useState("");
@@ -1025,7 +1080,16 @@ function CostsTab({
               {formatMoney(c.amount, currency)}
             </span>
           }
-          onDelete={() => m.removeCost.mutate(c.id)}
+          onDelete={async () => {
+            if (
+              await confirm({
+                title: "Remove cost entry?",
+                description: "This permanently deletes this cost entry.",
+              })
+            ) {
+              m.removeCost.mutate(c.id);
+            }
+          }}
         />
       ))}
     </EntrySection>
@@ -1051,6 +1115,7 @@ function TripsTab({
   const driverName = (id: string | null) =>
     id ? (members.find((mm) => mm.userId === id)?.user?.name ?? null) : null;
 
+  const confirm = useConfirm();
   const [date, setDate] = useState<Date | null>(new Date());
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
@@ -1167,7 +1232,16 @@ function TripsTab({
               </span>
             ) : undefined
           }
-          onDelete={() => m.removeTrip.mutate(t.id)}
+          onDelete={async () => {
+            if (
+              await confirm({
+                title: "Remove trip?",
+                description: "This permanently deletes this trip.",
+              })
+            ) {
+              m.removeTrip.mutate(t.id);
+            }
+          }}
         />
       ))}
     </EntrySection>
@@ -1183,6 +1257,7 @@ function CustodyTab({
   m: Mutations;
   workspaceId: string;
 }) {
+  const confirm = useConfirm();
   const current = data.custody.find((c) => !c.releasedAt);
   return (
     <div className="space-y-4 py-2">
@@ -1229,7 +1304,19 @@ function CustodyTab({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => m.releaseCustodian.mutate(data.asset.id)}
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Release custodian?",
+                    description:
+                      "This releases the current custodian from this asset.",
+                    confirmText: "Release",
+                    destructive: true,
+                  })
+                ) {
+                  m.releaseCustodian.mutate(data.asset.id);
+                }
+              }}
             >
               <UserMinus className="h-3.5 w-3.5" />
             </Button>
@@ -1287,6 +1374,7 @@ function FinancialsTab({
 }) {
   const { asset, depreciation: dep, disposal } = data;
 
+  const confirm = useConfirm();
   const [method, setMethod] = useState(asset.depreciationMethod);
   const [life, setLife] = useState(
     asset.usefulLifeMonths != null ? String(asset.usefulLifeMonths) : "",
@@ -1461,7 +1549,17 @@ function FinancialsTab({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => m.removeDisposal.mutate()}
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Remove disposal record?",
+                    description:
+                      "This permanently deletes this disposal record.",
+                  })
+                ) {
+                  m.removeDisposal.mutate();
+                }
+              }}
             >
               Revert disposal
             </Button>
@@ -1537,6 +1635,7 @@ function FleetTab({
   const driverName = (id: string | null) =>
     id ? (members.find((mm) => mm.userId === id)?.user?.name ?? null) : null;
 
+  const confirm = useConfirm();
   const [mDate, setMDate] = useState<Date | null>(new Date());
   const [mValue, setMValue] = useState("");
   const [mUnit, setMUnit] = useState("km");
@@ -1610,7 +1709,16 @@ function FleetTab({
               key={r.id}
               primary={`${r.value.toLocaleString()} ${r.unit}`}
               secondary={formatDateMedium(r.date)}
-              onDelete={() => m.removeMeter.mutate(r.id)}
+              onDelete={async () => {
+                if (
+                  await confirm({
+                    title: "Remove meter reading?",
+                    description: "This permanently deletes this meter reading.",
+                  })
+                ) {
+                  m.removeMeter.mutate(r.id);
+                }
+              }}
             />
           ))}
         </div>
@@ -1677,7 +1785,16 @@ function FleetTab({
                   </span>
                 ) : undefined
               }
-              onDelete={() => m.removeFuel.mutate(f.id)}
+              onDelete={async () => {
+                if (
+                  await confirm({
+                    title: "Remove fuel record?",
+                    description: "This permanently deletes this fuel record.",
+                  })
+                ) {
+                  m.removeFuel.mutate(f.id);
+                }
+              }}
             />
           ))}
         </div>

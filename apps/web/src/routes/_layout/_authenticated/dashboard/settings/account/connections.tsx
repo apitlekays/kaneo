@@ -4,6 +4,7 @@ import { Calendar, Check, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   disconnectCalendar,
   getCalendarConnectUrl,
@@ -27,6 +28,7 @@ export const Route = createFileRoute(
 
 function RouteComponent() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { google } = Route.useSearch();
@@ -50,6 +52,14 @@ function RouteComponent() {
   };
 
   const handleDisconnect = async () => {
+    if (
+      !(await confirm({
+        title: "Disconnect Google Calendar?",
+        description: "This stops syncing tasks to your calendar.",
+        confirmText: "Disconnect",
+      }))
+    )
+      return;
     setIsDisconnecting(true);
     try {
       await disconnectCalendar();

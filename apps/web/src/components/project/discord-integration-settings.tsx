@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod/v4";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   Form,
   FormControl,
@@ -85,6 +86,7 @@ export function DiscordIntegrationSettings({
   projectId: string;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const schema = React.useMemo(
     () =>
       z.object({
@@ -235,6 +237,15 @@ export function DiscordIntegrationSettings({
   };
 
   const handleDelete = async () => {
+    if (
+      !(await confirm({
+        title: "Disconnect Discord integration?",
+        description: "This removes the Discord connection for this project.",
+        confirmText: "Disconnect",
+      }))
+    ) {
+      return;
+    }
     try {
       await deleteIntegration(projectId);
       form.reset({

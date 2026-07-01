@@ -17,6 +17,7 @@ import { z } from "zod/v4";
 import { GiteaRepositoryBrowserModal } from "@/components/project/gitea-repository-browser-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   Form,
   FormControl,
@@ -72,6 +73,7 @@ function createVerificationSnapshot(
 
 export function GiteaIntegrationSettings({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
 
   const giteaIntegrationSchema = React.useMemo(
     () =>
@@ -330,6 +332,15 @@ export function GiteaIntegrationSettings({ projectId }: { projectId: string }) {
   };
 
   const handleDelete = async () => {
+    if (
+      !(await confirm({
+        title: "Disconnect Gitea integration?",
+        description: "This removes the Gitea connection for this project.",
+        confirmText: "Disconnect",
+      }))
+    ) {
+      return;
+    }
     try {
       await deleteIntegration(projectId);
       form.reset({

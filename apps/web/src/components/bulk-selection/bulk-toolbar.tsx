@@ -49,6 +49,7 @@ import { toast } from "@/lib/toast";
 import useBulkSelectionStore from "@/store/bulk-selection";
 import useProjectStore from "@/store/project";
 import { Button } from "../ui/button";
+import { useConfirm } from "../ui/confirm";
 import { Toolbar, ToolbarGroup, ToolbarSeparator } from "../ui/toolbar";
 
 type BulkActionItem = {
@@ -66,6 +67,7 @@ type BulkActionGroup = {
 
 function BulkToolbar() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { selectedTaskIds, clearSelection, selectAll } =
     useBulkSelectionStore();
 
@@ -156,7 +158,11 @@ function BulkToolbar() {
   }, [bulkMoveToBacklog, selectedTaskIds, selectedCount, clearSelection, t]);
 
   const handleBulkDelete = useCallback(async () => {
-    if (!confirm(t("tasks:bulk.deleteConfirm", { count: selectedCount }))) {
+    if (
+      !(await confirm({
+        title: t("tasks:bulk.deleteConfirm", { count: selectedCount }),
+      }))
+    ) {
       return;
     }
 
@@ -168,7 +174,7 @@ function BulkToolbar() {
     } catch (_error) {
       toast.error(t("tasks:bulk.deleteError"));
     }
-  }, [bulkDelete, selectedTaskIds, selectedCount, clearSelection, t]);
+  }, [bulkDelete, selectedTaskIds, selectedCount, clearSelection, t, confirm]);
 
   const handleBulkArchive = useCallback(async () => {
     try {

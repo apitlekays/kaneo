@@ -31,6 +31,7 @@ import {
   CommandPanel,
   CommandSeparator,
 } from "@/components/ui/command";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -77,6 +78,7 @@ export default function TaskRelations({
   workspaceId,
 }: TaskRelationsProps) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(true);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -214,7 +216,15 @@ export default function TaskRelations({
     }
   };
 
-  const handleRemoveRelation = (relationId: string) => {
+  const handleRemoveRelation = async (relationId: string) => {
+    if (
+      !(await confirm({
+        title: "Remove relation?",
+        description: "This removes the link between these tasks.",
+        confirmText: "Remove",
+      }))
+    )
+      return;
     deleteRelation.mutate(relationId);
   };
 

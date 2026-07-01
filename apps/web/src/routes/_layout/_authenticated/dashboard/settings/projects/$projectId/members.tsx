@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   Select,
   SelectContent,
@@ -34,6 +35,7 @@ export const Route = createFileRoute(
 
 function RouteComponent() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { projectId } = Route.useParams();
   const queryClient = useQueryClient();
   const { data: workspace } = useActiveWorkspace();
@@ -60,6 +62,13 @@ function RouteComponent() {
   };
 
   const handleDeny = async (userId: string) => {
+    if (
+      !(await confirm({
+        title: "Deny join request?",
+        confirmText: "Deny",
+      }))
+    )
+      return;
     try {
       await denyProjectRequest(projectId, userId);
       await queryClient.invalidateQueries({
@@ -109,6 +118,14 @@ function RouteComponent() {
   };
 
   const handleRemove = async (userId: string) => {
+    if (
+      !(await confirm({
+        title: "Remove member?",
+        description: "This removes the member from the project.",
+        confirmText: "Remove",
+      }))
+    )
+      return;
     try {
       await removeProjectMember(projectId, userId);
       await invalidate();

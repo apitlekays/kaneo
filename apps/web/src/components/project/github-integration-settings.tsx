@@ -18,6 +18,7 @@ import { z } from "zod/v4";
 import { RepositoryBrowserModal } from "@/components/project/repository-browser-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   Form,
   FormControl,
@@ -52,6 +53,7 @@ export function GitHubIntegrationSettings({
   projectId: string;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const githubIntegrationSchema = React.useMemo(
     () =>
       z.object({
@@ -208,6 +210,15 @@ export function GitHubIntegrationSettings({
   };
 
   const handleDelete = async () => {
+    if (
+      !(await confirm({
+        title: "Disconnect GitHub integration?",
+        description: "This removes the GitHub connection for this project.",
+        confirmText: "Disconnect",
+      }))
+    ) {
+      return;
+    }
     try {
       await deleteIntegration(projectId);
       form.reset({ repositoryOwner: "", repositoryName: "" });

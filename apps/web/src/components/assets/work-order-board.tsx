@@ -5,6 +5,7 @@ import { DateField } from "@/components/assets/date-field";
 import { MemberPicker } from "@/components/assets/member-picker";
 import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   Dialog,
   DialogContent,
@@ -117,6 +118,7 @@ function WorkOrderCard({
   mutations: WoMutations;
   onOpenAsset: (assetId: string) => void;
 }) {
+  const confirm = useConfirm();
   return (
     <div className="rounded-lg border border-border bg-background p-2.5 text-sm shadow-sm/5">
       <button
@@ -187,7 +189,16 @@ function WorkOrderCard({
           </Select>
           <button
             type="button"
-            onClick={() => mutations.remove.mutate(wo.id)}
+            onClick={async () => {
+              if (
+                await confirm({
+                  title: "Delete work order?",
+                  description: "This permanently deletes this work order.",
+                })
+              ) {
+                mutations.remove.mutate(wo.id);
+              }
+            }}
             className="text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3.5 w-3.5" />

@@ -3,6 +3,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Radio, RadioGroup } from "@/components/ui/radio-group";
@@ -167,6 +168,7 @@ function WorkspaceRuleCard({
   workspace: WorkspaceSummary;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [state, setState] = React.useState<WorkspaceRuleState>(() =>
     createWorkspaceRuleState({
       hasEmailChannel,
@@ -420,6 +422,14 @@ function WorkspaceRuleCard({
           <Button
             disabled={isBusy}
             onClick={async () => {
+              if (
+                !(await confirm({
+                  title: "Delete notification rule?",
+                  description:
+                    "This removes the notification settings for this workspace.",
+                }))
+              )
+                return;
               setIsDeleting(true);
               try {
                 await onDelete(workspace.id);

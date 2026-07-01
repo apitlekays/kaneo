@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod/v4";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   Form,
   FormControl,
@@ -86,6 +87,7 @@ export function TelegramIntegrationSettings({
   projectId: string;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const schema = React.useMemo(
     () =>
       z.object({
@@ -286,6 +288,15 @@ export function TelegramIntegrationSettings({
   };
 
   const handleDelete = async () => {
+    if (
+      !(await confirm({
+        title: "Disconnect Telegram integration?",
+        description: "This removes the Telegram connection for this project.",
+        confirmText: "Disconnect",
+      }))
+    ) {
+      return;
+    }
     try {
       await deleteIntegration(projectId);
       form.reset({

@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod/v4";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   Form,
   FormControl,
@@ -78,6 +79,7 @@ export function GenericWebhookIntegrationSettings({
   projectId: string;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const schema = React.useMemo(
     () =>
       z.object({
@@ -208,6 +210,15 @@ export function GenericWebhookIntegrationSettings({
   };
 
   const handleDelete = async () => {
+    if (
+      !(await confirm({
+        title: "Delete webhook integration?",
+        description: "This removes the generic webhook for this project.",
+        confirmText: "Delete",
+      }))
+    ) {
+      return;
+    }
     try {
       await deleteIntegration(projectId);
       form.reset({

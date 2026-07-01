@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input } from "@/components/ui/input";
 import {
   useAuditSession,
@@ -12,6 +13,7 @@ import { formatDateMedium } from "@/lib/format";
 import { toast } from "@/lib/toast";
 
 export function StockTakeView({ workspaceId }: { workspaceId: string }) {
+  const confirm = useConfirm();
   const { data: sessions = [] } = useAuditSessions(workspaceId);
   const m = useStockTakeMutations(workspaceId);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -75,7 +77,17 @@ export function StockTakeView({ workspaceId }: { workspaceId: string }) {
             </button>
             <button
               type="button"
-              onClick={() => m.remove.mutate(s.id)}
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Delete stock-take session?",
+                    description:
+                      "This permanently deletes this stock-take session.",
+                  })
+                ) {
+                  m.remove.mutate(s.id);
+                }
+              }}
               className="text-muted-foreground hover:text-destructive"
             >
               <Trash2 className="h-3.5 w-3.5" />

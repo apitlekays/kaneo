@@ -3,6 +3,7 @@ import { ExternalLink, Eye, FileText, Loader2, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   addDriveAttachment,
   deleteDriveAttachment,
@@ -19,6 +20,7 @@ type DriveAttachmentsProps = {
 
 export default function DriveAttachments({ taskId }: DriveAttachmentsProps) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { data: config } = useGetConfig();
   const { data: attachments = [] } = useDriveAttachments(taskId ?? "");
@@ -114,6 +116,14 @@ export default function DriveAttachments({ taskId }: DriveAttachmentsProps) {
   };
 
   const handleRemove = async (id: string) => {
+    if (
+      !(await confirm({
+        title: "Remove attachment?",
+        description: "This detaches the Drive file from this task.",
+        confirmText: "Remove",
+      }))
+    )
+      return;
     try {
       await deleteDriveAttachment(id);
       await invalidate();

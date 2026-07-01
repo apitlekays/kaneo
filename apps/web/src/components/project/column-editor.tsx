@@ -2,6 +2,7 @@ import { CheckCircle2, Circle, GripVertical, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -32,6 +33,7 @@ type ColumnEditorProps = {
 
 export default function ColumnEditor({ projectId }: ColumnEditorProps) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { data: columns, isLoading } = useGetColumns(projectId);
   const { mutateAsync: createColumn } = useCreateColumn();
   const { mutateAsync: updateColumn } = useUpdateColumn();
@@ -130,6 +132,13 @@ export default function ColumnEditor({ projectId }: ColumnEditorProps) {
   };
 
   const handleDelete = async (id: string) => {
+    if (
+      !(await confirm({
+        title: "Delete column?",
+        description: "Tasks in this column must be moved or deleted first.",
+      }))
+    )
+      return;
     try {
       await deleteColumn({ id, projectId });
       toast.success(t("settings:columnEditor.toastDeleted"));
