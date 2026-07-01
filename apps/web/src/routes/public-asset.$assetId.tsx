@@ -59,7 +59,7 @@ function RouteComponent() {
       <PageTitle title={`${asset.name} · ${asset.serialNumber}`} />
       <div className="flex min-h-screen flex-col bg-muted/30">
         <header className="sticky top-0 z-10 border-b border-border bg-background">
-          <div className="mx-auto flex max-w-xl items-center justify-between gap-4 px-4 py-3">
+          <div className="flex w-full items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
             <span className="truncate text-sm font-medium text-muted-foreground">
               {asset.organizationName ?? "Asset registry"}
             </span>
@@ -67,10 +67,15 @@ function RouteComponent() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-xl flex-1 px-4 py-6">
-          <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
+        <main className="w-full flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <div
+            className={cn(
+              "overflow-hidden rounded-2xl border border-border bg-background shadow-sm",
+              asset.hasImage && "lg:grid lg:grid-cols-2",
+            )}
+          >
             {asset.hasImage && (
-              <div className="aspect-video w-full bg-muted">
+              <div className="aspect-video w-full bg-muted lg:aspect-auto lg:h-full lg:min-h-[22rem]">
                 <img
                   src={publicAssetImageUrl(asset.id)}
                   alt={asset.name}
@@ -79,7 +84,7 @@ function RouteComponent() {
               </div>
             )}
 
-            <div className="space-y-5 p-5">
+            <div className="space-y-5 p-5 sm:p-6">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className={cn("border", STATUS_TONES[asset.status])}>
@@ -129,7 +134,7 @@ function RouteComponent() {
         </main>
 
         <footer className="border-t border-border">
-          <div className="mx-auto max-w-xl px-4 py-3 text-center text-xs text-muted-foreground">
+          <div className="w-full px-4 py-3 text-center text-xs text-muted-foreground sm:px-6 lg:px-8">
             <KaneoBranding />
           </div>
         </footer>
