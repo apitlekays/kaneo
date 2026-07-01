@@ -17,6 +17,7 @@ import {
 import * as v from "valibot";
 import activity from "./activity";
 import assetRegistry from "./asset-registry";
+import assetPublic from "./asset-registry/public";
 import { auth } from "./auth";
 import column from "./column";
 import comment from "./comment";
@@ -227,6 +228,10 @@ export function createApp() {
     const result = await getInvitationDetails(id);
     return c.json(result);
   });
+
+  // Public asset page (QR code target) — registered before the auth middleware
+  // so anyone with the (unguessable) asset id can view its non-sensitive info.
+  api.route("/public-asset", assetPublic);
 
   api.get(
     "/auth/get-session",

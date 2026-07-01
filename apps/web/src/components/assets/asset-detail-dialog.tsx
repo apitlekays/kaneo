@@ -242,7 +242,10 @@ function DetailBody({
           </TabsContent>
           <TabsContent value="label">
             <div className="space-y-3 py-2">
-              <AssetBarcode serial={asset.serialNumber} />
+              <AssetBarcode
+                serial={asset.serialNumber}
+                qrValue={`${window.location.origin}/public-asset/${asset.id}`}
+              />
               {asset.assetTag && (
                 <p className="text-sm text-muted-foreground">
                   Asset tag:{" "}

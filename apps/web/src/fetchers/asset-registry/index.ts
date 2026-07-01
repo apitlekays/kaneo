@@ -297,6 +297,31 @@ export function assetFileUrl(fileId: string) {
   return api(`file/${fileId}`);
 }
 
+export type PublicAsset = {
+  id: string;
+  name: string;
+  serialNumber: string;
+  assetTag: string | null;
+  category: string;
+  status: string;
+  manufacturer: string | null;
+  model: string | null;
+  registrationNumber: string | null;
+  locationName: string | null;
+  custodianName: string | null;
+  organizationName: string | null;
+  hasImage: boolean;
+};
+
+/** Public, unauthenticated asset view (QR-code target). */
+export async function getPublicAsset(id: string): Promise<PublicAsset> {
+  return jsonOrThrow(await fetch(getApiUrl(`public-asset/${id}`)));
+}
+
+export function publicAssetImageUrl(id: string) {
+  return getApiUrl(`public-asset/${id}/image`);
+}
+
 export async function listAssets(workspaceId: string): Promise<Asset[]> {
   return jsonOrThrow(
     await fetch(api(`?workspaceId=${workspaceId}`), { credentials: "include" }),

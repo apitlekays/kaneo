@@ -16,6 +16,7 @@ import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DeviceIndexRouteImport } from './routes/device/index'
 import { Route as PublicProjectProjectIdRouteImport } from './routes/public-project.$projectId'
+import { Route as PublicAssetAssetIdRouteImport } from './routes/public-asset.$assetId'
 import { Route as DeviceApproveRouteImport } from './routes/device/approve'
 import { Route as AuthVerifyOtpRouteImport } from './routes/auth/verify-otp'
 import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
@@ -93,6 +94,11 @@ const DeviceIndexRoute = DeviceIndexRouteImport.update({
 const PublicProjectProjectIdRoute = PublicProjectProjectIdRouteImport.update({
   id: '/public-project/$projectId',
   path: '/public-project/$projectId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PublicAssetAssetIdRoute = PublicAssetAssetIdRouteImport.update({
+  id: '/public-asset/$assetId',
+  path: '/public-asset/$assetId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DeviceApproveRoute = DeviceApproveRouteImport.update({
@@ -391,6 +397,7 @@ export interface FileRoutesByFullPath {
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/verify-otp': typeof AuthVerifyOtpRoute
   '/device/approve': typeof DeviceApproveRoute
+  '/public-asset/$assetId': typeof PublicAssetAssetIdRoute
   '/public-project/$projectId': typeof PublicProjectProjectIdRoute
   '/device/': typeof DeviceIndexRoute
   '/dashboard': typeof LayoutAuthenticatedDashboardRouteWithChildren
@@ -441,6 +448,7 @@ export interface FileRoutesByTo {
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/verify-otp': typeof AuthVerifyOtpRoute
   '/device/approve': typeof DeviceApproveRoute
+  '/public-asset/$assetId': typeof PublicAssetAssetIdRoute
   '/public-project/$projectId': typeof PublicProjectProjectIdRoute
   '/device': typeof DeviceIndexRoute
   '/invitations': typeof LayoutAuthenticatedInvitationsRoute
@@ -493,6 +501,7 @@ export interface FileRoutesById {
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/verify-otp': typeof AuthVerifyOtpRoute
   '/device/approve': typeof DeviceApproveRoute
+  '/public-asset/$assetId': typeof PublicAssetAssetIdRoute
   '/public-project/$projectId': typeof PublicProjectProjectIdRoute
   '/device/': typeof DeviceIndexRoute
   '/_layout/_authenticated/dashboard': typeof LayoutAuthenticatedDashboardRouteWithChildren
@@ -546,6 +555,7 @@ export interface FileRouteTypes {
     | '/auth/sign-up'
     | '/auth/verify-otp'
     | '/device/approve'
+    | '/public-asset/$assetId'
     | '/public-project/$projectId'
     | '/device/'
     | '/dashboard'
@@ -596,6 +606,7 @@ export interface FileRouteTypes {
     | '/auth/sign-up'
     | '/auth/verify-otp'
     | '/device/approve'
+    | '/public-asset/$assetId'
     | '/public-project/$projectId'
     | '/device'
     | '/invitations'
@@ -647,6 +658,7 @@ export interface FileRouteTypes {
     | '/auth/sign-up'
     | '/auth/verify-otp'
     | '/device/approve'
+    | '/public-asset/$assetId'
     | '/public-project/$projectId'
     | '/device/'
     | '/_layout/_authenticated/dashboard'
@@ -695,6 +707,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   DeviceRoute: typeof DeviceRouteWithChildren
   TestErrorRoute: typeof TestErrorRoute
+  PublicAssetAssetIdRoute: typeof PublicAssetAssetIdRoute
   PublicProjectProjectIdRoute: typeof PublicProjectProjectIdRoute
   InvitationAcceptInviteIdRoute: typeof InvitationAcceptInviteIdRoute
 }
@@ -748,6 +761,13 @@ declare module '@tanstack/react-router' {
       path: '/public-project/$projectId'
       fullPath: '/public-project/$projectId'
       preLoaderRoute: typeof PublicProjectProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/public-asset/$assetId': {
+      id: '/public-asset/$assetId'
+      path: '/public-asset/$assetId'
+      fullPath: '/public-asset/$assetId'
+      preLoaderRoute: typeof PublicAssetAssetIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/device/approve': {
@@ -1296,6 +1316,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   DeviceRoute: DeviceRouteWithChildren,
   TestErrorRoute: TestErrorRoute,
+  PublicAssetAssetIdRoute: PublicAssetAssetIdRoute,
   PublicProjectProjectIdRoute: PublicProjectProjectIdRoute,
   InvitationAcceptInviteIdRoute: InvitationAcceptInviteIdRoute,
 }
