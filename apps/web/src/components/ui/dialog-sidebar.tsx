@@ -86,16 +86,18 @@ export function DialogSidebar({
         </Select>
       </div>
 
-      {/* Desktop: left sidebar */}
+      {/* Desktop: left sidebar. justify-start + non-growing items keep the row
+          heights and spacing constant regardless of how tall the active panel
+          is (the sidebar stretches full height but items stay packed at top). */}
       <TabsList
         variant="underline"
-        className="hidden w-52 shrink-0 gap-0.5 self-stretch overflow-y-auto border-r p-2 sm:flex"
+        className="hidden w-52 shrink-0 justify-start gap-0.5 self-stretch overflow-y-auto border-r p-2 sm:flex"
       >
         {items.map((item) => (
           <TabsTrigger
             key={item.value}
             value={item.value}
-            className="w-full justify-start gap-2"
+            className="w-full grow-0 justify-start gap-2"
           >
             {item.icon ? <item.icon className="size-4" /> : null}
             <span className="flex-1 truncate text-left">{item.label}</span>
