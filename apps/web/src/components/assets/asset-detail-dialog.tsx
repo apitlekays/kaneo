@@ -1,9 +1,12 @@
+import { saveAs } from "file-saver";
 import {
+  Download,
   FileText,
   ImageIcon,
   Loader2,
   Pencil,
   Plus,
+  Printer,
   Trash2,
   Upload,
   UserMinus,
@@ -241,29 +244,99 @@ function DetailBody({
             <HistoryTab data={data} />
           </TabsContent>
           <TabsContent value="label">
-            <div className="space-y-3 py-2">
-              <AssetBarcode
-                serial={asset.serialNumber}
-                qrValue={`${window.location.origin}/public-asset/${asset.id}`}
-              />
-              {asset.assetTag && (
-                <p className="text-sm text-muted-foreground">
-                  Asset tag:{" "}
-                  <span className="font-medium">{asset.assetTag}</span>
-                </p>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.print()}
-              >
-                Print
-              </Button>
-            </div>
+            <LabelTab asset={asset} />
           </TabsContent>
         </div>
       </Tabs>
     </>
+  );
+}
+
+/** Rasterize an in-DOM <svg> to a loaded <img> at its rendered size. */
+function rasterizeSvg(svg: SVGSVGElement): Promise<HTMLImageElement> {
+  const rect = svg.getBoundingClientRect();
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clone.setAttribute("width", String(rect.width));
+  clone.setAttribute("height", String(rect.height));
+  const xml = new XMLSerializer().serializeToString(clone);
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+  const img = new Image(rect.width, rect.height);
+  return new Promise((resolve, reject) => {
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function LabelTab({ asset }: { asset: AssetDetail["asset"] }) {
+  const labelRef = useRef<HTMLDivElement>(null);
+
+  const downloadPng = async () => {
+    const container = labelRef.current;
+    if (!container) return;
+    const svgs = Array.from(container.querySelectorAll("svg"));
+    if (!svgs.length) return;
+
+    const imgs = await Promise.all(svgs.map(rasterizeSvg));
+    const captions = ["Code 128", "Scan for asset details"];
+    const scale = 3; // crisp for print
+    const pad = 24;
+    const gap = 40;
+    const captionH = 22;
+    const maxH = Math.max(...imgs.map((i) => i.height));
+    const contentW =
+      imgs.reduce((sum, i) => sum + i.width, 0) + gap * (imgs.length - 1);
+    const boardW = contentW + pad * 2;
+    const boardH = maxH + captionH + pad * 2;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = boardW * scale;
+    canvas.height = boardH * scale;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, boardW, boardH);
+
+    const baseline = pad + maxH; // bottom-align the two codes
+    let x = pad;
+    imgs.forEach((img, idx) => {
+      ctx.drawImage(img, x, baseline - img.height, img.width, img.height);
+      ctx.fillStyle = "#6b7280";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(captions[idx] ?? "", x + img.width / 2, baseline + 16);
+      x += img.width + gap;
+    });
+
+    canvas.toBlob((blob) => {
+      if (blob) saveAs(blob, `${asset.serialNumber}.png`);
+    }, "image/png");
+  };
+
+  return (
+    <div className="space-y-3 py-2">
+      <div ref={labelRef}>
+        <AssetBarcode
+          serial={asset.serialNumber}
+          qrValue={`${window.location.origin}/public-asset/${asset.id}`}
+        />
+      </div>
+      {asset.assetTag && (
+        <p className="text-sm text-muted-foreground">
+          Asset tag: <span className="font-medium">{asset.assetTag}</span>
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={() => window.print()}>
+          <Printer className="h-3.5 w-3.5" /> Print
+        </Button>
+        <Button variant="outline" size="sm" onClick={downloadPng}>
+          <Download className="h-3.5 w-3.5" /> Download PNG
+        </Button>
+      </div>
+    </div>
   );
 }
 
