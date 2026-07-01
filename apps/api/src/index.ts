@@ -22,6 +22,7 @@ import { auth } from "./auth";
 import column from "./column";
 import comment from "./comment";
 import config from "./config";
+import correspondence from "./correspondence";
 import db, { getDatabase, schema } from "./database";
 import { prepareDatabaseStartup } from "./database/prepare-database-startup";
 import { waitForDatabase } from "./database/wait-for-database";
@@ -595,6 +596,7 @@ export function createApp() {
   api.route("/task-mom", taskMom);
   api.route("/workspace-access", workspaceAccess);
   api.route("/asset-registry", assetRegistry);
+  api.route("/correspondence", correspondence);
 
   app.route(
     "/",

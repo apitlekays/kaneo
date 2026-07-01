@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { relations, sql } from "drizzle-orm";
 import {
+  bigserial,
   boolean,
   foreignKey,
   index,
@@ -1713,4 +1714,373 @@ export const taskMomTable = pgTable(
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },
   (table) => [index("task_mom_taskId_idx").on(table.taskId)],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// General Management → Correspondence (Surat Masuk / Keluar)
+// Block 1 (Foundation): configuration tables (all admin-editable in GM Settings)
+// + the append-only, hash-chained audit log. Core/workflow tables land in the
+// later blocks. See docs: MAPIMCore-Correspondence-Spec / -BuildPlan.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Reference-number scheme: a gap-free numbering format per type/direction/year.
+export const gmNumberSchemeTable = pgTable(
+  "gm_number_scheme",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    // in | out
+    direction: text("direction").notNull(),
+    // external | memo | circular
+    letterType: text("letter_type").notNull(),
+    // { prefix, tokens[], series, pad } — how the running number renders.
+    format: jsonb("format").notNull(),
+    // yearly | never
+    resetPolicy: text("reset_policy").notNull().default("yearly"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gm_number_scheme_workspaceId_idx").on(table.workspaceId),
+    unique("gm_number_scheme_ws_key_unique").on(table.workspaceId, table.key),
+  ],
+);
+
+// Gap-free allocator counter, one row per (scheme, period). The last issued
+// value is bumped transactionally (SELECT … FOR UPDATE) by the numbering svc.
+export const gmNumberSequenceTable = pgTable(
+  "gm_number_sequence",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    schemeId: text("scheme_id")
+      .notNull()
+      .references(() => gmNumberSchemeTable.id, { onDelete: "cascade" }),
+    // e.g. "2026" for yearly reset, or "ALL" for never-reset.
+    periodKey: text("period_key").notNull(),
+    lastValue: integer("last_value").notNull().default(0),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("gm_number_sequence_scheme_period_unique").on(
+      table.schemeId,
+      table.periodKey,
+    ),
+  ],
+);
+
+// Hierarchical subject classification (file plan). Self-referential parentId,
+// intentionally without an FK (mirrors asset_location) to avoid cycle handling.
+export const gmFilePlanNodeTable = pgTable(
+  "gm_file_plan_node",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    parentId: text("parent_id"),
+    code: text("code"),
+    name: text("name").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("gm_file_plan_node_workspaceId_idx").on(table.workspaceId)],
+);
+
+// Letter category list (complaint, invitation, official request, legal, …).
+export const gmCategoryTable = pgTable(
+  "gm_category",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gm_category_workspaceId_idx").on(table.workspaceId),
+    unique("gm_category_ws_key_unique").on(table.workspaceId, table.key),
+  ],
+);
+
+// Security classification labels (Public/Internal/Confidential/Restricted…),
+// ranked so access rules can compare sensitivity.
+export const gmSecurityLabelTable = pgTable(
+  "gm_security_label",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    rank: integer("rank").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gm_security_label_workspaceId_idx").on(table.workspaceId),
+    unique("gm_security_label_ws_key_unique").on(table.workspaceId, table.key),
+  ],
+);
+
+// Configurable approval-chain template; selection rule in appliesTo.
+export const gmApprovalChainTable = pgTable(
+  "gm_approval_chain",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // { letterType?, departmentId?, minSecurityRank?, … } — first match wins.
+    appliesTo: jsonb("applies_to"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("gm_approval_chain_workspaceId_idx").on(table.workspaceId)],
+);
+
+export const gmApprovalStepTable = pgTable(
+  "gm_approval_step",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    chainId: text("chain_id")
+      .notNull()
+      .references(() => gmApprovalChainTable.id, { onDelete: "cascade" }),
+    stepOrder: integer("step_order").notNull(),
+    // sequential | parallel
+    mode: text("mode").notNull().default("sequential"),
+    // role | users
+    approverType: text("approver_type").notNull(),
+    // role key(s) or user id(s), by approverType.
+    approverRefs: jsonb("approver_refs").notNull(),
+    quorum: integer("quorum").notNull().default(1),
+    slaHours: integer("sla_hours"),
+    condition: jsonb("condition"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("gm_approval_step_chainId_idx").on(table.chainId)],
+);
+
+// Registry of Google Workspace group addresses (picked from a dropdown at
+// dispatch). Membership lives in Workspace; we store only the address.
+export const gmDistributionListTable = pgTable(
+  "gm_distribution_list",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    groupEmail: text("group_email").notNull(),
+    description: text("description"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gm_distribution_list_workspaceId_idx").on(table.workspaceId),
+  ],
+);
+
+// Optional From-display + Reply-To for outbound correspondence, applied over
+// the existing SMTP transport (packages/email). Envelope stays SMTP_FROM.
+export const gmSenderProfileTable = pgTable(
+  "gm_sender_profile",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    displayName: text("display_name").notNull(),
+    replyTo: text("reply_to"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("gm_sender_profile_workspaceId_idx").on(table.workspaceId)],
+);
+
+// Retention schedule class → drives the disposition queue.
+export const gmRetentionClassTable = pgTable(
+  "gm_retention_class",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    retentionMonths: integer("retention_months").notNull(),
+    // close | fy-end
+    trigger: text("trigger").notNull().default("close"),
+    // destroy | transfer | permanent | review
+    dispositionAction: text("disposition_action").notNull().default("review"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gm_retention_class_workspaceId_idx").on(table.workspaceId),
+  ],
+);
+
+// SLA policy (acknowledgement/action/approval deadlines + escalation target).
+export const gmSlaPolicyTable = pgTable(
+  "gm_sla_policy",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    appliesTo: jsonb("applies_to"),
+    ackHours: integer("ack_hours"),
+    actionHours: integer("action_hours"),
+    approvalHours: integer("approval_hours"),
+    escalateToRole: text("escalate_to_role"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("gm_sla_policy_workspaceId_idx").on(table.workspaceId)],
+);
+
+// Authorized signatories for outgoing correspondence + their signature image.
+export const gmSignatoryTable = pgTable(
+  "gm_signatory",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    // { letterTypes?: [...] } — where this signatory may sign.
+    appliesToType: jsonb("applies_to_type"),
+    signatureImageKey: text("signature_image_key"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gm_signatory_workspaceId_idx").on(table.workspaceId),
+    unique("gm_signatory_ws_user_unique").on(table.workspaceId, table.userId),
+  ],
+);
+
+// Drafting templates per letter type (bilingual) + letterhead.
+export const gmTemplateTable = pgTable(
+  "gm_template",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    // external | memo | circular
+    letterType: text("letter_type").notNull(),
+    name: text("name").notNull(),
+    // bm | en
+    lang: text("lang").notNull().default("en"),
+    bodyHtml: text("body_html").notNull().default(""),
+    letterheadObjectKey: text("letterhead_object_key"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("gm_template_workspaceId_idx").on(table.workspaceId)],
+);
+
+// Departments / routing targets. Self-referential parentId without an FK.
+export const gmDepartmentTable = pgTable(
+  "gm_department",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    parentId: text("parent_id"),
+    headUserId: text("head_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("gm_department_workspaceId_idx").on(table.workspaceId)],
+);
+
+// Append-only, hash-chained audit log. Each row's `hash` = sha256(prevHash +
+// canonical(payload)); the chain is per workspace, giving tamper-evidence.
+export const gmAuditEventTable = pgTable(
+  "gm_audit_event",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    // Global monotonic insertion order — the chain reads "the last event" by
+    // this, so same-millisecond `at` values can never fork the hash chain.
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    action: text("action").notNull(),
+    actorId: text("actor_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    at: timestamp("at", { mode: "date" }).defaultNow().notNull(),
+    ip: text("ip"),
+    deviceInfo: text("device_info"),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    prevHash: text("prev_hash"),
+    hash: text("hash").notNull(),
+  },
+  (table) => [
+    index("gm_audit_event_ws_at_idx").on(table.workspaceId, table.at),
+    index("gm_audit_event_entity_idx").on(table.entityType, table.entityId),
+  ],
 );

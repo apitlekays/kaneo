@@ -337,6 +337,13 @@
 			"when": 1782795800697,
 			"tag": "0047_mysterious_shinko_yamashiro",
 			"breakpoints": true
+		},
+		{
+			"idx": 48,
+			"version": "7",
+			"when": 1782921538554,
+			"tag": "0048_far_redwing",
+			"breakpoints": true
 		}
 	]
 }
