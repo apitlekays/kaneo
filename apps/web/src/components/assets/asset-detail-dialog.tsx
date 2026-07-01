@@ -129,7 +129,7 @@ function DetailBody({
 
   return (
     <>
-      <DialogHeader>
+      <DialogHeader className="pb-3">
         <div className="flex items-start justify-between gap-3 pr-6">
           <div className="min-w-0">
             <DialogTitle className="truncate">{asset.name}</DialogTitle>
@@ -176,7 +176,7 @@ function DetailBody({
         onValueChange={setTab}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <TabsList className="flex-wrap">
+        <TabsList className="mx-6 flex-wrap">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="files">Files ({data.files.length})</TabsTrigger>
@@ -194,7 +194,7 @@ function DetailBody({
           <TabsTrigger value="label">Label</TabsTrigger>
         </TabsList>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pt-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-6">
           <TabsContent value="overview">
             <OverviewTab
               data={data}
