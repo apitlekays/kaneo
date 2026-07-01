@@ -1,16 +1,27 @@
 import { saveAs } from "file-saver";
 import {
+  Banknote,
+  CalendarClock,
   Download,
   FileText,
+  Fuel,
+  History,
   ImageIcon,
+  Info,
   Loader2,
+  Paperclip,
   Pencil,
   Plus,
   Printer,
+  QrCode,
+  Receipt,
+  Route,
   Trash2,
   Upload,
   UserMinus,
   UserPlus,
+  Users,
+  Wrench,
 } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { AssetBarcode } from "@/components/assets/asset-barcode";
@@ -26,6 +37,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DialogSidebar,
+  DialogSidebarPanel,
+} from "@/components/ui/dialog-sidebar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -35,7 +50,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { AssetDetail } from "@/fetchers/asset-registry";
 import { assetFileUrl } from "@/fetchers/asset-registry";
@@ -88,7 +102,7 @@ export function AssetDetailDialog({
         }
       }}
     >
-      <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col overflow-hidden">
+      <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden">
         {isLoading || !data ? (
           <div className="flex h-40 items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -177,80 +191,97 @@ function DetailBody({
         </div>
       </DialogHeader>
 
-      <Tabs
+      <DialogSidebar
         value={tab}
         onValueChange={setTab}
-        className="flex min-h-0 flex-1 flex-col"
+        items={[
+          { value: "overview", label: "Overview", icon: Info },
+          { value: "financials", label: "Financials", icon: Banknote },
+          {
+            value: "files",
+            label: "Files",
+            icon: Paperclip,
+            badge: data.files.length || "",
+          },
+          {
+            value: "renewals",
+            label: "Renewals",
+            icon: CalendarClock,
+            badge: data.renewals.length || "",
+          },
+          {
+            value: "maintenance",
+            label: "Maintenance",
+            icon: Wrench,
+            badge: data.maintenance.length || "",
+          },
+          {
+            value: "costs",
+            label: "Costs",
+            icon: Receipt,
+            badge: data.costs.length || "",
+          },
+          {
+            value: "trips",
+            label: "Trips",
+            icon: Route,
+            badge: data.trips.length || "",
+          },
+          { value: "fleet", label: "Fleet", icon: Fuel },
+          { value: "custody", label: "Custody", icon: Users },
+          { value: "history", label: "History", icon: History },
+          { value: "label", label: "Label", icon: QrCode },
+        ]}
       >
-        <TabsList className="mx-6 flex-wrap">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="financials">Financials</TabsTrigger>
-          <TabsTrigger value="files">Files ({data.files.length})</TabsTrigger>
-          <TabsTrigger value="renewals">
-            Renewals ({data.renewals.length})
-          </TabsTrigger>
-          <TabsTrigger value="maintenance">
-            Maintenance ({data.maintenance.length})
-          </TabsTrigger>
-          <TabsTrigger value="costs">Costs ({data.costs.length})</TabsTrigger>
-          <TabsTrigger value="trips">Trips ({data.trips.length})</TabsTrigger>
-          <TabsTrigger value="fleet">Fleet</TabsTrigger>
-          <TabsTrigger value="custody">Custody</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
-          <TabsTrigger value="label">Label</TabsTrigger>
-        </TabsList>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-6">
-          <TabsContent value="overview">
-            <OverviewTab
-              data={data}
-              currency={currency}
-              custodianName={currentCustody?.userName ?? null}
-              locationName={locationName}
-            />
-          </TabsContent>
-          <TabsContent value="financials">
-            <FinancialsTab data={data} m={m} currency={currency} />
-          </TabsContent>
-          <TabsContent value="files">
-            <FilesTab data={data} m={m} />
-          </TabsContent>
-          <TabsContent value="renewals">
-            <RenewalsTab data={data} m={m} currency={currency} />
-          </TabsContent>
-          <TabsContent value="maintenance">
-            <MaintenanceTab data={data} m={m} currency={currency} />
-          </TabsContent>
-          <TabsContent value="costs">
-            <CostsTab data={data} m={m} currency={currency} />
-          </TabsContent>
-          <TabsContent value="trips">
-            <TripsTab
-              data={data}
-              m={m}
-              currency={currency}
-              workspaceId={workspaceId}
-            />
-          </TabsContent>
-          <TabsContent value="fleet">
-            <FleetTab
-              data={data}
-              m={m}
-              currency={currency}
-              workspaceId={workspaceId}
-            />
-          </TabsContent>
-          <TabsContent value="custody">
-            <CustodyTab data={data} m={m} workspaceId={workspaceId} />
-          </TabsContent>
-          <TabsContent value="history">
-            <HistoryTab data={data} />
-          </TabsContent>
-          <TabsContent value="label">
-            <LabelTab asset={asset} />
-          </TabsContent>
-        </div>
-      </Tabs>
+        <DialogSidebarPanel value="overview">
+          <OverviewTab
+            data={data}
+            currency={currency}
+            custodianName={currentCustody?.userName ?? null}
+            locationName={locationName}
+          />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="financials">
+          <FinancialsTab data={data} m={m} currency={currency} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="files">
+          <FilesTab data={data} m={m} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="renewals">
+          <RenewalsTab data={data} m={m} currency={currency} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="maintenance">
+          <MaintenanceTab data={data} m={m} currency={currency} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="costs">
+          <CostsTab data={data} m={m} currency={currency} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="trips">
+          <TripsTab
+            data={data}
+            m={m}
+            currency={currency}
+            workspaceId={workspaceId}
+          />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="fleet">
+          <FleetTab
+            data={data}
+            m={m}
+            currency={currency}
+            workspaceId={workspaceId}
+          />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="custody">
+          <CustodyTab data={data} m={m} workspaceId={workspaceId} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="history">
+          <HistoryTab data={data} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="label">
+          <LabelTab asset={asset} />
+        </DialogSidebarPanel>
+      </DialogSidebar>
     </>
   );
 }
