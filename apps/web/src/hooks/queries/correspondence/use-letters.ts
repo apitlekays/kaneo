@@ -156,5 +156,19 @@ export function useLetterMutations(workspaceId: string, letterId?: string) {
       },
       onError,
     }),
+    dispatch: useMutation({
+      mutationFn: (body: {
+        method: "email" | "post" | "courier" | "hand" | "group";
+        distributionListIds?: string[];
+        recipients?: { name?: string; email?: string }[];
+        trackingNo?: string;
+        coverNote?: string;
+      }) => api.dispatchLetter(workspaceId, id, body),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Dispatched");
+      },
+      onError,
+    }),
   };
 }

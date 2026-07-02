@@ -9,6 +9,7 @@ import {
   Paperclip,
   PenSquare,
   Route as RouteIcon,
+  Send,
   Signature as SignatureIcon,
   Stamp,
   Upload,
@@ -49,6 +50,7 @@ import {
 } from "@/hooks/queries/correspondence/use-letters";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { authClient } from "@/lib/auth-client";
+import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
 import { toast } from "@/lib/toast";
 
@@ -182,6 +184,12 @@ function Body({
                   label: "Signature",
                   icon: SignatureIcon,
                 },
+                {
+                  value: "dispatch",
+                  label: "Dispatch",
+                  icon: Send,
+                  badge: letter.dispatches.length || "",
+                },
               ]
             : []),
           {
@@ -244,6 +252,11 @@ function Body({
               currentUserId={currentUserId}
               userName={userName}
             />
+          </DialogSidebarPanel>
+        )}
+        {isOutgoing && (
+          <DialogSidebarPanel value="dispatch">
+            <DispatchSection workspaceId={workspaceId} letter={letter} m={m} />
           </DialogSidebarPanel>
         )}
         <DialogSidebarPanel value="minutes">
@@ -1018,5 +1031,159 @@ function SignatureSection({
     <p className="text-muted-foreground text-sm">
       The letter must be approved before it can be signed.
     </p>
+  );
+}
+
+function DispatchSection({
+  workspaceId,
+  letter,
+  m,
+}: {
+  workspaceId: string;
+  letter: LetterDetail;
+  m: Mutations;
+}) {
+  const { data: lists = [] } = useConfigList("distribution-lists", workspaceId);
+  const [method, setMethod] = useState<
+    "group" | "email" | "post" | "courier" | "hand"
+  >("group");
+  const [listIds, setListIds] = useState<string[]>([]);
+  const [emails, setEmails] = useState("");
+  const [trackingNo, setTrackingNo] = useState("");
+  const [coverNote, setCoverNote] = useState("");
+
+  const toggleList = (id: string) =>
+    setListIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+
+  const canDispatch = letter.status === "signed";
+  const submit = () => {
+    const body: Parameters<typeof m.dispatch.mutate>[0] = {
+      method,
+      coverNote: coverNote.trim() || undefined,
+    };
+    if (method === "group") body.distributionListIds = listIds;
+    if (method === "email")
+      body.recipients = emails
+        .split(",")
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .map((email) => ({ email }));
+    if (method === "post" || method === "courier")
+      body.trackingNo = trackingNo.trim() || undefined;
+    m.dispatch.mutate(body);
+  };
+
+  return (
+    <div className="space-y-4">
+      {letter.dispatches.length > 0 && (
+        <div className="space-y-2">
+          {letter.dispatches.map((d) => (
+            <div
+              key={d.id}
+              className="rounded-md border border-border px-3 py-2 text-sm"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{d.method}</span>
+                <Badge className="border text-xs">
+                  {d.deliveryStatus ?? "—"}
+                </Badge>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                {formatDateMedium(d.dispatchedAt)}
+                {d.trackingNo ? ` · tracking ${d.trackingNo}` : ""}
+                {d.providerMessageId ? ` · msg ${d.providerMessageId}` : ""}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!canDispatch ? (
+        <p className="text-muted-foreground text-sm">
+          {letter.status === "dispatched"
+            ? "This letter has been dispatched."
+            : "The letter must be signed before dispatch."}
+        </p>
+      ) : (
+        <div className="space-y-3 rounded-xl border border-border p-4">
+          <h4 className="font-medium text-sm">Dispatch</h4>
+          <Select
+            value={method}
+            onValueChange={(v) => setMethod(v as typeof method)}
+          >
+            <SelectTrigger>
+              <SelectValue>{method}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="group">Google Group(s)</SelectItem>
+              <SelectItem value="email">Email recipients</SelectItem>
+              <SelectItem value="post">Post</SelectItem>
+              <SelectItem value="courier">Courier</SelectItem>
+              <SelectItem value="hand">By hand</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {method === "group" && (
+            <div className="flex flex-wrap gap-1.5">
+              {lists.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => toggleList(l.id)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs",
+                    listIds.includes(l.id)
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  {l.name as string}
+                </button>
+              ))}
+              {lists.length === 0 && (
+                <span className="text-muted-foreground text-xs">
+                  No distribution lists — add them in Settings.
+                </span>
+              )}
+            </div>
+          )}
+          {method === "email" && (
+            <Input
+              value={emails}
+              placeholder="comma-separated recipient emails"
+              onChange={(e) => setEmails(e.target.value)}
+            />
+          )}
+          {(method === "post" || method === "courier") && (
+            <Input
+              value={trackingNo}
+              placeholder="Tracking number (optional)"
+              onChange={(e) => setTrackingNo(e.target.value)}
+            />
+          )}
+          <Textarea
+            value={coverNote}
+            placeholder="Cover note (optional)"
+            onChange={(e) => setCoverNote(e.target.value)}
+          />
+          <Button
+            size="sm"
+            disabled={
+              m.dispatch.isPending ||
+              (method === "group" && listIds.length === 0) ||
+              (method === "email" && !emails.trim())
+            }
+            onClick={submit}
+          >
+            {m.dispatch.isPending && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            )}
+            Dispatch
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

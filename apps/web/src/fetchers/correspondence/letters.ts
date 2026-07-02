@@ -134,6 +134,19 @@ export type LetterSignature = {
   signedAt: string;
 };
 
+export type LetterDispatch = {
+  id: string;
+  letterId: string;
+  method: string;
+  distributionListIds: string[] | null;
+  recipients: { name?: string; email?: string }[] | null;
+  dispatchedBy: string | null;
+  dispatchedAt: string;
+  providerMessageId: string | null;
+  deliveryStatus: string | null;
+  trackingNo: string | null;
+};
+
 export type LetterDetail = Letter & {
   attachments: LetterAttachment[];
   minutes: LetterMinute[];
@@ -142,6 +155,7 @@ export type LetterDetail = Letter & {
   approval: ApprovalInstance | null;
   versions: DraftVersion[];
   signature: LetterSignature | null;
+  dispatches: LetterDispatch[];
 };
 
 export type CorrespondenceSummary = {
@@ -271,6 +285,18 @@ export const approvalDecision = (
 
 export const signLetter = (workspaceId: string, id: string) =>
   post<Letter>(`letters/${id}/sign`, workspaceId, {});
+
+export const dispatchLetter = (
+  workspaceId: string,
+  id: string,
+  body: {
+    method: "email" | "post" | "courier" | "hand" | "group";
+    distributionListIds?: string[];
+    recipients?: { name?: string; email?: string }[];
+    trackingNo?: string;
+    coverNote?: string;
+  },
+) => post<Letter>(`letters/${id}/dispatch`, workspaceId, body);
 
 export const verifySignature = async (
   workspaceId: string,
