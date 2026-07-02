@@ -122,7 +122,13 @@ export function ConfigTable({
   );
 
   const submit = () => {
-    const body = toBody ? toBody(form) : { ...form };
+    // Omit blank optional fields so they persist as null (never "") — an empty
+    // FK/text value would otherwise error or pollute the record.
+    const body = toBody
+      ? toBody(form)
+      : Object.fromEntries(
+          Object.entries(form).filter(([, value]) => value !== ""),
+        );
     const onSuccess = () => setOpen(false);
     if (editing) {
       m.update.mutate({ id: editing.id, body }, { onSuccess });

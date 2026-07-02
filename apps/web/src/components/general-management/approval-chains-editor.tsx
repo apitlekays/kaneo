@@ -99,7 +99,7 @@ export function ApprovalChainsEditor({
     mutationFn: async () => {
       const body = {
         name: name.trim(),
-        appliesTo: letterType ? { letterType } : null,
+        appliesTo: letterType && letterType !== "any" ? { letterType } : null,
         steps: steps.map(
           (s, i): ApprovalStep => ({
             stepOrder: i + 1,
@@ -135,7 +135,7 @@ export function ApprovalChainsEditor({
   const startAdd = () => {
     setEditing(null);
     setName("");
-    setLetterType("");
+    setLetterType("any");
     setSteps([emptyStep()]);
     setOpen(true);
   };
@@ -145,9 +145,7 @@ export function ApprovalChainsEditor({
     setEditing(full);
     setName(full.name);
     setLetterType(
-      ((full.appliesTo as { letterType?: string } | null)?.letterType ?? "") as
-        | string
-        | "",
+      (full.appliesTo as { letterType?: string } | null)?.letterType ?? "any",
     );
     setSteps((full.steps ?? []).map(toDraft));
     setOpen(true);
@@ -278,14 +276,14 @@ export function ApprovalChainsEditor({
                 <Select value={letterType} onValueChange={setLetterType}>
                   <SelectTrigger>
                     <SelectValue>
-                      {letterType
-                        ? letterType.charAt(0).toUpperCase() +
-                          letterType.slice(1)
-                        : "Any type"}
+                      {letterType === "any" || !letterType
+                        ? "Any type"
+                        : letterType.charAt(0).toUpperCase() +
+                          letterType.slice(1)}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Any type</SelectItem>
+                    <SelectItem value="any">Any type</SelectItem>
                     <SelectItem value="external">External</SelectItem>
                     <SelectItem value="memo">Memo</SelectItem>
                     <SelectItem value="circular">Circular</SelectItem>

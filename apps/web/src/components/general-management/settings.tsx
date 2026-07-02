@@ -318,7 +318,8 @@ function buildSpecs(userOptions: Option[]): Record<string, Spec> {
           key: "headUserId",
           label: "Head",
           type: "select",
-          options: [{ value: "", label: "—" }, ...userOptions],
+          defaultValue: "none",
+          options: [{ value: "none", label: "— None —" }, ...userOptions],
         },
         { key: "parentId", label: "Parent department id", type: "text" },
       ],
@@ -331,6 +332,16 @@ function buildSpecs(userOptions: Option[]): Record<string, Spec> {
             userOptions.find((o) => o.value === i.headUserId)?.label ?? "—",
         },
       ],
+      toForm: (item) => ({
+        name: (item.name as string) ?? "",
+        headUserId: (item.headUserId as string) ?? "none",
+        parentId: (item.parentId as string) ?? "",
+      }),
+      toBody: (form) => ({
+        name: form.name,
+        headUserId: form.headUserId === "none" ? null : form.headUserId,
+        parentId: form.parentId ? form.parentId : null,
+      }),
     },
   };
 }
