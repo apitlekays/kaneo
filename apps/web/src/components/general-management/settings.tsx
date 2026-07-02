@@ -393,7 +393,8 @@ export function GeneralManagementSettings({
 }: {
   workspaceId: string;
 }) {
-  const { data: members = [] } = useGetActiveWorkspaceUsers(workspaceId);
+  const { data } = useGetActiveWorkspaceUsers(workspaceId);
+  const members = data?.members ?? [];
   const userOptions: Option[] = members.map((member) => ({
     value: member.userId,
     label: member.user?.name ?? member.userId,
