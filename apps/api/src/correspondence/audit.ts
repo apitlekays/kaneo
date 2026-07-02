@@ -12,6 +12,7 @@ type DbExecutor = Pick<typeof db, "select" | "insert" | "execute">;
  */
 function canonicalize(value: unknown): string {
   if (value === null || value === undefined) return "null";
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
   if (typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
   const record = value as Record<string, unknown>;
@@ -19,6 +20,17 @@ function canonicalize(value: unknown): string {
   return `{${keys
     .map((k) => `${JSON.stringify(k)}:${canonicalize(record[k])}`)
     .join(",")}}`;
+}
+
+/**
+ * Coerce a payload into exactly the JSON shape Postgres will persist in jsonb
+ * (Dates → ISO strings, undefined dropped). Hashing this same normalized form
+ * guarantees the write-time hash matches what verification recomputes from the
+ * stored row.
+ */
+function toJsonSafe(value: unknown): unknown {
+  if (value === undefined || value === null) return null;
+  return JSON.parse(JSON.stringify(value));
 }
 
 function computeHash(prevHash: string | null, payload: string) {
@@ -60,14 +72,18 @@ export async function recordAuditEvent(tx: DbExecutor, params: AuditParams) {
 
   const prevHash = prev?.hash ?? null;
   const at = new Date();
+  // Normalize to the exact jsonb shape that gets stored, then hash THAT — so
+  // verification recomputes an identical hash from the persisted row.
+  const before = toJsonSafe(params.before);
+  const after = toJsonSafe(params.after);
   const payload = canonicalize({
     workspaceId: params.workspaceId,
     entityType: params.entityType,
     entityId: params.entityId,
     action: params.action,
     actorId: params.actorId ?? null,
-    before: params.before ?? null,
-    after: params.after ?? null,
+    before,
+    after,
     at: at.toISOString(),
   });
   const hash = computeHash(prevHash, payload);
@@ -81,8 +97,8 @@ export async function recordAuditEvent(tx: DbExecutor, params: AuditParams) {
     at,
     ip: params.ip ?? null,
     deviceInfo: params.deviceInfo ?? null,
-    before: (params.before ?? null) as never,
-    after: (params.after ?? null) as never,
+    before: before as never,
+    after: after as never,
     prevHash,
     hash,
   });
