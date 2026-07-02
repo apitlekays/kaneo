@@ -9,6 +9,7 @@ import {
   Paperclip,
   PenSquare,
   Route as RouteIcon,
+  Signature as SignatureIcon,
   Stamp,
   Upload,
 } from "lucide-react";
@@ -39,6 +40,7 @@ import {
   attachmentDownloadUrl,
   type LetterDetail,
   uploadLetterAttachment,
+  verifySignature,
 } from "@/fetchers/correspondence/letters";
 import { useConfigList } from "@/hooks/queries/correspondence/use-config";
 import {
@@ -175,6 +177,11 @@ function Body({
                   label: "Approvals",
                   icon: Stamp,
                 },
+                {
+                  value: "signature",
+                  label: "Signature",
+                  icon: SignatureIcon,
+                },
               ]
             : []),
           {
@@ -221,6 +228,17 @@ function Body({
         {isOutgoing && (
           <DialogSidebarPanel value="approvals">
             <ApprovalsSection
+              letter={letter}
+              m={m}
+              currentUserId={currentUserId}
+              userName={userName}
+            />
+          </DialogSidebarPanel>
+        )}
+        {isOutgoing && (
+          <DialogSidebarPanel value="signature">
+            <SignatureSection
+              workspaceId={workspaceId}
               letter={letter}
               m={m}
               currentUserId={currentUserId}
@@ -870,5 +888,135 @@ function ApprovalsSection({
         </p>
       )}
     </div>
+  );
+}
+
+function SignatureSection({
+  workspaceId,
+  letter,
+  m,
+  currentUserId,
+  userName,
+}: {
+  workspaceId: string;
+  letter: LetterDetail;
+  m: Mutations;
+  currentUserId: string;
+  userName: (id: string | null) => string;
+}) {
+  const [verify, setVerify] = useState<{ ok: boolean; reason?: string } | null>(
+    null,
+  );
+  const [verifying, setVerifying] = useState(false);
+  const sig = letter.signature;
+  const isDrafter = letter.createdBy === currentUserId;
+  const signedAttachment = letter.attachments.find(
+    (a) => a.kind === "signed-final",
+  );
+
+  const runVerify = async () => {
+    setVerifying(true);
+    try {
+      setVerify(await verifySignature(workspaceId, letter.id));
+    } catch {
+      setVerify({ ok: false, reason: "verify-error" });
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  if (sig) {
+    return (
+      <div className="space-y-3">
+        <div className="space-y-1.5 rounded-xl border border-border p-4 text-sm">
+          <div>
+            Signed by{" "}
+            <span className="font-medium">
+              {sig.manifest?.signerName ?? userName(sig.signerId)}
+            </span>
+            {sig.manifest?.role ? ` · ${sig.manifest.role}` : ""}
+          </div>
+          <div className="text-muted-foreground text-xs">
+            {formatDateMedium(sig.signedAt)} · {sig.method}
+          </div>
+          <div className="break-all font-mono text-muted-foreground text-xs">
+            SHA-256 {sig.signedHash?.slice(0, 40)}…
+          </div>
+          {sig.manifest?.certSubject && (
+            <div className="text-muted-foreground text-xs">
+              Certificate: {sig.manifest.certSubject}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {signedAttachment && (
+            <a
+              href={attachmentDownloadUrl(
+                workspaceId,
+                letter.id,
+                signedAttachment.id,
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button size="sm" variant="outline">
+                <Download className="h-3.5 w-3.5" /> Signed PDF
+              </Button>
+            </a>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={verifying}
+            onClick={runVerify}
+          >
+            {verifying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Verify signature
+          </Button>
+        </div>
+        {verify && (
+          <p
+            className={
+              verify.ok
+                ? "text-emerald-600 text-sm dark:text-emerald-400"
+                : "text-rose-600 text-sm dark:text-rose-400"
+            }
+          >
+            {verify.ok
+              ? "✓ Signature valid — document intact."
+              : `⚠ Verification failed (${verify.reason ?? "unknown"}).`}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (letter.status === "approved") {
+    return isDrafter ? (
+      <p className="text-muted-foreground text-sm">
+        Awaiting an authorized signatory — you can't sign your own letter.
+      </p>
+    ) : (
+      <div className="space-y-3">
+        <p className="text-muted-foreground text-sm">
+          This letter is approved and ready to sign. Only authorized signatories
+          can sign; the server enforces this.
+        </p>
+        <Button
+          size="sm"
+          disabled={m.sign.isPending}
+          onClick={() => m.sign.mutate()}
+        >
+          {m.sign.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Sign letter
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <p className="text-muted-foreground text-sm">
+      The letter must be approved before it can be signed.
+    </p>
   );
 }

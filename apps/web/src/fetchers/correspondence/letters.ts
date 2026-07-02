@@ -117,6 +117,23 @@ export type ApprovalInstance = {
   steps: ApprovalStepInstance[];
 };
 
+export type LetterSignature = {
+  id: string;
+  letterId: string;
+  signerId: string | null;
+  method: string;
+  signedObjectKey: string | null;
+  signedHash: string | null;
+  manifest: {
+    signerName?: string;
+    role?: string;
+    signedAt?: string;
+    documentSha256?: string;
+    certSubject?: string;
+  } | null;
+  signedAt: string;
+};
+
 export type LetterDetail = Letter & {
   attachments: LetterAttachment[];
   minutes: LetterMinute[];
@@ -124,6 +141,7 @@ export type LetterDetail = Letter & {
   links: LetterLink[];
   approval: ApprovalInstance | null;
   versions: DraftVersion[];
+  signature: LetterSignature | null;
 };
 
 export type CorrespondenceSummary = {
@@ -250,6 +268,20 @@ export const approvalDecision = (
     comment?: string;
   },
 ) => post<Letter>(`letters/${id}/approval-decision`, workspaceId, body);
+
+export const signLetter = (workspaceId: string, id: string) =>
+  post<Letter>(`letters/${id}/sign`, workspaceId, {});
+
+export const verifySignature = async (
+  workspaceId: string,
+  id: string,
+): Promise<{ ok: boolean; reason?: string }> =>
+  jsonOrThrow(
+    await fetch(
+      url(`letters/${id}/signature/verify?workspaceId=${workspaceId}`),
+      { credentials: "include" },
+    ),
+  );
 
 export type PresignResult = {
   key: string;

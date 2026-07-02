@@ -148,5 +148,13 @@ export function useLetterMutations(workspaceId: string, letterId?: string) {
       },
       onError,
     }),
+    sign: useMutation({
+      mutationFn: () => api.signLetter(workspaceId, id),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Letter signed");
+      },
+      onError,
+    }),
   };
 }
