@@ -1,4 +1,6 @@
 export {
+  type CorrespondenceAttachment,
+  sendCorrespondenceEmail,
   sendMagicLinkEmail,
   sendNotificationEmail,
   sendOtpEmail,

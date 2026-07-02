@@ -1,4 +1,5 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { sendCorrespondenceEmail } from "@kaneo/email";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono-openapi";
@@ -7,15 +8,20 @@ import db from "../database";
 import {
   gmApprovalChainTable,
   gmApprovalStepTable,
+  gmDistributionListTable,
+  gmNumberSchemeTable,
+  gmSenderProfileTable,
   gmSignatoryTable,
   letterApprovalInstanceTable,
   letterApprovalStepInstanceTable,
   letterAttachmentTable,
+  letterDispatchTable,
   letterDraftVersionTable,
   letterSignatureTable,
   letterTable,
   userTable,
 } from "../database/schema";
+import { getObjectBytes } from "../storage/s3";
 import { requireWorkspacePageAccess } from "../utils/page-access";
 import { getWorkspaceRole } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
@@ -28,6 +34,7 @@ import {
   storeSignedPdf,
   verifyStoredSignature,
 } from "./esign";
+import { allocateNumber } from "./numbering";
 
 type GmEnv = { Variables: { userId: string; workspaceId?: string } };
 type Tx = Pick<typeof db, "select" | "insert" | "update">;
@@ -641,6 +648,221 @@ export function registerOutgoingRoutes(app: Hono<GmEnv>) {
           ),
         );
       },
+    )
+    // ── Register-out + dispatch (signed → dispatched) ─────────────────────────
+    .post(
+      "/letters/:id/dispatch",
+      validator("param", v.object({ id: v.string() })),
+      validator(
+        "json",
+        v.object({
+          workspaceId: v.string(),
+          method: v.picklist(["email", "post", "courier", "hand", "group"]),
+          distributionListIds: v.optional(v.array(v.string())),
+          recipients: v.optional(
+            v.array(
+              v.object({
+                name: v.optional(v.string()),
+                email: v.optional(v.string()),
+              }),
+            ),
+          ),
+          trackingNo: v.optional(v.string()),
+          coverNote: v.optional(v.string()),
+        }),
+      ),
+      workspaceAccess.fromBody("workspaceId"),
+      pageAccess,
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
+        const { id } = c.req.valid("param");
+        const b = c.req.valid("json");
+        const letter = await loadLetter(ws, id);
+        if (!letter) throw new HTTPException(404, { message: "Not found" });
+        if (letter.direction !== "out")
+          throw new HTTPException(400, {
+            message: "Only outgoing letters dispatch",
+          });
+        if (letter.status !== "signed")
+          throw new HTTPException(409, {
+            message: "Letter must be signed before dispatch",
+          });
+
+        const [signed] = await db
+          .select()
+          .from(letterAttachmentTable)
+          .where(
+            and(
+              eq(letterAttachmentTable.letterId, id),
+              eq(letterAttachmentTable.kind, "signed-final"),
+            ),
+          )
+          .orderBy(desc(letterAttachmentTable.createdAt))
+          .limit(1);
+
+        // Resolve recipients per method.
+        let toEmails: string[] = [];
+        let listIds: string[] = [];
+        const recipients = b.recipients ?? [];
+        if (b.method === "group") {
+          listIds = b.distributionListIds ?? [];
+          if (!listIds.length)
+            throw new HTTPException(400, {
+              message: "Select at least one distribution list",
+            });
+          const lists = await db
+            .select()
+            .from(gmDistributionListTable)
+            .where(
+              and(
+                eq(gmDistributionListTable.workspaceId, ws),
+                eq(gmDistributionListTable.active, true),
+                inArray(gmDistributionListTable.id, listIds),
+              ),
+            );
+          toEmails = lists.map((l) => l.groupEmail);
+          if (!toEmails.length)
+            throw new HTTPException(400, {
+              message: "No valid distribution list",
+            });
+        } else if (b.method === "email") {
+          toEmails = recipients
+            .map((r) => r.email)
+            .filter((e): e is string => Boolean(e));
+          if (!toEmails.length)
+            throw new HTTPException(400, {
+              message: "At least one recipient email is required",
+            });
+        }
+
+        // Out ref no if not yet assigned.
+        let refNo = letter.refNo;
+        let schemeId = letter.numberSchemeId;
+        if (!refNo) {
+          const [scheme] = await db
+            .select()
+            .from(gmNumberSchemeTable)
+            .where(
+              and(
+                eq(gmNumberSchemeTable.workspaceId, ws),
+                eq(gmNumberSchemeTable.active, true),
+                eq(gmNumberSchemeTable.direction, "out"),
+                eq(gmNumberSchemeTable.letterType, letter.type),
+              ),
+            )
+            .limit(1);
+          if (!scheme)
+            throw new HTTPException(400, {
+              message:
+                "No outgoing numbering scheme for this letter type — configure one first",
+            });
+          schemeId = scheme.id;
+        }
+
+        // Send email (group / external email) with the signed PDF attached.
+        let providerMessageId: string | null = null;
+        let deliveryStatus = "recorded";
+        if (toEmails.length) {
+          const [sender] = await db
+            .select()
+            .from(gmSenderProfileTable)
+            .where(
+              and(
+                eq(gmSenderProfileTable.workspaceId, ws),
+                eq(gmSenderProfileTable.active, true),
+              ),
+            )
+            .limit(1);
+          const attachments = signed
+            ? [
+                {
+                  filename: signed.filename,
+                  content: Buffer.from(await getObjectBytes(signed.objectKey)),
+                  contentType: "application/pdf",
+                },
+              ]
+            : undefined;
+          const html = `<p>${b.coverNote ?? "Please find the attached official correspondence."}</p><p>Reference: ${refNo ?? "(assigned on dispatch)"}</p>`;
+          try {
+            const res = await sendCorrespondenceEmail(
+              toEmails,
+              letter.subject,
+              html,
+              attachments,
+              {
+                replyTo: sender?.replyTo ?? undefined,
+                fromName: sender?.displayName ?? undefined,
+              },
+            );
+            providerMessageId = res.messageId;
+            deliveryStatus = "sent";
+          } catch (error) {
+            throw new HTTPException(502, {
+              message: `Dispatch email failed: ${error instanceof Error ? error.message : "unknown"}`,
+            });
+          }
+        }
+
+        const now = new Date();
+        const result = await db.transaction(async (tx) => {
+          let finalRefNo = refNo;
+          if (!finalRefNo && schemeId) {
+            const [scheme] = await tx
+              .select()
+              .from(gmNumberSchemeTable)
+              .where(eq(gmNumberSchemeTable.id, schemeId))
+              .limit(1);
+            if (scheme) finalRefNo = await allocateNumber(tx, scheme, now);
+          }
+          refNo = finalRefNo;
+          const [dispatch] = await tx
+            .insert(letterDispatchTable)
+            .values({
+              letterId: id,
+              method: b.method,
+              distributionListIds: listIds as never,
+              recipients: recipients as never,
+              dispatchedBy: userId,
+              dispatchedAt: now,
+              providerMessageId,
+              deliveryStatus,
+              trackingNo: b.trackingNo ?? null,
+            })
+            .returning();
+          const [updated] = await tx
+            .update(letterTable)
+            .set({
+              status: "dispatched",
+              dispatchedAt: now,
+              refNo: finalRefNo,
+              numberSchemeId: schemeId,
+              declaredAt: letter.declaredAt ?? now,
+              contentHash: letter.contentHash ?? signed?.sha256 ?? null,
+              updatedAt: now,
+            })
+            .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
+            .returning();
+          await recordAuditEvent(tx, {
+            workspaceId: ws,
+            entityType: "letter",
+            entityId: id,
+            action: "dispatch",
+            actorId: userId,
+            after: {
+              method: b.method,
+              refNo: finalRefNo,
+              toEmails,
+              providerMessageId,
+              deliveryStatus,
+              dispatchId: dispatch?.id,
+            },
+            ip: getIp(c),
+          });
+          return updated;
+        });
+        return c.json(result);
+      },
     );
 }
 
@@ -670,9 +892,15 @@ export async function loadOutgoingDetail(letterId: string) {
     .where(eq(letterSignatureTable.letterId, letterId))
     .orderBy(desc(letterSignatureTable.signedAt))
     .limit(1);
+  const dispatches = await db
+    .select()
+    .from(letterDispatchTable)
+    .where(eq(letterDispatchTable.letterId, letterId))
+    .orderBy(desc(letterDispatchTable.dispatchedAt));
   return {
     approval: instance ? { ...instance, steps: approvalSteps } : null,
     versions,
     signature: signature ?? null,
+    dispatches,
   };
 }

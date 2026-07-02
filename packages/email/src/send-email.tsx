@@ -137,3 +137,39 @@ export const sendNotificationEmail = async (
     throw error;
   }
 };
+
+export type CorrespondenceAttachment = {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+};
+
+/**
+ * Send an official memo/circular/letter over the same SMTP transport used for
+ * all platform mail (OTP, notifications). Supports attachments (the signed PDF)
+ * and an optional friendly From-name / Reply-To. Throws on send failure so the
+ * dispatch record can capture it.
+ */
+export const sendCorrespondenceEmail = async (
+  to: string | string[],
+  subject: string,
+  html: string,
+  attachments?: CorrespondenceAttachment[],
+  options?: { replyTo?: string; fromName?: string },
+): Promise<{ messageId: string }> => {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) {
+    throw new Error("SMTP_NOT_CONFIGURED");
+  }
+  const from = options?.fromName
+    ? `${options.fromName} <${process.env.SMTP_FROM}>`
+    : process.env.SMTP_FROM;
+  const info = await transporter.sendMail({
+    from,
+    to: Array.isArray(to) ? to.join(", ") : to,
+    replyTo: options?.replyTo,
+    subject,
+    html,
+    attachments,
+  });
+  return { messageId: info.messageId };
+};
