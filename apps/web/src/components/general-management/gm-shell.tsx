@@ -10,7 +10,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { verifyAuditChain } from "@/fetchers/correspondence";
+import { useCorrespondenceSummary } from "@/hooks/queries/correspondence/use-letters";
 import { cn } from "@/lib/cn";
+import { Correspondence } from "./correspondence";
 import { GeneralManagementSettings } from "./settings";
 
 const SECTIONS = [
@@ -31,6 +33,15 @@ function Overview({
     queryFn: () => verifyAuditChain(workspaceId),
     enabled: !!workspaceId,
   });
+  const { data: summary } = useCorrespondenceSummary(workspaceId);
+
+  const kpis = [
+    { label: "Incoming", value: summary?.incoming ?? 0 },
+    { label: "Outgoing", value: summary?.outgoing ?? 0 },
+    { label: "Pending registration", value: summary?.pendingRegistration ?? 0 },
+    { label: "Unassigned", value: summary?.unassigned ?? 0 },
+    { label: "Overdue", value: summary?.overdue ?? 0 },
+  ];
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -39,6 +50,15 @@ function Overview({
         <p className="text-muted-foreground text-sm">
           Correspondence records management — Surat Masuk &amp; Surat Keluar.
         </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {kpis.map((k) => (
+          <div key={k.label} className="rounded-xl border border-border p-3">
+            <div className="font-semibold text-2xl">{k.value}</div>
+            <div className="text-muted-foreground text-xs">{k.label}</div>
+          </div>
+        ))}
       </div>
 
       <div className="space-y-2 rounded-xl border border-border p-5">
@@ -69,22 +89,6 @@ function Overview({
         ) : (
           <p className="text-muted-foreground text-sm">Checking…</p>
         )}
-      </div>
-    </div>
-  );
-}
-
-function CorrespondencePlaceholder() {
-  return (
-    <div className="mx-auto max-w-3xl">
-      <div className="rounded-xl border border-border border-dashed p-10 text-center">
-        <Mail className="mx-auto h-8 w-8 text-muted-foreground" />
-        <h3 className="mt-3 font-medium">Letter registers</h3>
-        <p className="mx-auto mt-1 max-w-md text-muted-foreground text-sm">
-          Incoming and outgoing registers (capture, register, route, approve,
-          e-sign, dispatch) arrive in the next release. Configure the module in
-          Settings in the meantime.
-        </p>
       </div>
     </div>
   );
@@ -148,7 +152,9 @@ export function GeneralManagementShell({
             onGoSettings={() => setSection("settings")}
           />
         )}
-        {section === "correspondence" && <CorrespondencePlaceholder />}
+        {section === "correspondence" && (
+          <Correspondence workspaceId={workspaceId} />
+        )}
         {section === "settings" && (
           <GeneralManagementSettings workspaceId={workspaceId} />
         )}
