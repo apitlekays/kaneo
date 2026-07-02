@@ -344,6 +344,13 @@
 			"when": 1782921538554,
 			"tag": "0048_far_redwing",
 			"breakpoints": true
+		},
+		{
+			"idx": 49,
+			"version": "7",
+			"when": 1782960618766,
+			"tag": "0049_windy_shinobi_shaw",
+			"breakpoints": true
 		}
 	]
 }

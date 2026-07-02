@@ -397,6 +397,67 @@ export async function createAssetFileUploadUrl(
   };
 }
 
+type LetterFileUploadContext = {
+  workspaceId: string;
+  letterId: string;
+  kind: string;
+  filename: string;
+  contentType: string;
+};
+
+/** Owner-scoping segment every letter file key must contain (finalize guard). */
+export function letterFileKeyOwnerSegment(
+  workspaceId: string,
+  letterId: string,
+) {
+  return `workspace/${sanitizePathSegment(workspaceId)}/letter/${sanitizePathSegment(letterId)}/`;
+}
+
+/** Object key for a correspondence attachment: workspace/<ws>/letter/<id>/<name>. */
+export function buildLetterFileObjectKey(context: LetterFileUploadContext) {
+  const extension = getFileExtension(context.filename);
+  const prefix = [
+    "workspace",
+    sanitizePathSegment(context.workspaceId),
+    "letter",
+    sanitizePathSegment(context.letterId),
+  ].join("/");
+  const timestamp = Date.now();
+  const randomId = createId();
+  const baseName = sanitizePathSegment(
+    context.filename.replace(/\.[^/.]+$/, "") || "file",
+  ).slice(0, 64);
+  const fileName = extension
+    ? `${baseName}-${timestamp}-${randomId}.${extension}`
+    : `${baseName}-${timestamp}-${randomId}`;
+  return `${prefix}/${fileName}`;
+}
+
+/** Presigned PUT URL for a correspondence attachment. */
+export async function createLetterFileUploadUrl(
+  context: LetterFileUploadContext,
+): Promise<TaskImageUploadUrl> {
+  const config = getStorageConfig();
+  const client = getClient(config);
+  const key = applyKeyPrefix(
+    config.keyPrefix,
+    buildLetterFileObjectKey(context),
+  );
+  const command = new PutObjectCommand({
+    Bucket: config.bucket,
+    Key: key,
+    ContentType: context.contentType,
+  });
+  const uploadUrl = await getSignedUrl(client, command, {
+    expiresIn: config.presignTtlSeconds,
+  });
+  return {
+    key,
+    uploadUrl,
+    headers: { "Content-Type": context.contentType },
+  };
+}
+
 export async function getPrivateObject(key: string): Promise<AssetObject> {
   const config = getStorageConfig();
   const client = getClient(config);

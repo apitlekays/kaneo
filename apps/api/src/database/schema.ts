@@ -2084,3 +2084,180 @@ export const gmAuditEventTable = pgTable(
     index("gm_audit_event_entity_idx").on(table.entityType, table.entityId),
   ],
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Block 2: the letter record (Surat Masuk/Keluar) + its sub-records. A letter
+// is a mutable document until declared (incoming: at registration; outgoing:
+// at dispatch), after which its content/attachments are fixed (contentHash).
+// ─────────────────────────────────────────────────────────────────────────────
+export const letterTable = pgTable(
+  "letter",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    // Assigned at registration (incoming) / dispatch (outgoing); null before.
+    refNo: text("ref_no"),
+    fileRef: text("file_ref"),
+    jilid: integer("jilid"),
+    // in | out
+    direction: text("direction").notNull(),
+    // external | memo | circular
+    type: text("type").notNull(),
+    // email | physical | hand | portal
+    medium: text("medium").notNull(),
+    subject: text("subject").notNull(),
+    senderName: text("sender_name"),
+    senderOrg: text("sender_org"),
+    senderEmail: text("sender_email"),
+    recipientName: text("recipient_name"),
+    recipientOrg: text("recipient_org"),
+    recipientEmail: text("recipient_email"),
+    letterDate: timestamp("letter_date", { mode: "date" }),
+    receivedAt: timestamp("received_at", { mode: "date" }),
+    dispatchedAt: timestamp("dispatched_at", { mode: "date" }),
+    categoryId: text("category_id").references(() => gmCategoryTable.id, {
+      onDelete: "set null",
+    }),
+    filePlanNodeId: text("file_plan_node_id").references(
+      () => gmFilePlanNodeTable.id,
+      { onDelete: "set null" },
+    ),
+    securityLabelId: text("security_label_id").references(
+      () => gmSecurityLabelTable.id,
+      { onDelete: "set null" },
+    ),
+    numberSchemeId: text("number_scheme_id").references(
+      () => gmNumberSchemeTable.id,
+      { onDelete: "set null" },
+    ),
+    retentionClassId: text("retention_class_id").references(
+      () => gmRetentionClassTable.id,
+      { onDelete: "set null" },
+    ),
+    // captured|registered|classified|assigned|in-action|awaiting-response|
+    // closed|archived|disposed (incoming) + outgoing pipeline statuses.
+    status: text("status").notNull().default("captured"),
+    dispositionStatus: text("disposition_status"),
+    legalHold: boolean("legal_hold").notNull().default(false),
+    // Denormalized pointer to the primary attachment (no FK — avoids a cycle).
+    primaryAttachmentId: text("primary_attachment_id"),
+    contentHash: text("content_hash"),
+    currentAssigneeId: text("current_assignee_id").references(
+      () => userTable.id,
+      { onDelete: "set null" },
+    ),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    declaredAt: timestamp("declared_at", { mode: "date" }),
+    closedAt: timestamp("closed_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("letter_ws_status_idx").on(table.workspaceId, table.status),
+    index("letter_ws_dir_type_idx").on(
+      table.workspaceId,
+      table.direction,
+      table.type,
+    ),
+    index("letter_ws_refno_idx").on(table.workspaceId, table.refNo),
+  ],
+);
+
+export const letterAttachmentTable = pgTable(
+  "letter_attachment",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull().unique(),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    sha256: text("sha256"),
+    // original | scan | enclosure | signed-final
+    kind: text("kind").notNull().default("original"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("letter_attachment_letterId_idx").on(table.letterId)],
+);
+
+// Threaded, attributed, immutable-once-posted routing notes (the "minit").
+export const letterMinuteTable = pgTable(
+  "letter_minute",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    authorId: text("author_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    body: text("body").notNull(),
+    actionType: text("action_type"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("letter_minute_letterId_idx").on(table.letterId)],
+);
+
+export const letterAssignmentTable = pgTable(
+  "letter_assignment",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    fromUserId: text("from_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    toUserId: text("to_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    toDeptId: text("to_dept_id"),
+    action: text("action"),
+    // pending | accepted | rejected | done
+    status: text("status").notNull().default("pending"),
+    dueAt: timestamp("due_at", { mode: "date" }),
+    decidedAt: timestamp("decided_at", { mode: "date" }),
+    note: text("note"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("letter_assignment_letterId_idx").on(table.letterId)],
+);
+
+export const letterLinkTable = pgTable(
+  "letter_link",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    fromLetterId: text("from_letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    toLetterId: text("to_letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    // reply | related | supersedes
+    relation: text("relation").notNull().default("related"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("letter_link_fromLetterId_idx").on(table.fromLetterId)],
+);

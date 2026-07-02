@@ -23,6 +23,7 @@ import {
 import { requireWorkspacePageAccess } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { recordAuditEvent, verifyAuditChain } from "./audit";
+import { registerLetterRoutes } from "./letters";
 import { assertGmAdmin } from "./roles";
 
 const PAGE_SLUG = "general-management";
@@ -1545,5 +1546,8 @@ app.get(
     return c.json(await verifyAuditChain(ws));
   },
 );
+
+// Block 2: letter registers, capture, lifecycle, attachments, summary.
+registerLetterRoutes(app);
 
 export default app;
