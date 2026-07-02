@@ -2261,3 +2261,130 @@ export const letterLinkTable = pgTable(
   },
   (table) => [index("letter_link_fromLetterId_idx").on(table.fromLetterId)],
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Block 3: outgoing pipeline — draft versions, configurable approval (instance
+// + step snapshots), e-signature, and dispatch.
+// ─────────────────────────────────────────────────────────────────────────────
+export const letterDraftVersionTable = pgTable(
+  "letter_draft_version",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    bodyHtml: text("body_html").notNull().default(""),
+    objectKey: text("object_key"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("letter_draft_version_letterId_idx").on(table.letterId)],
+);
+
+export const letterApprovalInstanceTable = pgTable(
+  "letter_approval_instance",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    // Snapshot reference to the chain template used (may later change/retire).
+    chainId: text("chain_id").references(() => gmApprovalChainTable.id, {
+      onDelete: "set null",
+    }),
+    chainName: text("chain_name"),
+    // active | approved | rejected | cancelled
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("letter_approval_instance_letterId_idx").on(table.letterId),
+  ],
+);
+
+// Step config is SNAPSHOTTED here so editing/retiring a chain never mutates an
+// in-flight approval.
+export const letterApprovalStepInstanceTable = pgTable(
+  "letter_approval_step_instance",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    instanceId: text("instance_id")
+      .notNull()
+      .references(() => letterApprovalInstanceTable.id, {
+        onDelete: "cascade",
+      }),
+    stepOrder: integer("step_order").notNull(),
+    mode: text("mode").notNull().default("sequential"),
+    approverType: text("approver_type").notNull(),
+    approverRefs: jsonb("approver_refs").notNull(),
+    quorum: integer("quorum").notNull().default(1),
+    // pending | approved | returned | rejected
+    status: text("status").notNull().default("pending"),
+    // Recorded decisions for quorum tracking: [{userId,decision,comment,at}].
+    decisions: jsonb("decisions"),
+    dueAt: timestamp("due_at", { mode: "date" }),
+    decidedAt: timestamp("decided_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("letter_approval_step_instance_instanceId_idx").on(table.instanceId),
+  ],
+);
+
+export const letterSignatureTable = pgTable(
+  "letter_signature",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    signerId: text("signer_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    // org-cert | pki | drawn
+    method: text("method").notNull().default("org-cert"),
+    signatureImageKey: text("signature_image_key"),
+    signedObjectKey: text("signed_object_key"),
+    signedHash: text("signed_hash"),
+    manifest: jsonb("manifest"),
+    signedAt: timestamp("signed_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("letter_signature_letterId_idx").on(table.letterId)],
+);
+
+export const letterDispatchTable = pgTable(
+  "letter_dispatch",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    // email | post | courier | hand | group
+    method: text("method").notNull(),
+    distributionListIds: jsonb("distribution_list_ids"),
+    recipients: jsonb("recipients"),
+    dispatchedBy: text("dispatched_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    dispatchedAt: timestamp("dispatched_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+    providerMessageId: text("provider_message_id"),
+    deliveryStatus: text("delivery_status"),
+    trackingNo: text("tracking_no"),
+  },
+  (table) => [index("letter_dispatch_letterId_idx").on(table.letterId)],
+);

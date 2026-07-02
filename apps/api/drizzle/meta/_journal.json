@@ -351,6 +351,13 @@
 			"when": 1782960618766,
 			"tag": "0049_windy_shinobi_shaw",
 			"breakpoints": true
+		},
+		{
+			"idx": 50,
+			"version": "7",
+			"when": 1782966020808,
+			"tag": "0050_fuzzy_captain_marvel",
+			"breakpoints": true
 		}
 	]
 }

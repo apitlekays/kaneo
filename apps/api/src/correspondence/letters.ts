@@ -25,9 +25,9 @@ import { requireWorkspacePageAccess } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { recordAuditEvent } from "./audit";
 import { allocateNumber } from "./numbering";
+import { loadOutgoingDetail } from "./outgoing";
 
 type GmEnv = { Variables: { userId: string; workspaceId?: string } };
-type Tx = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 type Row = Record<string, unknown>;
 
 const PAGE_SLUG = "general-management";
@@ -237,7 +237,15 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             .from(letterLinkTable)
             .where(eq(letterLinkTable.fromLetterId, id)),
         ]);
-        return c.json({ ...letter, attachments, minutes, assignments, links });
+        const outgoing = await loadOutgoingDetail(id);
+        return c.json({
+          ...letter,
+          attachments,
+          minutes,
+          assignments,
+          links,
+          ...outgoing,
+        });
       },
     )
     // ── Capture / create ────────────────────────────────────────────────────

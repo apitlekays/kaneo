@@ -24,6 +24,7 @@ import { requireWorkspacePageAccess } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { recordAuditEvent, verifyAuditChain } from "./audit";
 import { registerLetterRoutes } from "./letters";
+import { registerOutgoingRoutes } from "./outgoing";
 import { assertGmAdmin } from "./roles";
 
 const PAGE_SLUG = "general-management";
@@ -1549,5 +1550,7 @@ app.get(
 
 // Block 2: letter registers, capture, lifecycle, attachments, summary.
 registerLetterRoutes(app);
+// Block 3: outgoing pipeline — draft versions, review, configurable approval.
+registerOutgoingRoutes(app);
 
 export default app;
