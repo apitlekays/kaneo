@@ -108,5 +108,45 @@ export function useLetterMutations(workspaceId: string, letterId?: string) {
       },
       onError,
     }),
+    saveDraft: useMutation({
+      mutationFn: (bodyHtml: string) =>
+        api.saveDraftVersion(workspaceId, id, bodyHtml),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Draft saved");
+      },
+      onError,
+    }),
+    submitReview: useMutation({
+      mutationFn: () => api.submitReview(workspaceId, id),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Submitted for review");
+      },
+      onError,
+    }),
+    reviewDecision: useMutation({
+      mutationFn: (body: {
+        decision: "approve" | "return";
+        comment?: string;
+      }) => api.reviewDecision(workspaceId, id, body),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Review recorded");
+      },
+      onError,
+    }),
+    approvalDecision: useMutation({
+      mutationFn: (body: {
+        stepInstanceId: string;
+        decision: "approve" | "reject" | "return";
+        comment?: string;
+      }) => api.approvalDecision(workspaceId, id, body),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Decision recorded");
+      },
+      onError,
+    }),
   };
 }

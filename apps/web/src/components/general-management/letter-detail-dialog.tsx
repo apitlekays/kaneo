@@ -7,7 +7,9 @@ import {
   Link2,
   Loader2,
   Paperclip,
+  PenSquare,
   Route as RouteIcon,
+  Stamp,
   Upload,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -44,6 +46,7 @@ import {
   useLetterMutations,
 } from "@/hooks/queries/correspondence/use-letters";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
+import { authClient } from "@/lib/auth-client";
 import { formatDateMedium } from "@/lib/format";
 import { toast } from "@/lib/toast";
 
@@ -132,6 +135,9 @@ function Body({
     list: { id: string; label?: unknown }[],
     id: string | null,
   ) => (id ? ((list.find((x) => x.id === id)?.label as string) ?? "—") : "—");
+  const { data: session } = authClient.useSession();
+  const currentUserId = session?.user?.id ?? "";
+  const isOutgoing = letter.direction === "out";
 
   return (
     <>
@@ -156,6 +162,21 @@ function Body({
         onValueChange={setSection}
         items={[
           { value: "overview", label: "Overview", icon: Info },
+          ...(isOutgoing
+            ? [
+                {
+                  value: "draft",
+                  label: "Draft",
+                  icon: PenSquare,
+                  badge: letter.versions.length || "",
+                },
+                {
+                  value: "approvals",
+                  label: "Approvals",
+                  icon: Stamp,
+                },
+              ]
+            : []),
           {
             value: "minutes",
             label: "Minutes",
@@ -192,6 +213,21 @@ function Body({
             securityLabel={labelOf(securityLabels, letter.securityLabelId)}
           />
         </DialogSidebarPanel>
+        {isOutgoing && (
+          <DialogSidebarPanel value="draft">
+            <DraftSection letter={letter} m={m} userName={userName} />
+          </DialogSidebarPanel>
+        )}
+        {isOutgoing && (
+          <DialogSidebarPanel value="approvals">
+            <ApprovalsSection
+              letter={letter}
+              m={m}
+              currentUserId={currentUserId}
+              userName={userName}
+            />
+          </DialogSidebarPanel>
+        )}
         <DialogSidebarPanel value="minutes">
           <MinutesSection letter={letter} m={m} userName={userName} />
         </DialogSidebarPanel>
@@ -593,6 +629,246 @@ function AttachmentsSection({
         )}
         Upload attachment
       </Button>
+    </div>
+  );
+}
+
+function DraftSection({
+  letter,
+  m,
+  userName,
+}: {
+  letter: LetterDetail;
+  m: Mutations;
+  userName: (id: string | null) => string;
+}) {
+  const latest = letter.versions[letter.versions.length - 1];
+  const [body, setBody] = useState(latest?.bodyHtml ?? "");
+  const canSubmit = ["draft", "captured"].includes(letter.status);
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label className="text-xs">Draft body</Label>
+        <Textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Compose the outgoing letter…"
+          className="min-h-40"
+        />
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={m.saveDraft.isPending}
+            onClick={() => m.saveDraft.mutate(body)}
+          >
+            Save version
+          </Button>
+          {canSubmit && (
+            <Button
+              size="sm"
+              disabled={m.submitReview.isPending}
+              onClick={() => m.submitReview.mutate()}
+            >
+              Submit for review
+            </Button>
+          )}
+        </div>
+      </div>
+      {letter.versions.length > 0 && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Version history</Label>
+          {[...letter.versions].reverse().map((ver) => (
+            <div
+              key={ver.id}
+              className="flex items-center justify-between rounded-md border border-border px-3 py-1.5 text-xs"
+            >
+              <span>v{ver.version}</span>
+              <span className="text-muted-foreground">
+                {userName(ver.createdBy)} · {formatDateMedium(ver.createdAt)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApprovalsSection({
+  letter,
+  m,
+  currentUserId,
+  userName,
+}: {
+  letter: LetterDetail;
+  m: Mutations;
+  currentUserId: string;
+  userName: (id: string | null) => string;
+}) {
+  const [comment, setComment] = useState("");
+  const isDrafter = letter.createdBy === currentUserId;
+  const approval = letter.approval;
+  const currentStep = approval?.steps.find((s) => s.status === "pending");
+
+  const Label2 = ({ children }: { children: React.ReactNode }) => (
+    <Label className="text-xs">{children}</Label>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-border p-4 text-sm">
+        <span className="text-muted-foreground">Status: </span>
+        <span className="font-medium">{letter.status}</span>
+        {approval?.chainName && (
+          <span className="text-muted-foreground">
+            {" "}
+            · chain: {approval.chainName}
+          </span>
+        )}
+      </div>
+
+      {/* Maker–checker review */}
+      {letter.status === "in-review" && (
+        <div className="space-y-2 rounded-xl border border-border p-4">
+          <h4 className="font-medium text-sm">Review</h4>
+          {isDrafter ? (
+            <p className="text-muted-foreground text-sm">
+              Awaiting a reviewer — you can't review your own draft.
+            </p>
+          ) : (
+            <>
+              <Textarea
+                value={comment}
+                placeholder="Comment (optional)"
+                onChange={(e) => setComment(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={m.reviewDecision.isPending}
+                  onClick={() =>
+                    m.reviewDecision.mutate({ decision: "approve", comment })
+                  }
+                >
+                  Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={m.reviewDecision.isPending}
+                  onClick={() =>
+                    m.reviewDecision.mutate({ decision: "return", comment })
+                  }
+                >
+                  Return to drafter
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Approval chain steps */}
+      {approval && (
+        <div className="space-y-2">
+          {approval.steps.map((step) => (
+            <div
+              key={step.id}
+              className="space-y-2 rounded-xl border border-border p-4"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-sm">
+                  Step {step.stepOrder} · {step.approverType}
+                  {step.quorum > 1 ? ` · quorum ${step.quorum}` : ""}
+                </span>
+                <Badge className="border text-xs">{step.status}</Badge>
+              </div>
+              {step.approverType === "users" && (
+                <p className="text-muted-foreground text-xs">
+                  Approvers: {step.approverRefs.map(userName).join(", ")}
+                </p>
+              )}
+              {step.decisions && step.decisions.length > 0 && (
+                <ul className="space-y-0.5 text-muted-foreground text-xs">
+                  {step.decisions.map((d) => (
+                    <li key={`${d.userId}-${d.at}`}>
+                      {userName(d.userId)}: {d.decision}
+                      {d.comment ? ` — ${d.comment}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {currentStep?.id === step.id &&
+                letter.status === "approving" &&
+                !isDrafter && (
+                  <div className="space-y-2 border-border border-t pt-2">
+                    <Label2>Your decision</Label2>
+                    <Textarea
+                      value={comment}
+                      placeholder="Comment (optional)"
+                      onChange={(e) => setComment(e.target.value)}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        disabled={m.approvalDecision.isPending}
+                        onClick={() =>
+                          m.approvalDecision.mutate({
+                            stepInstanceId: step.id,
+                            decision: "approve",
+                            comment,
+                          })
+                        }
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={m.approvalDecision.isPending}
+                        onClick={() =>
+                          m.approvalDecision.mutate({
+                            stepInstanceId: step.id,
+                            decision: "return",
+                            comment,
+                          })
+                        }
+                      >
+                        Return
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={m.approvalDecision.isPending}
+                        onClick={() =>
+                          m.approvalDecision.mutate({
+                            stepInstanceId: step.id,
+                            decision: "reject",
+                            comment,
+                          })
+                        }
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                    <p className="text-muted-foreground text-xs">
+                      Only listed approvers can decide; the server enforces
+                      this.
+                    </p>
+                  </div>
+                )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!approval && letter.status !== "in-review" && (
+        <p className="text-muted-foreground text-sm">
+          No approval in progress. Submit the draft for review to begin.
+        </p>
+      )}
     </div>
   );
 }

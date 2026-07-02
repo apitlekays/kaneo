@@ -83,11 +83,47 @@ export type LetterLink = {
   relation: string;
   createdAt: string;
 };
+export type DraftVersion = {
+  id: string;
+  letterId: string;
+  version: number;
+  bodyHtml: string;
+  createdBy: string | null;
+  createdAt: string;
+};
+export type ApprovalStepInstance = {
+  id: string;
+  instanceId: string;
+  stepOrder: number;
+  mode: string;
+  approverType: "role" | "users";
+  approverRefs: string[];
+  quorum: number;
+  status: string;
+  decisions:
+    | { userId: string; decision: string; comment?: string; at: string }[]
+    | null;
+  dueAt: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+};
+export type ApprovalInstance = {
+  id: string;
+  letterId: string;
+  chainId: string | null;
+  chainName: string | null;
+  status: string;
+  createdAt: string;
+  steps: ApprovalStepInstance[];
+};
+
 export type LetterDetail = Letter & {
   attachments: LetterAttachment[];
   minutes: LetterMinute[];
   assignments: LetterAssignment[];
   links: LetterLink[];
+  approval: ApprovalInstance | null;
+  versions: DraftVersion[];
 };
 
 export type CorrespondenceSummary = {
@@ -187,6 +223,33 @@ export const setLetterStatus = (
 
 export const linkLetter = (workspaceId: string, id: string, body: object) =>
   post<LetterLink>(`letters/${id}/links`, workspaceId, body);
+
+// ── Outgoing pipeline (Block 3) ──────────────────────────────────────────────
+export const saveDraftVersion = (
+  workspaceId: string,
+  id: string,
+  bodyHtml: string,
+) =>
+  post<DraftVersion>(`letters/${id}/draft-version`, workspaceId, { bodyHtml });
+
+export const submitReview = (workspaceId: string, id: string) =>
+  post<Letter>(`letters/${id}/submit-review`, workspaceId, {});
+
+export const reviewDecision = (
+  workspaceId: string,
+  id: string,
+  body: { decision: "approve" | "return"; comment?: string },
+) => post<Letter>(`letters/${id}/review-decision`, workspaceId, body);
+
+export const approvalDecision = (
+  workspaceId: string,
+  id: string,
+  body: {
+    stepInstanceId: string;
+    decision: "approve" | "reject" | "return";
+    comment?: string;
+  },
+) => post<Letter>(`letters/${id}/approval-decision`, workspaceId, body);
 
 export type PresignResult = {
   key: string;
