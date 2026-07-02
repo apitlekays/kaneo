@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import type { Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono-openapi";
@@ -7,15 +7,27 @@ import db from "../database";
 import {
   gmApprovalChainTable,
   gmApprovalStepTable,
+  gmSignatoryTable,
   letterApprovalInstanceTable,
   letterApprovalStepInstanceTable,
+  letterAttachmentTable,
   letterDraftVersionTable,
+  letterSignatureTable,
   letterTable,
+  userTable,
 } from "../database/schema";
 import { requireWorkspacePageAccess } from "../utils/page-access";
 import { getWorkspaceRole } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { recordAuditEvent } from "./audit";
+import {
+  generateSignedLetterPdf,
+  loadSigningCredentials,
+  type SignatureManifest,
+  signBytes,
+  storeSignedPdf,
+  verifyStoredSignature,
+} from "./esign";
 
 type GmEnv = { Variables: { userId: string; workspaceId?: string } };
 type Tx = Pick<typeof db, "select" | "insert" | "update">;
@@ -482,6 +494,153 @@ export function registerOutgoingRoutes(app: Hono<GmEnv>) {
         });
         return c.json(result);
       },
+    )
+    // ── E-signature (approved → signed) ───────────────────────────────────────
+    .post(
+      "/letters/:id/sign",
+      validator("param", v.object({ id: v.string() })),
+      validator("json", v.object({ workspaceId: v.string() })),
+      workspaceAccess.fromBody("workspaceId"),
+      pageAccess,
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
+        const { id } = c.req.valid("param");
+        const letter = await loadLetter(ws, id);
+        if (!letter) throw new HTTPException(404, { message: "Not found" });
+        if (letter.direction !== "out")
+          throw new HTTPException(400, {
+            message: "Only outgoing letters are signed",
+          });
+        if (letter.status !== "approved")
+          throw new HTTPException(409, {
+            message: "Letter must be approved before signing",
+          });
+        if (letter.createdBy && letter.createdBy === userId)
+          throw new HTTPException(403, {
+            message: "The drafter cannot sign their own letter",
+          });
+        if (!loadSigningCredentials())
+          throw new HTTPException(400, {
+            message:
+              "Signing certificate not configured (set GM_SIGNING_KEY_B64 / GM_SIGNING_CERT_B64)",
+          });
+        const [signatory] = await db
+          .select({ id: gmSignatoryTable.id })
+          .from(gmSignatoryTable)
+          .where(
+            and(
+              eq(gmSignatoryTable.workspaceId, ws),
+              eq(gmSignatoryTable.userId, userId),
+              eq(gmSignatoryTable.active, true),
+            ),
+          )
+          .limit(1);
+        if (!signatory)
+          throw new HTTPException(403, {
+            message: "You are not an authorized signatory",
+          });
+        const [user] = await db
+          .select({ name: userTable.name })
+          .from(userTable)
+          .where(eq(userTable.id, userId))
+          .limit(1);
+        const signerName = user?.name ?? "Authorized signatory";
+        const role = "Authorized Signatory";
+        const [latest] = await db
+          .select()
+          .from(letterDraftVersionTable)
+          .where(eq(letterDraftVersionTable.letterId, id))
+          .orderBy(desc(letterDraftVersionTable.version))
+          .limit(1);
+
+        const signedAt = new Date();
+        const pdfBytes = await generateSignedLetterPdf(
+          letter,
+          latest?.bodyHtml ?? "",
+          signerName,
+          role,
+          signedAt,
+        );
+        const manifest = signBytes(
+          pdfBytes,
+          { signerId: userId, signerName, role },
+          signedAt,
+        );
+        const objectKey = await storeSignedPdf(ws, id, letter.refNo, pdfBytes);
+        const filename = `${(letter.refNo ?? id).replace(/[^A-Za-z0-9._-]+/g, "-")}-signed.pdf`;
+
+        const result = await db.transaction(async (tx) => {
+          await tx.insert(letterAttachmentTable).values({
+            letterId: id,
+            workspaceId: ws,
+            objectKey,
+            filename,
+            mimeType: "application/pdf",
+            size: pdfBytes.length,
+            sha256: manifest.documentSha256,
+            kind: "signed-final",
+            createdBy: userId,
+          });
+          await tx.insert(letterSignatureTable).values({
+            letterId: id,
+            signerId: userId,
+            method: "org-cert",
+            signedObjectKey: objectKey,
+            signedHash: manifest.documentSha256,
+            manifest: manifest as never,
+            signedAt,
+          });
+          const [updated] = await tx
+            .update(letterTable)
+            .set({ status: "signed", updatedAt: signedAt })
+            .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
+            .returning();
+          await recordAuditEvent(tx, {
+            workspaceId: ws,
+            entityType: "letter",
+            entityId: id,
+            action: "sign",
+            actorId: userId,
+            after: {
+              signerName,
+              documentSha256: manifest.documentSha256,
+              signedObjectKey: objectKey,
+            },
+            ip: getIp(c),
+          });
+          return updated;
+        });
+        return c.json(result);
+      },
+    )
+    // ── Verify a stored signature ─────────────────────────────────────────────
+    .get(
+      "/letters/:id/signature/verify",
+      validator("param", v.object({ id: v.string() })),
+      validator("query", v.object({ workspaceId: v.string() })),
+      workspaceAccess.fromQuery("workspaceId"),
+      pageAccess,
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const { id } = c.req.valid("param");
+        const letter = await loadLetter(ws, id);
+        if (!letter) throw new HTTPException(404, { message: "Not found" });
+        const [signature] = await db
+          .select()
+          .from(letterSignatureTable)
+          .where(eq(letterSignatureTable.letterId, id))
+          .orderBy(desc(letterSignatureTable.signedAt))
+          .limit(1);
+        if (!signature?.signedObjectKey || !signature.manifest)
+          return c.json({ ok: false, reason: "no-signature" });
+        return c.json(
+          await verifyStoredSignature(
+            signature.signedObjectKey,
+            signature.manifest as SignatureManifest,
+          ),
+        );
+      },
     );
 }
 
@@ -505,8 +664,15 @@ export async function loadOutgoingDetail(letterId: string) {
     .from(letterDraftVersionTable)
     .where(eq(letterDraftVersionTable.letterId, letterId))
     .orderBy(asc(letterDraftVersionTable.version));
+  const [signature] = await db
+    .select()
+    .from(letterSignatureTable)
+    .where(eq(letterSignatureTable.letterId, letterId))
+    .orderBy(desc(letterSignatureTable.signedAt))
+    .limit(1);
   return {
     approval: instance ? { ...instance, steps: approvalSteps } : null,
     versions,
+    signature: signature ?? null,
   };
 }

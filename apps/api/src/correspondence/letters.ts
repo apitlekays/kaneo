@@ -18,6 +18,7 @@ import {
 } from "../database/schema";
 import {
   createLetterFileUploadUrl,
+  getObjectBytes,
   getPrivateObject,
   letterFileKeyOwnerSegment,
 } from "../storage/s3";
@@ -94,11 +95,8 @@ async function inWorkspace(
 }
 
 async function sha256OfObject(objectKey: string) {
-  const object = await getPrivateObject(objectKey);
-  const hash = createHash("sha256");
-  const body = object.body as AsyncIterable<Uint8Array>;
-  for await (const chunk of body) hash.update(chunk);
-  return hash.digest("hex");
+  const bytes = await getObjectBytes(objectKey);
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 export function registerLetterRoutes(app: Hono<GmEnv>) {
