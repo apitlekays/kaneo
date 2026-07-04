@@ -147,6 +147,26 @@ export type LetterDispatch = {
   trackingNo: string | null;
 };
 
+export type LetterLegalHold = {
+  id: string;
+  letterId: string;
+  reason: string;
+  placedBy: string | null;
+  placedAt: string;
+  releasedBy: string | null;
+  releasedAt: string | null;
+};
+export type LetterDisposition = {
+  id: string;
+  letterId: string;
+  action: string;
+  authorizedBy: string | null;
+  certificateObjectKey: string | null;
+  certificateHash: string | null;
+  note: string | null;
+  executedAt: string;
+};
+
 export type LetterDetail = Letter & {
   attachments: LetterAttachment[];
   minutes: LetterMinute[];
@@ -156,6 +176,15 @@ export type LetterDetail = Letter & {
   versions: DraftVersion[];
   signature: LetterSignature | null;
   dispatches: LetterDispatch[];
+  holds: LetterLegalHold[];
+  dispositions: LetterDisposition[];
+};
+
+export type DispositionQueueItem = {
+  letter: Letter;
+  className: string;
+  dueAt: string;
+  action: string;
 };
 
 export type CorrespondenceSummary = {
@@ -165,6 +194,8 @@ export type CorrespondenceSummary = {
   pendingRegistration: number;
   unassigned: number;
   overdue: number;
+  onHold: number;
+  dueForDisposition: number;
   byStatus: Record<string, number>;
 };
 
@@ -297,6 +328,44 @@ export const dispatchLetter = (
     coverNote?: string;
   },
 ) => post<Letter>(`letters/${id}/dispatch`, workspaceId, body);
+
+// ── Records lifecycle (Block 4) ──────────────────────────────────────────────
+export const setRetention = (
+  workspaceId: string,
+  id: string,
+  retentionClassId: string,
+) => post<Letter>(`letters/${id}/retention`, workspaceId, { retentionClassId });
+
+export const placeLegalHold = (
+  workspaceId: string,
+  id: string,
+  reason: string,
+) => post<Letter>(`letters/${id}/legal-hold`, workspaceId, { reason });
+
+export const releaseLegalHold = (workspaceId: string, id: string) =>
+  post<Letter>(`letters/${id}/legal-hold/release`, workspaceId, {});
+
+export const disposeLetter = (
+  workspaceId: string,
+  id: string,
+  body: {
+    action: "destroy" | "transfer" | "permanent" | "review";
+    note?: string;
+  },
+) => post<Letter>(`letters/${id}/dispose`, workspaceId, body);
+
+export async function getDispositionQueue(
+  workspaceId: string,
+): Promise<DispositionQueueItem[]> {
+  return jsonOrThrow(
+    await fetch(url(`disposition-queue?workspaceId=${workspaceId}`), {
+      credentials: "include",
+    }),
+  );
+}
+
+export const dispositionCertificateUrl = (workspaceId: string, id: string) =>
+  url(`letters/${id}/disposition/certificate?workspaceId=${workspaceId}`);
 
 export const verifySignature = async (
   workspaceId: string,

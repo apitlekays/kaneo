@@ -1,5 +1,6 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
   ClipboardList,
   Download,
   FileText,
@@ -39,10 +40,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   attachmentDownloadUrl,
+  dispositionCertificateUrl,
   type LetterDetail,
   uploadLetterAttachment,
   verifySignature,
 } from "@/fetchers/correspondence/letters";
+import { getMyPageAccess } from "@/fetchers/workspace-access";
 import { useConfigList } from "@/hooks/queries/correspondence/use-config";
 import {
   useLetter,
@@ -142,6 +145,12 @@ function Body({
   const { data: session } = authClient.useSession();
   const currentUserId = session?.user?.id ?? "";
   const isOutgoing = letter.direction === "out";
+  const { data: access } = useQuery({
+    queryKey: ["page-access", "me", workspaceId],
+    queryFn: () => getMyPageAccess(workspaceId),
+    enabled: !!workspaceId,
+  });
+  const isAdmin = access?.isAdmin ?? false;
 
   return (
     <>
@@ -216,6 +225,7 @@ function Body({
             icon: Link2,
             badge: letter.links.length || "",
           },
+          { value: "retention", label: "Retention", icon: Archive },
         ]}
       >
         <DialogSidebarPanel value="overview">
@@ -272,6 +282,15 @@ function Body({
         </DialogSidebarPanel>
         <DialogSidebarPanel value="attachments">
           <AttachmentsSection workspaceId={workspaceId} letter={letter} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="retention">
+          <RetentionSection
+            workspaceId={workspaceId}
+            letter={letter}
+            m={m}
+            isAdmin={isAdmin}
+            userName={userName}
+          />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="linked">
           <div className="space-y-2">
@@ -1184,6 +1203,189 @@ function DispatchSection({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function RetentionSection({
+  workspaceId,
+  letter,
+  m,
+  isAdmin,
+  userName,
+}: {
+  workspaceId: string;
+  letter: LetterDetail;
+  m: Mutations;
+  isAdmin: boolean;
+  userName: (id: string | null) => string;
+}) {
+  const { data: classes = [] } = useConfigList(
+    "retention-classes",
+    workspaceId,
+  );
+  const [classId, setClassId] = useState(letter.retentionClassId ?? "");
+  const [holdReason, setHoldReason] = useState("");
+  const [dispAction, setDispAction] = useState<
+    "destroy" | "transfer" | "permanent" | "review"
+  >("review");
+  const [dispNote, setDispNote] = useState("");
+  const openHold = letter.holds.find((h) => !h.releasedAt);
+  const disposed = letter.dispositionStatus;
+
+  return (
+    <div className="space-y-4">
+      {/* Retention class */}
+      <div className="space-y-2 rounded-xl border border-border p-4">
+        <h4 className="font-medium text-sm">Retention</h4>
+        <div className="flex flex-wrap items-end gap-2">
+          <Select value={classId} onValueChange={setClassId}>
+            <SelectTrigger className="w-56">
+              <SelectValue>
+                {(classes.find((cl) => cl.id === classId)?.name as string) ??
+                  "Select class"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {classes.map((cl) => (
+                <SelectItem key={cl.id} value={cl.id}>
+                  {cl.name as string} ({cl.retentionMonths as number} mo)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!classId || m.setRetention.isPending}
+            onClick={() => m.setRetention.mutate(classId)}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+
+      {/* Legal hold */}
+      <div className="space-y-2 rounded-xl border border-border p-4">
+        <div className="flex items-center justify-between">
+          <h4 className="font-medium text-sm">Legal hold</h4>
+          {letter.legalHold && (
+            <Badge className="border text-xs text-rose-600">On hold</Badge>
+          )}
+        </div>
+        {letter.legalHold ? (
+          <>
+            {openHold && (
+              <p className="text-muted-foreground text-sm">
+                {openHold.reason} · by {userName(openHold.placedBy)}
+              </p>
+            )}
+            {isAdmin && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={m.releaseHold.isPending}
+                onClick={() => m.releaseHold.mutate()}
+              >
+                Release hold
+              </Button>
+            )}
+          </>
+        ) : isAdmin ? (
+          <div className="flex flex-wrap items-end gap-2">
+            <Input
+              className="w-64"
+              value={holdReason}
+              placeholder="Reason for hold"
+              onChange={(e) => setHoldReason(e.target.value)}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!holdReason.trim() || m.placeHold.isPending}
+              onClick={() =>
+                m.placeHold.mutate(holdReason.trim(), {
+                  onSuccess: () => setHoldReason(""),
+                })
+              }
+            >
+              Place hold
+            </Button>
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-sm">Not under hold.</p>
+        )}
+      </div>
+
+      {/* Disposition */}
+      <div className="space-y-2 rounded-xl border border-border p-4">
+        <h4 className="font-medium text-sm">Disposition</h4>
+        {disposed ? (
+          <div className="space-y-2 text-sm">
+            <div>
+              Dispositioned: <span className="font-medium">{disposed}</span>
+            </div>
+            {letter.dispositions[0]?.certificateObjectKey && (
+              <a
+                href={dispositionCertificateUrl(workspaceId, letter.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Button size="sm" variant="outline">
+                  <Download className="h-3.5 w-3.5" /> Certificate
+                </Button>
+              </a>
+            )}
+          </div>
+        ) : isAdmin ? (
+          <div className="space-y-2">
+            {letter.legalHold && (
+              <p className="text-muted-foreground text-xs">
+                Release the legal hold before disposing.
+              </p>
+            )}
+            <div className="flex flex-wrap items-end gap-2">
+              <Select
+                value={dispAction}
+                onValueChange={(v) => setDispAction(v as typeof dispAction)}
+              >
+                <SelectTrigger className="w-44">
+                  <SelectValue>{dispAction}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="review">Review</SelectItem>
+                  <SelectItem value="destroy">Destroy</SelectItem>
+                  <SelectItem value="transfer">Transfer to archive</SelectItem>
+                  <SelectItem value="permanent">Retain permanently</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                className="w-56"
+                value={dispNote}
+                placeholder="Note (optional)"
+                onChange={(e) => setDispNote(e.target.value)}
+              />
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={letter.legalHold || m.dispose.isPending}
+                onClick={() =>
+                  m.dispose.mutate({
+                    action: dispAction,
+                    note: dispNote.trim() || undefined,
+                  })
+                }
+              >
+                Authorize disposition
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            Only a records manager can authorize disposition.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

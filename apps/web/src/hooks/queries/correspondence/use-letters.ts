@@ -170,5 +170,42 @@ export function useLetterMutations(workspaceId: string, letterId?: string) {
       },
       onError,
     }),
+    setRetention: useMutation({
+      mutationFn: (retentionClassId: string) =>
+        api.setRetention(workspaceId, id, retentionClassId),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Retention set");
+      },
+      onError,
+    }),
+    placeHold: useMutation({
+      mutationFn: (reason: string) =>
+        api.placeLegalHold(workspaceId, id, reason),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Legal hold placed");
+      },
+      onError,
+    }),
+    releaseHold: useMutation({
+      mutationFn: () => api.releaseLegalHold(workspaceId, id),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Legal hold released");
+      },
+      onError,
+    }),
+    dispose: useMutation({
+      mutationFn: (body: {
+        action: "destroy" | "transfer" | "permanent" | "review";
+        note?: string;
+      }) => api.disposeLetter(workspaceId, id, body),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Disposition recorded");
+      },
+      onError,
+    }),
   };
 }

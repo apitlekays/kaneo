@@ -41,6 +41,8 @@ function Overview({
     { label: "Pending registration", value: summary?.pendingRegistration ?? 0 },
     { label: "Unassigned", value: summary?.unassigned ?? 0 },
     { label: "Overdue", value: summary?.overdue ?? 0 },
+    { label: "On hold", value: summary?.onHold ?? 0 },
+    { label: "Due for disposition", value: summary?.dueForDisposition ?? 0 },
   ];
 
   return (
@@ -52,7 +54,7 @@ function Overview({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {kpis.map((k) => (
           <div key={k.label} className="rounded-xl border border-border p-3">
             <div className="font-semibold text-2xl">{k.value}</div>
