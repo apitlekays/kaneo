@@ -9,6 +9,7 @@ import {
   gmCategoryTable,
   gmFilePlanNodeTable,
   gmNumberSchemeTable,
+  gmRetentionClassTable,
   gmSecurityLabelTable,
   letterAssignmentTable,
   letterAttachmentTable,
@@ -27,6 +28,7 @@ import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { recordAuditEvent } from "./audit";
 import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
+import { loadLifecycleDetail, retentionDueDate } from "./retention";
 
 type GmEnv = { Variables: { userId: string; workspaceId?: string } };
 type Row = Record<string, unknown>;
@@ -155,15 +157,27 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             direction: letterTable.direction,
             status: letterTable.status,
             currentAssigneeId: letterTable.currentAssigneeId,
+            legalHold: letterTable.legalHold,
+            closedAt: letterTable.closedAt,
+            retentionClassId: letterTable.retentionClassId,
+            dispositionStatus: letterTable.dispositionStatus,
           })
           .from(letterTable)
           .where(eq(letterTable.workspaceId, ws));
+        const classes = await db
+          .select()
+          .from(gmRetentionClassTable)
+          .where(eq(gmRetentionClassTable.workspaceId, ws));
+        const classMap = new Map(classes.map((r) => [r.id, r]));
 
         const byStatus: Record<string, number> = {};
+        const now = new Date();
         let incoming = 0;
         let outgoing = 0;
         let pendingRegistration = 0;
         let unassigned = 0;
+        let onHold = 0;
+        let dueForDisposition = 0;
         for (const r of rows) {
           byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
           if (r.direction === "in") incoming++;
@@ -174,6 +188,21 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             ["registered", "classified"].includes(r.status)
           )
             unassigned++;
+          if (r.legalHold) onHold++;
+          if (
+            !r.legalHold &&
+            !r.dispositionStatus &&
+            r.closedAt &&
+            r.retentionClassId
+          ) {
+            const cls = classMap.get(r.retentionClassId);
+            if (
+              cls &&
+              retentionDueDate(r.closedAt, cls.retentionMonths, cls.trigger) <=
+                now
+            )
+              dueForDisposition++;
+          }
         }
 
         const overdueRows = await db
@@ -198,6 +227,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           pendingRegistration,
           unassigned,
           overdue: overdueRows.length,
+          onHold,
+          dueForDisposition,
           byStatus,
         });
       },
@@ -236,6 +267,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             .where(eq(letterLinkTable.fromLetterId, id)),
         ]);
         const outgoing = await loadOutgoingDetail(id);
+        const lifecycle = await loadLifecycleDetail(id);
         return c.json({
           ...letter,
           attachments,
@@ -243,6 +275,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           assignments,
           links,
           ...outgoing,
+          ...lifecycle,
         });
       },
     )

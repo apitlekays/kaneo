@@ -25,6 +25,7 @@ import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { recordAuditEvent, verifyAuditChain } from "./audit";
 import { registerLetterRoutes } from "./letters";
 import { registerOutgoingRoutes } from "./outgoing";
+import { registerRetentionRoutes } from "./retention";
 import { assertGmAdmin } from "./roles";
 
 const PAGE_SLUG = "general-management";
@@ -1552,5 +1553,7 @@ app.get(
 registerLetterRoutes(app);
 // Block 3: outgoing pipeline — draft versions, review, configurable approval.
 registerOutgoingRoutes(app);
+// Block 4: records lifecycle — retention, legal hold, authorized disposition.
+registerRetentionRoutes(app);
 
 export default app;

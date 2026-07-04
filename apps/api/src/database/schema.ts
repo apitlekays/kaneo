@@ -2388,3 +2388,52 @@ export const letterDispatchTable = pgTable(
   },
   (table) => [index("letter_dispatch_letterId_idx").on(table.letterId)],
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Block 4: records lifecycle — legal holds + authorized disposition.
+// ─────────────────────────────────────────────────────────────────────────────
+export const letterLegalHoldTable = pgTable(
+  "letter_legal_hold",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    placedBy: text("placed_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    placedAt: timestamp("placed_at", { mode: "date" }).defaultNow().notNull(),
+    releasedBy: text("released_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    releasedAt: timestamp("released_at", { mode: "date" }),
+  },
+  (table) => [index("letter_legal_hold_letterId_idx").on(table.letterId)],
+);
+
+export const letterDispositionTable = pgTable(
+  "letter_disposition",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letterTable.id, { onDelete: "cascade" }),
+    // destroy | transfer | permanent | review
+    action: text("action").notNull(),
+    authorizedBy: text("authorized_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    certificateObjectKey: text("certificate_object_key"),
+    certificateHash: text("certificate_hash"),
+    note: text("note"),
+    executedAt: timestamp("executed_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("letter_disposition_letterId_idx").on(table.letterId)],
+);
