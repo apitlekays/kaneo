@@ -367,6 +367,18 @@ export async function getDispositionQueue(
 export const dispositionCertificateUrl = (workspaceId: string, id: string) =>
   url(`letters/${id}/disposition/certificate?workspaceId=${workspaceId}`);
 
+export const reportRegisterUrl = (
+  workspaceId: string,
+  direction?: "in" | "out",
+) =>
+  url(
+    `reports/register?workspaceId=${workspaceId}${direction ? `&direction=${direction}` : ""}`,
+  );
+export const reportDispositionUrl = (workspaceId: string) =>
+  url(`reports/disposition?workspaceId=${workspaceId}`);
+export const reportAuditUrl = (workspaceId: string) =>
+  url(`reports/audit?workspaceId=${workspaceId}`);
+
 export const verifySignature = async (
   workspaceId: string,
   id: string,

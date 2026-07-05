@@ -10,6 +10,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { verifyAuditChain } from "@/fetchers/correspondence";
+import {
+  reportAuditUrl,
+  reportDispositionUrl,
+  reportRegisterUrl,
+} from "@/fetchers/correspondence/letters";
 import { useCorrespondenceSummary } from "@/hooks/queries/correspondence/use-letters";
 import { cn } from "@/lib/cn";
 import { Correspondence } from "./correspondence";
@@ -91,6 +96,33 @@ function Overview({
         ) : (
           <p className="text-muted-foreground text-sm">Checking…</p>
         )}
+      </div>
+
+      <div className="space-y-2 rounded-xl border border-border p-5">
+        <h3 className="font-medium">Reports (CSV)</h3>
+        <div className="flex flex-wrap gap-2">
+          {[
+            {
+              label: "Register — In",
+              href: reportRegisterUrl(workspaceId, "in"),
+            },
+            {
+              label: "Register — Out",
+              href: reportRegisterUrl(workspaceId, "out"),
+            },
+            {
+              label: "Disposition log",
+              href: reportDispositionUrl(workspaceId),
+            },
+            { label: "Audit trail", href: reportAuditUrl(workspaceId) },
+          ].map((r) => (
+            <a key={r.label} href={r.href}>
+              <Button size="sm" variant="outline">
+                {r.label}
+              </Button>
+            </a>
+          ))}
+        </div>
       </div>
     </div>
   );

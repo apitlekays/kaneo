@@ -17,6 +17,7 @@ import {
   letterMinuteTable,
   letterTable,
 } from "../database/schema";
+import createNotification from "../notification/controllers/create-notification";
 import {
   createLetterFileUploadUrl,
   getObjectBytes,
@@ -638,6 +639,17 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           });
           return row as Row;
         });
+        // Notify the assignee (best-effort; never blocks the routing).
+        if (b.toUserId) {
+          await createNotification({
+            userId: b.toUserId,
+            type: "letter_assigned",
+            title: `Correspondence assigned — ${letter.refNo ?? letter.subject}`,
+            content: letter.subject,
+            resourceId: id,
+            resourceType: "letter",
+          }).catch(() => {});
+        }
         return c.json(result);
       },
     )

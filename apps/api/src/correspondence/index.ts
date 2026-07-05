@@ -25,6 +25,7 @@ import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { recordAuditEvent, verifyAuditChain } from "./audit";
 import { registerLetterRoutes } from "./letters";
 import { registerOutgoingRoutes } from "./outgoing";
+import { registerReportRoutes } from "./reports";
 import { registerRetentionRoutes } from "./retention";
 import { assertGmAdmin } from "./roles";
 
@@ -1555,5 +1556,7 @@ registerLetterRoutes(app);
 registerOutgoingRoutes(app);
 // Block 4: records lifecycle — retention, legal hold, authorized disposition.
 registerRetentionRoutes(app);
+// Block 4: reporting — register / disposition / audit CSV exports.
+registerReportRoutes(app);
 
 export default app;
