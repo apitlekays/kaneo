@@ -123,6 +123,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
               <TableHead>Date</TableHead>
               <TableHead>Subject</TableHead>
               <TableHead>{direction === "in" ? "From" : "To"}</TableHead>
+              <TableHead>Actions</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -146,6 +147,22 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
                   {(direction === "in"
                     ? (letter.senderName ?? letter.senderOrg)
                     : (letter.recipientName ?? letter.recipientOrg)) ?? "—"}
+                </TableCell>
+                <TableCell>
+                  {letter.actionsTotal ? (
+                    <Badge
+                      className={cn(
+                        "border text-xs",
+                        letter.actionsDone === letter.actionsTotal
+                          ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {letter.actionsDone}/{letter.actionsTotal} done
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">—</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge className="border text-xs">{letter.status}</Badge>

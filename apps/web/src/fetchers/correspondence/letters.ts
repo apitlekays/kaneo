@@ -42,6 +42,9 @@ export type Letter = {
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Present on the list endpoint: delegated-action progress.
+  actionsTotal?: number;
+  actionsDone?: number;
 };
 
 export type LetterAttachment = {

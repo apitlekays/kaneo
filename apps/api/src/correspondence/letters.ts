@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, lt, notInArray } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  isNotNull,
+  lt,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import type { Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono-openapi";
@@ -277,7 +286,34 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
                 r.senderOrg?.toLowerCase().includes(term),
             )
           : rows;
-        return c.json(filtered);
+        // Delegated-action progress per letter (minutes with an assignee).
+        const counts = await db
+          .select({
+            letterId: letterMinuteTable.letterId,
+            total: sql<number>`count(*)::int`,
+            done: sql<number>`count(*) filter (where ${letterMinuteTable.status} = 'done')::int`,
+          })
+          .from(letterMinuteTable)
+          .innerJoin(
+            letterTable,
+            eq(letterMinuteTable.letterId, letterTable.id),
+          )
+          .where(
+            and(
+              eq(letterTable.workspaceId, ws),
+              isNotNull(letterMinuteTable.assigneeId),
+            ),
+          )
+          .groupBy(letterMinuteTable.letterId);
+        const countMap = new Map(
+          counts.map((r) => [r.letterId, { total: r.total, done: r.done }]),
+        );
+        const withCounts = filtered.map((r) => ({
+          ...r,
+          actionsTotal: countMap.get(r.id)?.total ?? 0,
+          actionsDone: countMap.get(r.id)?.done ?? 0,
+        }));
+        return c.json(withCounts);
       },
     )
     // ── Dashboard summary ─────────────────────────────────────────────────────
