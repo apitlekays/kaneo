@@ -151,12 +151,12 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
                 <TableCell>
                   {letter.actionsTotal ? (
                     <Badge
-                      className={cn(
-                        "border text-xs",
+                      variant={
                         letter.actionsDone === letter.actionsTotal
-                          ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
-                          : "text-muted-foreground",
-                      )}
+                          ? "success"
+                          : "outline"
+                      }
+                      className="text-xs"
                     >
                       {letter.actionsDone}/{letter.actionsTotal} done
                     </Badge>

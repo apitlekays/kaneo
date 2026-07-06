@@ -521,12 +521,8 @@ function MinutesSection({
                     {userName(minute.assigneeId)}
                   </Badge>
                   <Badge
-                    className={cn(
-                      "border text-xs",
-                      done
-                        ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
-                        : "text-muted-foreground",
-                    )}
+                    variant={done ? "success" : "outline"}
+                    className="text-xs"
                   >
                     {done ? "Done" : "Open"}
                   </Badge>
