@@ -61,6 +61,11 @@ export type LetterMinute = {
   authorId: string | null;
   body: string;
   actionType: string | null;
+  assigneeId: string | null;
+  dueAt: string | null;
+  status: string;
+  completedAt: string | null;
+  completedBy: string | null;
   createdAt: string;
 };
 export type LetterAssignment = {
@@ -277,6 +282,41 @@ export const routeLetter = (workspaceId: string, id: string, body: object) =>
 
 export const addMinute = (workspaceId: string, id: string, body: object) =>
   post<LetterMinute>(`letters/${id}/minutes`, workspaceId, body);
+
+export const completeMinute = (workspaceId: string, id: string, mid: string) =>
+  post<LetterMinute>(`letters/${id}/minutes/${mid}/complete`, workspaceId, {});
+
+export type MyCorrespondence = {
+  letters: {
+    id: string;
+    refNo: string | null;
+    subject: string;
+    direction: "in" | "out";
+    status: string;
+    receivedAt: string | null;
+    createdAt: string;
+  }[];
+  actions: {
+    id: string;
+    letterId: string;
+    body: string;
+    actionType: string | null;
+    dueAt: string | null;
+    createdAt: string;
+    refNo: string | null;
+    subject: string;
+  }[];
+};
+
+export async function getMyCorrespondence(
+  workspaceId: string,
+): Promise<MyCorrespondence> {
+  return jsonOrThrow(
+    await fetch(url(`my-correspondence?workspaceId=${workspaceId}`), {
+      credentials: "include",
+    }),
+  );
+}
 
 export const setLetterStatus = (
   workspaceId: string,

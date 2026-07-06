@@ -26,11 +26,20 @@ export function useCorrespondenceSummary(workspaceId: string) {
   });
 }
 
+export function useMyCorrespondence(workspaceId: string) {
+  return useQuery({
+    queryKey: ["my-correspondence", workspaceId],
+    queryFn: () => api.getMyCorrespondence(workspaceId),
+    enabled: !!workspaceId,
+  });
+}
+
 export function useLetterMutations(workspaceId: string, letterId?: string) {
   const qc = useQueryClient();
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["letters", workspaceId] });
     qc.invalidateQueries({ queryKey: ["correspondence-summary", workspaceId] });
+    qc.invalidateQueries({ queryKey: ["my-correspondence", workspaceId] });
     if (letterId) {
       qc.invalidateQueries({ queryKey: ["letter", workspaceId, letterId] });
     }
@@ -84,10 +93,23 @@ export function useLetterMutations(workspaceId: string, letterId?: string) {
       onError,
     }),
     addMinute: useMutation({
-      mutationFn: (body: object) => api.addMinute(workspaceId, id, body),
+      mutationFn: (body: {
+        body: string;
+        assigneeId?: string;
+        dueAt?: string;
+        actionType?: string;
+      }) => api.addMinute(workspaceId, id, body),
+      onSuccess: (_data, vars) => {
+        invalidate();
+        toast.success(vars.assigneeId ? "Action assigned" : "Minute added");
+      },
+      onError,
+    }),
+    completeMinute: useMutation({
+      mutationFn: (mid: string) => api.completeMinute(workspaceId, id, mid),
       onSuccess: () => {
         invalidate();
-        toast.success("Minute added");
+        toast.success("Action completed");
       },
       onError,
     }),

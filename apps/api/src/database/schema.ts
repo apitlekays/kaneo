@@ -2211,9 +2211,24 @@ export const letterMinuteTable = pgTable(
     }),
     body: text("body").notNull(),
     actionType: text("action_type"),
+    // When set, this minute is a delegated action assigned to a user (one
+    // action per minute). Null → the minute is a plain note.
+    assigneeId: text("assignee_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    dueAt: timestamp("due_at", { mode: "date" }),
+    // open | done | cancelled — only meaningful when assigneeId is set.
+    status: text("status").notNull().default("open"),
+    completedAt: timestamp("completed_at", { mode: "date" }),
+    completedBy: text("completed_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
-  (table) => [index("letter_minute_letterId_idx").on(table.letterId)],
+  (table) => [
+    index("letter_minute_letterId_idx").on(table.letterId),
+    index("letter_minute_assigneeId_idx").on(table.assigneeId),
+  ],
 );
 
 export const letterAssignmentTable = pgTable(

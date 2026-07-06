@@ -21,6 +21,7 @@ import {
 import { uploadLetterAttachment } from "@/fetchers/correspondence/letters";
 import { useConfigList } from "@/hooks/queries/correspondence/use-config";
 import { useLetterMutations } from "@/hooks/queries/correspondence/use-letters";
+import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { toast } from "@/lib/toast";
 
 const TYPES = [
@@ -51,6 +52,8 @@ export function LetterCaptureDialog({
     "security-labels",
     workspaceId,
   );
+  const { data: usersData } = useGetActiveWorkspaceUsers(workspaceId);
+  const users = usersData?.members ?? [];
 
   const [direction, setDirection] = useState<"in" | "out">(defaultDirection);
   const [type, setType] = useState("external");
@@ -63,6 +66,7 @@ export function LetterCaptureDialog({
   const [receivedAt, setReceivedAt] = useState<Date | null>(new Date());
   const [categoryId, setCategoryId] = useState("");
   const [securityLabelId, setSecurityLabelId] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -78,6 +82,7 @@ export function LetterCaptureDialog({
     setReceivedAt(new Date());
     setCategoryId("");
     setSecurityLabelId("");
+    setAssigneeId("");
     setFile(null);
   };
 
@@ -96,6 +101,7 @@ export function LetterCaptureDialog({
         receivedAt: receivedAt?.toISOString(),
         categoryId: categoryId || undefined,
         securityLabelId: securityLabelId || undefined,
+        assigneeId: assigneeId || undefined,
       },
       {
         onSuccess: async (letter) => {
@@ -254,6 +260,28 @@ export function LetterCaptureDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Assign to (Main User)</Label>
+            <Select value={assigneeId} onValueChange={setAssigneeId}>
+              <SelectTrigger>
+                <SelectValue>
+                  {users.find((u) => u.userId === assigneeId)?.user?.name ??
+                    "Unassigned"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((u) => (
+                  <SelectItem key={u.userId} value={u.userId}>
+                    {u.user?.name ?? u.userId}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              The Main User is notified by email and in their Home →
+              Correspondence to inspect this letter.
+            </p>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Attachment (scan / email PDF)</Label>

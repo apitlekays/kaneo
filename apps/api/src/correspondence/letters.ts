@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, lt } from "drizzle-orm";
+import { and, asc, desc, eq, lt, notInArray } from "drizzle-orm";
 import type { Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono-openapi";
@@ -16,6 +16,7 @@ import {
   letterLinkTable,
   letterMinuteTable,
   letterTable,
+  workspaceUserTable,
 } from "../database/schema";
 import createNotification from "../notification/controllers/create-notification";
 import {
@@ -24,7 +25,10 @@ import {
   getPrivateObject,
   letterFileKeyOwnerSegment,
 } from "../storage/s3";
-import { requireWorkspacePageAccess } from "../utils/page-access";
+import {
+  hasWorkspacePageAccess,
+  requireWorkspacePageAccess,
+} from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { recordAuditEvent } from "./audit";
 import { allocateNumber } from "./numbering";
@@ -102,8 +106,140 @@ async function sha256OfObject(objectKey: string) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+async function isWorkspaceMember(userId: string, workspaceId: string) {
+  const [row] = await db
+    .select({ id: workspaceUserTable.id })
+    .from(workspaceUserTable)
+    .where(
+      and(
+        eq(workspaceUserTable.workspaceId, workspaceId),
+        eq(workspaceUserTable.userId, userId),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * Per-letter access. GM page-holders see and manage everything; a routed
+ * participant (Main User / route recipient / delegated action assignee) may
+ * view the letter and — if they are the current assignee — minute actions,
+ * even without general-management page access.
+ */
+async function resolveLetterAccess(
+  userId: string,
+  workspaceId: string,
+  letter: { id: string; currentAssigneeId: string | null },
+): Promise<{ hasPage: boolean; canView: boolean; canMinute: boolean }> {
+  if (await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG))
+    return { hasPage: true, canView: true, canMinute: true };
+  const isAssignee = letter.currentAssigneeId === userId;
+  let participant = isAssignee;
+  if (!participant) {
+    const [asn] = await db
+      .select({ id: letterAssignmentTable.id })
+      .from(letterAssignmentTable)
+      .where(
+        and(
+          eq(letterAssignmentTable.letterId, letter.id),
+          eq(letterAssignmentTable.toUserId, userId),
+        ),
+      )
+      .limit(1);
+    participant = Boolean(asn);
+  }
+  if (!participant) {
+    const [mn] = await db
+      .select({ id: letterMinuteTable.id })
+      .from(letterMinuteTable)
+      .where(
+        and(
+          eq(letterMinuteTable.letterId, letter.id),
+          eq(letterMinuteTable.assigneeId, userId),
+        ),
+      )
+      .limit(1);
+    participant = Boolean(mn);
+  }
+  return { hasPage: false, canView: participant, canMinute: isAssignee };
+}
+
+/** Notify a user that a letter is awaiting their inspection (Main User). */
+async function notifyAssigned(
+  toUserId: string,
+  letter: { id: string; refNo: string | null; subject: string },
+) {
+  await createNotification({
+    userId: toUserId,
+    type: "letter_assigned",
+    title: `Correspondence to inspect — ${letter.refNo ?? letter.subject}`,
+    content: letter.subject,
+    resourceId: letter.id,
+    resourceType: "letter",
+  }).catch(() => {});
+}
+
 export function registerLetterRoutes(app: Hono<GmEnv>) {
   app
+    // ── My correspondence (Home feed — any member, own items only) ────────────
+    .get(
+      "/my-correspondence",
+      validator("query", v.object({ workspaceId: v.string() })),
+      workspaceAccess.fromQuery("workspaceId"),
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
+        // Letters I lead (Main User) that are still active.
+        const letters = await db
+          .select({
+            id: letterTable.id,
+            refNo: letterTable.refNo,
+            subject: letterTable.subject,
+            direction: letterTable.direction,
+            status: letterTable.status,
+            receivedAt: letterTable.receivedAt,
+            createdAt: letterTable.createdAt,
+          })
+          .from(letterTable)
+          .where(
+            and(
+              eq(letterTable.workspaceId, ws),
+              eq(letterTable.currentAssigneeId, userId),
+              notInArray(letterTable.status, ["closed", "archived"]),
+            ),
+          )
+          .orderBy(desc(letterTable.createdAt));
+        // Open actions delegated to me via a minute.
+        const actions = await db
+          .select({
+            id: letterMinuteTable.id,
+            letterId: letterMinuteTable.letterId,
+            body: letterMinuteTable.body,
+            actionType: letterMinuteTable.actionType,
+            dueAt: letterMinuteTable.dueAt,
+            createdAt: letterMinuteTable.createdAt,
+            refNo: letterTable.refNo,
+            subject: letterTable.subject,
+          })
+          .from(letterMinuteTable)
+          .innerJoin(
+            letterTable,
+            eq(letterMinuteTable.letterId, letterTable.id),
+          )
+          .where(
+            and(
+              eq(letterTable.workspaceId, ws),
+              eq(letterMinuteTable.assigneeId, userId),
+              eq(letterMinuteTable.status, "open"),
+            ),
+          )
+          .orderBy(
+            asc(letterMinuteTable.dueAt),
+            desc(letterMinuteTable.createdAt),
+          );
+        return c.json({ letters, actions });
+      },
+    )
     // ── List (faceted) ──────────────────────────────────────────────────────
     .get(
       "/letters",
@@ -240,12 +376,17 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
       validator("param", v.object({ id: v.string() })),
       validator("query", v.object({ workspaceId: v.string() })),
       workspaceAccess.fromQuery("workspaceId"),
-      pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
         const { id } = c.req.valid("param");
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
+        const access = await resolveLetterAccess(userId, ws, letter);
+        if (!access.canView)
+          throw new HTTPException(403, {
+            message: "You don't have access to this correspondence",
+          });
         const [attachments, minutes, assignments, links] = await Promise.all([
           db
             .select()
@@ -303,6 +444,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           filePlanNodeId: optStr,
           securityLabelId: optStr,
           fileRef: optStr,
+          assigneeId: optStr,
         }),
       ),
       workspaceAccess.fromBody("workspaceId"),
@@ -322,6 +464,10 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           if (!(await inWorkspace(table, id, ws)))
             throw new HTTPException(400, { message: "Invalid reference" });
         }
+        // Optional Main User assigned at registration (must be a member).
+        const assigneeId = b.assigneeId?.trim() || null;
+        if (assigneeId && !(await isWorkspaceMember(assigneeId, ws)))
+          throw new HTTPException(400, { message: "Invalid assignee" });
         const created = await db.transaction(async (tx) => {
           const [row] = await tx
             .insert(letterTable)
@@ -344,13 +490,25 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               securityLabelId: b.securityLabelId ?? null,
               fileRef: b.fileRef ?? null,
               status: "captured",
+              currentAssigneeId: assigneeId,
               createdBy: userId,
             })
             .returning();
+          const letterId = (row as Row).id as string;
+          if (assigneeId) {
+            await tx.insert(letterAssignmentTable).values({
+              letterId,
+              fromUserId: userId,
+              toUserId: assigneeId,
+              action: "inspect",
+              note: "Assigned as Main User at registration",
+              status: "pending",
+            });
+          }
           await recordAuditEvent(tx, {
             workspaceId: ws,
             entityType: "letter",
-            entityId: (row as Row).id as string,
+            entityId: letterId,
             action: "capture",
             actorId: userId,
             after: row,
@@ -358,6 +516,13 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           });
           return row as Row;
         });
+        // Notify the Main User (best-effort; never blocks capture).
+        if (assigneeId)
+          await notifyAssigned(assigneeId, {
+            id: created.id as string,
+            refNo: (created.refNo as string | null) ?? null,
+            subject,
+          });
         return c.json(created, 201);
       },
     )
@@ -640,20 +805,16 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           return row as Row;
         });
         // Notify the assignee (best-effort; never blocks the routing).
-        if (b.toUserId) {
-          await createNotification({
-            userId: b.toUserId,
-            type: "letter_assigned",
-            title: `Correspondence assigned — ${letter.refNo ?? letter.subject}`,
-            content: letter.subject,
-            resourceId: id,
-            resourceType: "letter",
-          }).catch(() => {});
-        }
+        if (b.toUserId)
+          await notifyAssigned(b.toUserId, {
+            id,
+            refNo: letter.refNo,
+            subject: letter.subject,
+          });
         return c.json(result);
       },
     )
-    // ── Minute ──────────────────────────────────────────────────────────────
+    // ── Minute (optionally a delegated action to one user) ────────────────────
     .post(
       "/letters/:id/minutes",
       validator("param", v.object({ id: v.string() })),
@@ -663,10 +824,11 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           workspaceId: v.string(),
           body: v.string(),
           actionType: optStr,
+          assigneeId: optStr,
+          dueAt: optDate,
         }),
       ),
       workspaceAccess.fromBody("workspaceId"),
-      pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
         const userId = c.get("userId") as string;
@@ -674,8 +836,16 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const b = c.req.valid("json");
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
+        const access = await resolveLetterAccess(userId, ws, letter);
+        if (!access.canMinute)
+          throw new HTTPException(403, {
+            message: "Only the current assignee or a GM officer can minute",
+          });
         if (!b.body.trim())
           throw new HTTPException(400, { message: "Minute body required" });
+        const assigneeId = b.assigneeId?.trim() || null;
+        if (assigneeId && !(await isWorkspaceMember(assigneeId, ws)))
+          throw new HTTPException(400, { message: "Invalid assignee" });
         const minute = await db.transaction(async (tx) => {
           const [row] = await tx
             .insert(letterMinuteTable)
@@ -684,20 +854,96 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               authorId: userId,
               body: b.body.trim(),
               actionType: b.actionType ?? null,
+              assigneeId,
+              dueAt: assigneeId ? toDate(b.dueAt) : null,
+              status: "open",
             })
             .returning();
           await recordAuditEvent(tx, {
             workspaceId: ws,
             entityType: "letter",
             entityId: id,
-            action: "minute",
+            action: assigneeId ? "minute-action" : "minute",
             actorId: userId,
             after: row,
             ip: getIp(c),
           });
           return row as Row;
         });
+        // Delegate an action → notify the assignee (best-effort).
+        if (assigneeId)
+          await createNotification({
+            userId: assigneeId,
+            type: "letter_action_assigned",
+            title: `Action required — ${letter.refNo ?? letter.subject}`,
+            content: b.body.trim(),
+            resourceId: id,
+            resourceType: "letter",
+          }).catch(() => {});
         return c.json(minute, 201);
+      },
+    )
+    // ── Complete a delegated action (its assignee, or a GM officer) ───────────
+    .post(
+      "/letters/:id/minutes/:mid/complete",
+      validator("param", v.object({ id: v.string(), mid: v.string() })),
+      validator("json", v.object({ workspaceId: v.string() })),
+      workspaceAccess.fromBody("workspaceId"),
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
+        const { id, mid } = c.req.valid("param");
+        const letter = await loadLetter(ws, id);
+        if (!letter) throw new HTTPException(404, { message: "Not found" });
+        const [minute] = await db
+          .select()
+          .from(letterMinuteTable)
+          .where(
+            and(
+              eq(letterMinuteTable.id, mid),
+              eq(letterMinuteTable.letterId, id),
+            ),
+          )
+          .limit(1);
+        if (!minute || !minute.assigneeId)
+          throw new HTTPException(404, { message: "Action not found" });
+        const hasPage = await hasWorkspacePageAccess(userId, ws, PAGE_SLUG);
+        if (minute.assigneeId !== userId && !hasPage)
+          throw new HTTPException(403, {
+            message: "Only the action's assignee can complete it",
+          });
+        if (minute.status === "done")
+          throw new HTTPException(409, { message: "Action already completed" });
+        const now = new Date();
+        const updated = await db.transaction(async (tx) => {
+          const [row] = await tx
+            .update(letterMinuteTable)
+            .set({ status: "done", completedAt: now, completedBy: userId })
+            .where(eq(letterMinuteTable.id, mid))
+            .returning();
+          await recordAuditEvent(tx, {
+            workspaceId: ws,
+            entityType: "letter",
+            entityId: id,
+            action: "action-complete",
+            actorId: userId,
+            before: minute,
+            after: row,
+            ip: getIp(c),
+          });
+          return row as Row;
+        });
+        // Notify the Main User that the delegated action was completed.
+        if (letter.currentAssigneeId && letter.currentAssigneeId !== userId)
+          await createNotification({
+            userId: letter.currentAssigneeId,
+            type: "letter_action_completed",
+            title: `Action completed — ${letter.refNo ?? letter.subject}`,
+            content: minute.body,
+            resourceId: id,
+            resourceType: "letter",
+          }).catch(() => {});
+        return c.json(updated);
       },
     )
     // ── Status transition ─────────────────────────────────────────────────────

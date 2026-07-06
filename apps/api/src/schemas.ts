@@ -97,13 +97,17 @@ export const notificationSchema = v.object({
     "asset_maintenance_due",
     "work_order_assigned",
     "letter_assigned",
+    "letter_action_assigned",
+    "letter_action_completed",
     "letter_action_due",
     "letter_disposition_due",
   ] as const),
   eventData: v.nullable(v.record(v.string(), v.unknown())),
   isRead: v.optional(v.boolean()),
   resourceId: v.optional(v.string()),
-  resourceType: v.optional(v.picklist(["task", "workspace"] as const)),
+  resourceType: v.optional(
+    v.picklist(["task", "workspace", "letter"] as const),
+  ),
   createdAt: v.date(),
   updatedAt: v.date(),
 });

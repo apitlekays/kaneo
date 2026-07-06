@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
+  CheckCircle2,
   ClipboardList,
   Download,
   FileText,
@@ -14,6 +15,7 @@ import {
   Signature as SignatureIcon,
   Stamp,
   Upload,
+  UserCheck,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
@@ -270,7 +272,14 @@ function Body({
           </DialogSidebarPanel>
         )}
         <DialogSidebarPanel value="minutes">
-          <MinutesSection letter={letter} m={m} userName={userName} />
+          <MinutesSection
+            letter={letter}
+            m={m}
+            users={users}
+            userName={userName}
+            currentUserId={currentUserId}
+            isAdmin={isAdmin}
+          />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="routing">
           <RoutingSection
@@ -464,51 +473,157 @@ function OverviewSection({
 function MinutesSection({
   letter,
   m,
+  users,
   userName,
+  currentUserId,
+  isAdmin,
 }: {
   letter: LetterDetail;
   m: Mutations;
+  users: { userId: string; user?: { name?: string } }[];
   userName: (id: string | null) => string;
+  currentUserId: string;
+  isAdmin: boolean;
 }) {
   const [body, setBody] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [dueAt, setDueAt] = useState<Date | null>(null);
+  // The Main User (current assignee) may delegate; GM officers always may.
+  const canDelegate = isAdmin || letter.currentAssigneeId === currentUserId;
+
   return (
     <div className="space-y-4">
       <div className="space-y-2">
         {letter.minutes.length === 0 && (
           <p className="text-muted-foreground text-sm">No minutes yet.</p>
         )}
-        {letter.minutes.map((minute) => (
-          <div
-            key={minute.id}
-            className="rounded-md border border-border px-3 py-2"
-          >
-            <div className="mb-1 flex items-center justify-between text-muted-foreground text-xs">
-              <span>{userName(minute.authorId)}</span>
-              <span>{formatDateMedium(minute.createdAt)}</span>
+        {letter.minutes.map((minute) => {
+          const isAction = Boolean(minute.assigneeId);
+          const done = minute.status === "done";
+          const canComplete =
+            isAction &&
+            !done &&
+            (isAdmin || minute.assigneeId === currentUserId);
+          return (
+            <div
+              key={minute.id}
+              className="rounded-md border border-border px-3 py-2"
+            >
+              <div className="mb-1 flex items-center justify-between text-muted-foreground text-xs">
+                <span>{userName(minute.authorId)}</span>
+                <span>{formatDateMedium(minute.createdAt)}</span>
+              </div>
+              <p className="whitespace-pre-wrap text-sm">{minute.body}</p>
+              {isAction && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge className="flex items-center gap-1 border text-xs">
+                    <UserCheck className="h-3 w-3" />
+                    {userName(minute.assigneeId)}
+                  </Badge>
+                  <Badge
+                    className={cn(
+                      "border text-xs",
+                      done
+                        ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {done ? "Done" : "Open"}
+                  </Badge>
+                  {minute.dueAt && !done && (
+                    <span className="text-muted-foreground text-xs">
+                      Due {formatDateMedium(minute.dueAt)}
+                    </span>
+                  )}
+                  {done && minute.completedAt && (
+                    <span className="text-muted-foreground text-xs">
+                      Completed {formatDateMedium(minute.completedAt)}
+                    </span>
+                  )}
+                  {canComplete && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="ml-auto h-7"
+                      disabled={m.completeMinute.isPending}
+                      onClick={() => m.completeMinute.mutate(minute.id)}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Mark done
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
-            <p className="whitespace-pre-wrap text-sm">{minute.body}</p>
+          );
+        })}
+      </div>
+      {canDelegate ? (
+        <div className="space-y-3 rounded-xl border border-border p-4">
+          <h4 className="font-medium text-sm">Minute / delegate an action</h4>
+          <Textarea
+            value={body}
+            placeholder="Instruction or note…"
+            onChange={(e) => setBody(e.target.value)}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select value={assigneeId} onValueChange={setAssigneeId}>
+              <SelectTrigger>
+                <SelectValue>
+                  {assigneeId
+                    ? (users.find((u) => u.userId === assigneeId)?.user?.name ??
+                      assigneeId)
+                    : "No assignee (note only)"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((u) => (
+                  <SelectItem key={u.userId} value={u.userId}>
+                    {u.user?.name ?? u.userId}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <DateField
+              value={dueAt}
+              onChange={setDueAt}
+              placeholder="Action due date"
+            />
           </div>
-        ))}
-      </div>
-      <div className="space-y-2">
-        <Textarea
-          value={body}
-          placeholder="Add a minute / instruction…"
-          onChange={(e) => setBody(e.target.value)}
-        />
-        <Button
-          size="sm"
-          disabled={!body.trim() || m.addMinute.isPending}
-          onClick={() =>
-            m.addMinute.mutate(
-              { body: body.trim() },
-              { onSuccess: () => setBody("") },
-            )
-          }
-        >
-          Add minute
-        </Button>
-      </div>
+          {assigneeId && (
+            <p className="text-muted-foreground text-xs">
+              This becomes an action for {userName(assigneeId)}, who is notified
+              by email and in their Home → Correspondence.
+            </p>
+          )}
+          <Button
+            size="sm"
+            disabled={!body.trim() || m.addMinute.isPending}
+            onClick={() =>
+              m.addMinute.mutate(
+                {
+                  body: body.trim(),
+                  assigneeId: assigneeId || undefined,
+                  dueAt: assigneeId ? dueAt?.toISOString() : undefined,
+                },
+                {
+                  onSuccess: () => {
+                    setBody("");
+                    setAssigneeId("");
+                    setDueAt(null);
+                  },
+                },
+              )
+            }
+          >
+            {assigneeId ? "Assign action" : "Add minute"}
+          </Button>
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-sm">
+          Only the Main User or a GM officer can minute actions on this letter.
+        </p>
+      )}
     </div>
   );
 }

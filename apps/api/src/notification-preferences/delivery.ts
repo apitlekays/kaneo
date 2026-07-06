@@ -3,6 +3,7 @@ import { sendNotificationEmail } from "@kaneo/email";
 import { and, eq } from "drizzle-orm";
 import db from "../database";
 import {
+  letterTable,
   notificationTable,
   projectTable,
   taskTable,
@@ -49,6 +50,11 @@ type DeliveryContent = {
 function buildTaskUrl(workspaceId: string, projectId: string, taskId: string) {
   const clientUrl = process.env.KANEO_CLIENT_URL || "http://localhost:5173";
   return `${clientUrl}/dashboard/workspace/${workspaceId}/project/${projectId}/task/${taskId}`;
+}
+
+function buildLetterUrl(letterId: string) {
+  const clientUrl = process.env.KANEO_CLIENT_URL || "http://localhost:5173";
+  return `${clientUrl}/dashboard/correspondence/${letterId}`;
 }
 
 function getStringValue(
@@ -195,6 +201,36 @@ async function resolveNotificationContext(notification: {
       taskId: task.taskId,
       taskTitle: task.taskTitle,
       taskUrl: buildTaskUrl(task.workspaceId, task.projectId, task.taskId),
+    };
+  }
+
+  if (notification.resourceType === "letter") {
+    const [letter] = await db
+      .select({
+        letterId: letterTable.id,
+        subject: letterTable.subject,
+        workspaceId: workspaceTable.id,
+        workspaceName: workspaceTable.name,
+      })
+      .from(letterTable)
+      .innerJoin(workspaceTable, eq(letterTable.workspaceId, workspaceTable.id))
+      .where(eq(letterTable.id, notification.resourceId))
+      .limit(1);
+
+    if (!letter) {
+      return null;
+    }
+
+    // Reuse the generic action-URL slot (taskUrl) so the existing email/ntfy/
+    // gotify/webhook delivery paths surface an "Open" link to the letter.
+    return {
+      workspaceId: letter.workspaceId,
+      workspaceName: letter.workspaceName,
+      projectId: null,
+      projectName: null,
+      taskId: null,
+      taskTitle: letter.subject,
+      taskUrl: buildLetterUrl(letter.letterId),
     };
   }
 

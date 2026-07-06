@@ -4,6 +4,7 @@ import { Calendar, CalendarClock, CalendarX, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Layout from "@/components/common/layout";
 import HomeActivityFeed from "@/components/home/activity-feed";
+import MyCorrespondence from "@/components/home/my-correspondence";
 import MyWorkOrders from "@/components/home/my-work-orders";
 import PageTitle from "@/components/page-title";
 import { Separator } from "@/components/ui/separator";
@@ -147,6 +148,7 @@ function HomePage() {
               )}
             </div>
             <aside className="lg:col-span-1">
+              <MyCorrespondence />
               <MyWorkOrders />
               <HomeActivityFeed />
             </aside>
