@@ -21,6 +21,7 @@ import { useRef, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   Dialog,
   DialogContent,
@@ -238,6 +239,8 @@ function Body({
             securityLabels={securityLabels}
             categoryLabel={labelOf(categories, letter.categoryId)}
             securityLabel={labelOf(securityLabels, letter.securityLabelId)}
+            currentUserId={currentUserId}
+            isAdmin={isAdmin}
           />
         </DialogSidebarPanel>
         {isOutgoing && (
@@ -326,6 +329,9 @@ function Body({
 
 type Mutations = ReturnType<typeof useLetterMutations>;
 
+// Handling statuses the Main User may set; registry statuses stay GM-only.
+const ASSIGNEE_STATUS_OPTIONS = ["in-action", "awaiting-response"];
+
 function OverviewSection({
   letter,
   m,
@@ -333,6 +339,8 @@ function OverviewSection({
   securityLabels,
   categoryLabel,
   securityLabel,
+  currentUserId,
+  isAdmin,
 }: {
   letter: LetterDetail;
   m: Mutations;
@@ -340,16 +348,48 @@ function OverviewSection({
   securityLabels: { id: string; label?: unknown }[];
   categoryLabel: string;
   securityLabel: string;
+  currentUserId: string;
+  isAdmin: boolean;
 }) {
+  const confirm = useConfirm();
   const [categoryId, setCategoryId] = useState(letter.categoryId ?? "");
   const [securityLabelId, setSecurityLabelId] = useState(
     letter.securityLabelId ?? "",
   );
 
+  const isMainUser = letter.currentAssigneeId === currentUserId;
+  const canSetStatus = isAdmin || isMainUser;
+  // Non-close transitions available in the dropdown (closing goes via the
+  // guarded Close button). GM officers get the full lifecycle minus "closed".
+  const statusOptions: string[] = isAdmin
+    ? STATUSES.filter((s) => s !== "closed")
+    : ASSIGNEE_STATUS_OPTIONS;
+
+  const actionMinutes = letter.minutes.filter((mn) => mn.assigneeId);
+  const totalActions = actionMinutes.length;
+  const openActions = actionMinutes.filter(
+    (mn) => mn.status !== "done" && mn.status !== "cancelled",
+  ).length;
+  const doneActions = totalActions - openActions;
+  const isClosed = letter.status === "closed" || letter.status === "archived";
+
+  const closeCorrespondence = async () => {
+    if (
+      await confirm({
+        title: "Close correspondence?",
+        description:
+          "This marks the matter concluded and stamps the closed date, which starts the retention clock. You can reopen it later if needed.",
+        confirmText: "Close",
+        destructive: false,
+      })
+    )
+      m.setStatus.mutate("closed");
+  };
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap gap-2">
-        {!letter.declaredAt && (
+      <div className="flex flex-wrap items-center gap-2">
+        {isAdmin && !letter.declaredAt && (
           <Button
             size="sm"
             disabled={m.register.isPending}
@@ -361,22 +401,74 @@ function OverviewSection({
             Register &amp; assign ref no
           </Button>
         )}
-        <Select
-          value={letter.status}
-          onValueChange={(v) => m.setStatus.mutate(v)}
-        >
-          <SelectTrigger className="w-48">
-            <SelectValue>{letter.status}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {canSetStatus && !isClosed && (
+          <Select
+            value={
+              statusOptions.includes(letter.status) ? letter.status : undefined
+            }
+            onValueChange={(v) => m.setStatus.mutate(v)}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder={`Status: ${letter.status}`}>
+                {letter.status}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {statusOptions.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {canSetStatus &&
+          (isClosed ? (
+            isAdmin && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={m.setStatus.isPending}
+                onClick={() => m.setStatus.mutate("in-action")}
+              >
+                Reopen
+              </Button>
+            )
+          ) : (
+            <Button
+              size="sm"
+              disabled={m.setStatus.isPending || openActions > 0}
+              onClick={closeCorrespondence}
+              title={
+                openActions > 0
+                  ? `${openActions} action(s) still open`
+                  : undefined
+              }
+            >
+              Close correspondence
+            </Button>
+          ))}
       </div>
+
+      {totalActions > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+          <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          <span>
+            Actions: <span className="font-medium">{doneActions}</span>/
+            {totalActions} done
+          </span>
+          {openActions > 0 && !isClosed && (
+            <span className="text-muted-foreground text-xs">
+              — close is available once all actions are done
+            </span>
+          )}
+          {openActions === 0 && !isClosed && (
+            <Badge variant="success" className="ml-auto text-xs">
+              Ready to close
+            </Badge>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Reference no." value={letter.refNo} />
@@ -418,54 +510,56 @@ function OverviewSection({
         />
       </div>
 
-      <div className="space-y-2 rounded-xl border border-border p-4">
-        <h4 className="font-medium text-sm">Classification</h4>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Select value={categoryId} onValueChange={setCategoryId}>
-            <SelectTrigger>
-              <SelectValue>
-                {(categories.find((c) => c.id === categoryId)
-                  ?.label as string) ?? "Category"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {categories.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.label as string}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={securityLabelId} onValueChange={setSecurityLabelId}>
-            <SelectTrigger>
-              <SelectValue>
-                {(securityLabels.find((s) => s.id === securityLabelId)
-                  ?.label as string) ?? "Security"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {securityLabels.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.label as string}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {isAdmin && (
+        <div className="space-y-2 rounded-xl border border-border p-4">
+          <h4 className="font-medium text-sm">Classification</h4>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select value={categoryId} onValueChange={setCategoryId}>
+              <SelectTrigger>
+                <SelectValue>
+                  {(categories.find((c) => c.id === categoryId)
+                    ?.label as string) ?? "Category"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.label as string}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={securityLabelId} onValueChange={setSecurityLabelId}>
+              <SelectTrigger>
+                <SelectValue>
+                  {(securityLabels.find((s) => s.id === securityLabelId)
+                    ?.label as string) ?? "Security"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {securityLabels.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.label as string}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={m.classify.isPending}
+            onClick={() =>
+              m.classify.mutate({
+                categoryId: categoryId || undefined,
+                securityLabelId: securityLabelId || undefined,
+              })
+            }
+          >
+            Save classification
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={m.classify.isPending}
-          onClick={() =>
-            m.classify.mutate({
-              categoryId: categoryId || undefined,
-              securityLabelId: securityLabelId || undefined,
-            })
-          }
-        >
-          Save classification
-        </Button>
-      </div>
+      )}
     </div>
   );
 }

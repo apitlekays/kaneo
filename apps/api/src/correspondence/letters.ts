@@ -63,6 +63,9 @@ const STATUSES = [
   "closed",
   "archived",
 ] as const;
+// Handling statuses the current assignee (Main User) may set themselves.
+const ASSIGNEE_STATUSES = ["in-action", "awaiting-response", "closed"] as const;
+type AssigneeStatus = (typeof ASSIGNEE_STATUSES)[number];
 
 const optStr = v.optional(v.string());
 const optDate = v.optional(v.string());
@@ -969,16 +972,33 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           });
           return row as Row;
         });
-        // Notify the Main User that the delegated action was completed.
-        if (letter.currentAssigneeId && letter.currentAssigneeId !== userId)
+        // Notify the Main User — and, if this was the last open action, nudge
+        // that the correspondence is ready to close.
+        if (letter.currentAssigneeId && letter.currentAssigneeId !== userId) {
+          const [openRow] = await db
+            .select({ n: sql<number>`count(*)::int` })
+            .from(letterMinuteTable)
+            .where(
+              and(
+                eq(letterMinuteTable.letterId, id),
+                isNotNull(letterMinuteTable.assigneeId),
+                notInArray(letterMinuteTable.status, ["done", "cancelled"]),
+              ),
+            );
+          const allDone = (openRow?.n ?? 0) === 0;
           await createNotification({
             userId: letter.currentAssigneeId,
             type: "letter_action_completed",
-            title: `Action completed — ${letter.refNo ?? letter.subject}`,
-            content: minute.body,
+            title: allDone
+              ? `All actions complete — ready to close — ${letter.refNo ?? letter.subject}`
+              : `Action completed — ${letter.refNo ?? letter.subject}`,
+            content: allDone
+              ? "All delegated actions are complete. You can now close this correspondence."
+              : minute.body,
             resourceId: id,
             resourceType: "letter",
           }).catch(() => {});
+        }
         return c.json(updated);
       },
     )
@@ -991,7 +1011,6 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         v.object({ workspaceId: v.string(), status: v.picklist(STATUSES) }),
       ),
       workspaceAccess.fromBody("workspaceId"),
-      pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
         const userId = c.get("userId") as string;
@@ -999,12 +1018,52 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const { status } = c.req.valid("json");
         const before = await loadLetter(ws, id);
         if (!before) throw new HTTPException(404, { message: "Not found" });
+        // Authority: GM officers may set any status; the current assignee (Main
+        // User) may only set handling statuses on their own letter. Registry
+        // ops (register/classify/archive) stay with records custodians.
+        const hasPage = await hasWorkspacePageAccess(userId, ws, PAGE_SLUG);
+        if (!hasPage) {
+          if (before.currentAssigneeId !== userId)
+            throw new HTTPException(403, {
+              message:
+                "Only a GM officer or the letter's Main User can change its status",
+            });
+          if (!ASSIGNEE_STATUSES.includes(status as AssigneeStatus))
+            throw new HTTPException(403, {
+              message:
+                "The Main User may only set in-action, awaiting-response or closed",
+            });
+        }
+        // Records integrity: a letter cannot be closed while delegated actions
+        // remain open.
+        if (status === "closed") {
+          const [openRow] = await db
+            .select({ n: sql<number>`count(*)::int` })
+            .from(letterMinuteTable)
+            .where(
+              and(
+                eq(letterMinuteTable.letterId, id),
+                isNotNull(letterMinuteTable.assigneeId),
+                notInArray(letterMinuteTable.status, ["done", "cancelled"]),
+              ),
+            );
+          if ((openRow?.n ?? 0) > 0)
+            throw new HTTPException(409, {
+              message: `Cannot close: ${openRow?.n} delegated action(s) still open`,
+            });
+        }
         const after = await db.transaction(async (tx) => {
           const [row] = await tx
             .update(letterTable)
             .set({
               status,
-              closedAt: status === "closed" ? new Date() : before.closedAt,
+              // Stamp on close; clear on reopen away from closed.
+              closedAt:
+                status === "closed"
+                  ? (before.closedAt ?? new Date())
+                  : before.status === "closed"
+                    ? null
+                    : before.closedAt,
               updatedAt: new Date(),
             })
             .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
