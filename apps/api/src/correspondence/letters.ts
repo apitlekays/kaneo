@@ -43,6 +43,11 @@ import { recordAuditEvent } from "./audit";
 import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
 import { loadLifecycleDetail, retentionDueDate } from "./retention";
+import {
+  assertNoOpenActions,
+  assertStatusChangeAllowed,
+  resolveClosedAt,
+} from "./status-rules";
 
 type GmEnv = { Variables: { userId: string; workspaceId?: string } };
 type Row = Record<string, unknown>;
@@ -63,9 +68,6 @@ const STATUSES = [
   "closed",
   "archived",
 ] as const;
-// Handling statuses the current assignee (Main User) may set themselves.
-const ASSIGNEE_STATUSES = ["in-action", "awaiting-response", "closed"] as const;
-type AssigneeStatus = (typeof ASSIGNEE_STATUSES)[number];
 
 const optStr = v.optional(v.string());
 const optDate = v.optional(v.string());
@@ -1018,24 +1020,11 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const { status } = c.req.valid("json");
         const before = await loadLetter(ws, id);
         if (!before) throw new HTTPException(404, { message: "Not found" });
-        // Authority: GM officers may set any status; the current assignee (Main
-        // User) may only set handling statuses on their own letter. Registry
-        // ops (register/classify/archive) stay with records custodians.
-        const hasPage = await hasWorkspacePageAccess(userId, ws, PAGE_SLUG);
-        if (!hasPage) {
-          if (before.currentAssigneeId !== userId)
-            throw new HTTPException(403, {
-              message:
-                "Only a GM officer or the letter's Main User can change its status",
-            });
-          if (!ASSIGNEE_STATUSES.includes(status as AssigneeStatus))
-            throw new HTTPException(403, {
-              message:
-                "The Main User may only set in-action, awaiting-response or closed",
-            });
-        }
-        // Records integrity: a letter cannot be closed while delegated actions
-        // remain open.
+        assertStatusChangeAllowed({
+          status,
+          hasPageAccess: await hasWorkspacePageAccess(userId, ws, PAGE_SLUG),
+          isCurrentAssignee: before.currentAssigneeId === userId,
+        });
         if (status === "closed") {
           const [openRow] = await db
             .select({ n: sql<number>`count(*)::int` })
@@ -1047,23 +1036,19 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
                 notInArray(letterMinuteTable.status, ["done", "cancelled"]),
               ),
             );
-          if ((openRow?.n ?? 0) > 0)
-            throw new HTTPException(409, {
-              message: `Cannot close: ${openRow?.n} delegated action(s) still open`,
-            });
+          assertNoOpenActions(openRow?.n ?? 0);
         }
         const after = await db.transaction(async (tx) => {
           const [row] = await tx
             .update(letterTable)
             .set({
               status,
-              // Stamp on close; clear on reopen away from closed.
-              closedAt:
-                status === "closed"
-                  ? (before.closedAt ?? new Date())
-                  : before.status === "closed"
-                    ? null
-                    : before.closedAt,
+              closedAt: resolveClosedAt({
+                status,
+                previousStatus: before.status,
+                previousClosedAt: before.closedAt,
+                now: new Date(),
+              }),
               updatedAt: new Date(),
             })
             .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
