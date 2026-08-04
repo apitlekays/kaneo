@@ -5,6 +5,7 @@ import {
   builtInRoles,
   DEFAULT_ROLE_NAMES,
   defaultRolePayloads,
+  globalAdmin,
   member,
   owner,
   statement,
@@ -59,9 +60,13 @@ describe("built-in role privileges", () => {
     expect(member.statements.task).toContain("create");
     expect(member.statements.task).toContain("update");
     expect(member.statements.task).not.toContain("delete");
-    expect(member.statements.project).toContain("create");
-    expect(member.statements.project).not.toContain("delete");
     expect(member.statements.workspace).toEqual(["read"]);
+  });
+
+  it("member cannot create projects — that is reserved for global-admin/owner", () => {
+    expect(member.statements.project).toEqual(["read"]);
+    expect(globalAdmin.statements.project).toContain("create");
+    expect(owner.statements.project).toContain("create");
   });
 
   it("admin can delete tasks and manage workspace settings but cannot delete the workspace", () => {
@@ -71,6 +76,19 @@ describe("built-in role privileges", () => {
     expect(admin.statements.project).toContain("share");
     expect(admin.statements.workspace).toContain("manage_settings");
     expect(admin.statements.workspace).not.toContain("delete");
+  });
+
+  // `global-admin` is what workspace `admin` members were migrated to (0037).
+  // It must retain the legacy admin capabilities, or that migration silently
+  // demoted every existing admin.
+  it("global-admin matches the legacy admin capabilities", () => {
+    expect(globalAdmin.statements.project).toEqual(admin.statements.project);
+    expect(globalAdmin.statements.task).toEqual(admin.statements.task);
+    expect(globalAdmin.statements.label).toEqual(admin.statements.label);
+    expect(globalAdmin.statements.workspace).toEqual(
+      admin.statements.workspace,
+    );
+    expect(globalAdmin.statements.workspace).not.toContain("delete");
   });
 
   it("owner has every Kaneo resource action including workspace:delete", () => {
@@ -85,9 +103,10 @@ describe("built-in role privileges", () => {
     );
   });
 
-  it("groups all four roles under builtInRoles by name", () => {
+  it("groups every built-in role under builtInRoles by name", () => {
     expect(Object.keys(builtInRoles).sort()).toEqual([
       "admin",
+      "global-admin",
       "member",
       "owner",
       "viewer",
@@ -95,16 +114,23 @@ describe("built-in role privileges", () => {
     expect(builtInRoles.viewer).toBe(viewer);
     expect(builtInRoles.member).toBe(member);
     expect(builtInRoles.admin).toBe(admin);
+    expect(builtInRoles["global-admin"]).toBe(globalAdmin);
     expect(builtInRoles.owner).toBe(owner);
   });
 });
 
 describe("default-role seed payloads", () => {
   it("names the seedable defaults but excludes owner (kept as static role)", () => {
-    expect(DEFAULT_ROLE_NAMES).toEqual(["viewer", "member", "admin"]);
+    expect(DEFAULT_ROLE_NAMES).toEqual([
+      "viewer",
+      "member",
+      "admin",
+      "global-admin",
+    ]);
     expect(DEFAULT_ROLE_NAMES).not.toContain("owner");
     expect(Object.keys(defaultRolePayloads).sort()).toEqual([
       "admin",
+      "global-admin",
       "member",
       "viewer",
     ]);
