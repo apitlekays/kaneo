@@ -341,7 +341,7 @@ describe("API integration: bilateral handover", () => {
     expect(body.pendingAssignments[0].subject).toBe("Ujian serah tugas");
   });
 
-  it("lists pending assignments workspace-wide for the GM watchlist", async () => {
+  it("lists pending assignments workspace-wide for the GM watchlist, including the note", async () => {
     const officer = await createWorkspaceMember({ role: "owner" });
     const clerk = await createWorkspaceMember({ role: "member" });
     await db.insert(schema.workspaceUserTable).values({
@@ -354,7 +354,21 @@ describe("API integration: bilateral handover", () => {
 
     mockAuthenticatedSession(officer.user);
     const { app } = createApp();
-    await captureLetter(app, officer.workspace.id, clerk.user.id);
+    const created = await (
+      await captureLetter(app, officer.workspace.id)
+    ).json();
+    // Route it to the clerk with a note, exercising the same field the
+    // my-correspondence pendingAssignments query already carries.
+    await app.request(`/api/correspondence/letters/${created.id}/route`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: officer.workspace.id,
+        toUserId: clerk.user.id,
+        action: "inspect",
+        note: "Please expedite",
+      }),
+    });
 
     const response = await app.request(
       `/api/correspondence/letters/awaiting-acceptance?workspaceId=${officer.workspace.id}`,
@@ -364,6 +378,7 @@ describe("API integration: bilateral handover", () => {
     expect(body).toHaveLength(1);
     expect(body[0].subject).toBe("Ujian serah tugas");
     expect(body[0].toUserId).toBe(clerk.user.id);
+    expect(body[0].note).toBe("Please expedite");
   });
 
   it("does not leak another workspace's pending assignments into the GM watchlist", async () => {

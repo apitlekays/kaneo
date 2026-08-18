@@ -535,6 +535,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             letterId: letterAssignmentTable.letterId,
             toUserId: letterAssignmentTable.toUserId,
             action: letterAssignmentTable.action,
+            note: letterAssignmentTable.note,
             createdAt: letterAssignmentTable.createdAt,
             refNo: letterTable.refNo,
             subject: letterTable.subject,
