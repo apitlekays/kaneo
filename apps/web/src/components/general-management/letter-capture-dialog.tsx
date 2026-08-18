@@ -24,6 +24,7 @@ import { useLetterMutations } from "@/hooks/queries/correspondence/use-letters";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { usePdfCompression } from "@/hooks/use-pdf-compression";
 import { compressionLabel } from "@/lib/compression-label";
+import { isPdfUpload } from "@/lib/is-pdf-upload";
 import { toast } from "@/lib/toast";
 
 const TYPES = [
@@ -299,8 +300,14 @@ export function LetterCaptureDialog({
               <input
                 type="file"
                 className="hidden"
+                accept="application/pdf,.pdf"
                 onChange={(e) => {
                   const picked = e.target.files?.[0] ?? null;
+                  if (picked && !isPdfUpload(picked)) {
+                    toast.error("Only PDF files can be attached to a letter");
+                    e.target.value = "";
+                    return;
+                  }
                   setFile(picked);
                   if (picked) {
                     // A failed run leaves result null, so the original uploads.

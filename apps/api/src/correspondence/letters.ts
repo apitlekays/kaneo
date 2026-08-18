@@ -40,6 +40,7 @@ import {
   requireWorkspacePageAccess,
 } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
+import { attachmentAuditAction } from "./attachment-access";
 import { recordAuditEvent } from "./audit";
 import {
   INACTIVE_LETTER_STATUSES,
@@ -1229,13 +1230,20 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
     .get(
       "/letters/:id/attachments/:aid/download",
       validator("param", v.object({ id: v.string(), aid: v.string() })),
-      validator("query", v.object({ workspaceId: v.string() })),
+      validator(
+        "query",
+        v.object({
+          workspaceId: v.string(),
+          preview: v.optional(v.picklist(["true", "false"])),
+        }),
+      ),
       workspaceAccess.fromQuery("workspaceId"),
       pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
         const userId = c.get("userId") as string;
         const { id, aid } = c.req.valid("param");
+        const { preview } = c.req.valid("query");
         const [att] = await db
           .select()
           .from(letterAttachmentTable)
@@ -1253,7 +1261,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             workspaceId: ws,
             entityType: "letter",
             entityId: id,
-            action: "download",
+            action: attachmentAuditAction({ preview }),
             actorId: userId,
             after: { attachmentId: aid, filename: att.filename },
             ip: getIp(c),

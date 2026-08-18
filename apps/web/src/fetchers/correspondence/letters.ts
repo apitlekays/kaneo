@@ -1,4 +1,5 @@
 import { getApiUrl } from "@/fetchers/get-api-url";
+import { isPdfUpload } from "@/lib/is-pdf-upload";
 
 async function jsonOrThrow<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error(await response.text());
@@ -473,6 +474,16 @@ export const attachmentDownloadUrl = (
 ) =>
   url(`letters/${id}/attachments/${aid}/download?workspaceId=${workspaceId}`);
 
+/** Same bytes, but recorded as a preview rather than a download. */
+export const attachmentPreviewUrl = (
+  workspaceId: string,
+  id: string,
+  aid: string,
+) =>
+  url(
+    `letters/${id}/attachments/${aid}/download?workspaceId=${workspaceId}&preview=true`,
+  );
+
 /** Presign → direct PUT to storage → finalize. */
 export async function uploadLetterAttachment(
   workspaceId: string,
@@ -480,7 +491,10 @@ export async function uploadLetterAttachment(
   file: File,
   kind = "original",
 ): Promise<LetterAttachment> {
-  const contentType = file.type || "application/octet-stream";
+  if (!isPdfUpload(file)) {
+    throw new Error("Only PDF files can be attached to a letter");
+  }
+  const contentType = "application/pdf";
   const presign = await presignAttachment(workspaceId, letterId, {
     filename: file.name,
     contentType,

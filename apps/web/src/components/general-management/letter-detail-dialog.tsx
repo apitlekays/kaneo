@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   ClipboardList,
   Download,
   FileText,
@@ -43,6 +45,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   attachmentDownloadUrl,
+  attachmentPreviewUrl,
   dispositionCertificateUrl,
   type LetterDetail,
   uploadLetterAttachment,
@@ -60,6 +63,7 @@ import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
 import { compressionLabel } from "@/lib/compression-label";
 import { formatDateMedium } from "@/lib/format";
+import { isPdfUpload } from "@/lib/is-pdf-upload";
 import { toast } from "@/lib/toast";
 
 const STATUSES = [
@@ -821,6 +825,9 @@ function AttachmentsSection({
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const compression = usePdfCompression();
+  const [previewing, setPreviewing] = useState<string | null>(
+    letter.primaryAttachmentId ?? null,
+  );
 
   const upload = async (file: File) => {
     setUploading(true);
@@ -853,36 +860,70 @@ function AttachmentsSection({
         {letter.attachments.length === 0 && (
           <p className="text-muted-foreground text-sm">No attachments.</p>
         )}
-        {letter.attachments.map((att) => (
-          <div
-            key={att.id}
-            className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
-          >
-            <span className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              {att.filename}
-              {att.id === letter.primaryAttachmentId && (
-                <Badge className="border text-xs">primary</Badge>
-              )}
-            </span>
-            <a
-              href={attachmentDownloadUrl(workspaceId, letter.id, att.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-muted-foreground hover:text-foreground"
+        {letter.attachments.map((att) => {
+          const isPdf = att.mimeType === "application/pdf";
+          const open = previewing === att.id;
+          return (
+            <div
+              key={att.id}
+              className="rounded-md border border-border text-sm"
             >
-              <Download className="h-4 w-4" />
-            </a>
-          </div>
-        ))}
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  {att.filename}
+                  {att.id === letter.primaryAttachmentId && (
+                    <Badge className="border text-xs">primary</Badge>
+                  )}
+                </span>
+                <span className="flex items-center gap-3">
+                  {isPdf && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewing(open ? null : att.id)}
+                      className="text-muted-foreground hover:text-foreground"
+                      title={open ? "Hide preview" : "Preview"}
+                    >
+                      {open ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </button>
+                  )}
+                  <a
+                    href={attachmentDownloadUrl(workspaceId, letter.id, att.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Download className="h-4 w-4" />
+                  </a>
+                </span>
+              </div>
+              {isPdf && open && (
+                <iframe
+                  title={att.filename}
+                  src={attachmentPreviewUrl(workspaceId, letter.id, att.id)}
+                  className="h-[60vh] w-full border-border border-t"
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
       <input
         ref={inputRef}
         type="file"
         className="hidden"
+        accept="application/pdf,.pdf"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) upload(file);
+          if (file && !isPdfUpload(file)) {
+            toast.error("Only PDF files can be attached to a letter");
+          } else if (file) {
+            upload(file);
+          }
           if (inputRef.current) inputRef.current.value = "";
         }}
       />
