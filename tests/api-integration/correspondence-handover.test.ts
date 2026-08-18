@@ -387,6 +387,212 @@ describe("API integration: bilateral handover", () => {
     expect(body[0].note).toBe("Please expedite");
   });
 
+  it("keeps a rejected letter on the GM watchlist so it is not lost", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    await clerkApp.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/reject`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: officer.workspace.id,
+          note: "Bukan bidang saya",
+        }),
+      },
+    );
+
+    mockAuthenticatedSession(officer.user);
+    const { app: gmApp } = createApp();
+    const body = await (
+      await gmApp.request(
+        `/api/correspondence/letters/awaiting-acceptance?workspaceId=${officer.workspace.id}`,
+      )
+    ).json();
+    expect(body).toHaveLength(1);
+    expect(body[0].status).toBe("rejected");
+    // The letter fell back to whoever sent it, and the watchlist says so.
+    expect(body[0].currentAssigneeId).toBe(officer.user.id);
+  });
+
+  it("clears a rejected letter from the watchlist once it is routed again", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    const other = await createWorkspaceMember({ role: "member" });
+    for (const u of [clerk, other]) {
+      await db.insert(schema.workspaceUserTable).values({
+        workspaceId: officer.workspace.id,
+        userId: u.user.id,
+        role: "member",
+        joinedAt: new Date(),
+      });
+      await grantGeneralManagement(officer.workspace.id, u.user.id);
+    }
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    await clerkApp.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/reject`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: officer.workspace.id }),
+      },
+    );
+
+    // The sender acts on it: the rejection is resolved and must clear itself.
+    mockAuthenticatedSession(officer.user);
+    const { app: gmApp } = createApp();
+    await gmApp.request(`/api/correspondence/letters/${created.id}/route`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: officer.workspace.id,
+        toUserId: other.user.id,
+      }),
+    });
+
+    const body = await (
+      await gmApp.request(
+        `/api/correspondence/letters/awaiting-acceptance?workspaceId=${officer.workspace.id}`,
+      )
+    ).json();
+    // Only the new pending hop remains; the rejection is history.
+    expect(body).toHaveLength(1);
+    expect(body[0].status).toBe("pending");
+    expect(body[0].toUserId).toBe(other.user.id);
+  });
+
+  it("drops a rejected letter from the watchlist once the letter is closed", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    await clerkApp.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/reject`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: officer.workspace.id }),
+      },
+    );
+
+    await db
+      .update(schema.letterTable)
+      .set({ status: "closed" })
+      .where(eq(schema.letterTable.id, created.id));
+
+    mockAuthenticatedSession(officer.user);
+    const { app: gmApp } = createApp();
+    const body = await (
+      await gmApp.request(
+        `/api/correspondence/letters/awaiting-acceptance?workspaceId=${officer.workspace.id}`,
+      )
+    ).json();
+    expect(body).toHaveLength(0);
+  });
+
+  it("still lists a rejection whose sender's account was deleted", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    const gm = await createWorkspaceMember({ role: "owner" });
+    for (const u of [clerk, gm]) {
+      await db.insert(schema.workspaceUserTable).values({
+        workspaceId: officer.workspace.id,
+        userId: u.user.id,
+        role: u === gm ? "admin" : "member",
+        joinedAt: new Date(),
+      });
+      await grantGeneralManagement(officer.workspace.id, u.user.id);
+    }
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    await clerkApp.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/reject`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: officer.workspace.id }),
+      },
+    );
+
+    // The registering officer leaves: from_user_id nulls, so the letter fell
+    // back to nobody. This is the case the watchlist must not hide.
+    await db
+      .delete(schema.userTable)
+      .where(eq(schema.userTable.id, officer.user.id));
+
+    mockAuthenticatedSession(gm.user);
+    const { app: gmApp } = createApp();
+    const body = await (
+      await gmApp.request(
+        `/api/correspondence/letters/awaiting-acceptance?workspaceId=${officer.workspace.id}`,
+      )
+    ).json();
+    expect(body).toHaveLength(1);
+    expect(body[0].status).toBe("rejected");
+    expect(body[0].currentAssigneeId).toBeNull();
+  });
+
   it("does not leak another workspace's pending assignments into the GM watchlist", async () => {
     const officerA = await createWorkspaceMember({ role: "owner" });
     const clerkA = await createWorkspaceMember({ role: "member" });

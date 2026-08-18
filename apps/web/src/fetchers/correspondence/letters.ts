@@ -359,9 +359,18 @@ export const rejectAssignment = (
     { note },
   );
 
+export type WatchlistAssignment = PendingAssignment & {
+  toUserId: string | null;
+  /** "pending" — nobody has answered yet; "rejected" — refused and unresolved. */
+  status: string;
+  decidedAt: string | null;
+  /** Who the letter fell back to. Null means it is owned by nobody. */
+  currentAssigneeId: string | null;
+};
+
 export async function getAwaitingAcceptance(
   workspaceId: string,
-): Promise<(PendingAssignment & { toUserId: string | null })[]> {
+): Promise<WatchlistAssignment[]> {
   return jsonOrThrow(
     await fetch(url(`letters/awaiting-acceptance?workspaceId=${workspaceId}`), {
       credentials: "include",

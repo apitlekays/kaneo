@@ -8,6 +8,7 @@ import {
   lt,
   ne,
   notInArray,
+  or,
   sql,
 } from "drizzle-orm";
 import type { Context, Hono } from "hono";
@@ -587,9 +588,12 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             toUserId: letterAssignmentTable.toUserId,
             action: letterAssignmentTable.action,
             note: letterAssignmentTable.note,
+            status: letterAssignmentTable.status,
+            decidedAt: letterAssignmentTable.decidedAt,
             createdAt: letterAssignmentTable.createdAt,
             refNo: letterTable.refNo,
             subject: letterTable.subject,
+            currentAssigneeId: letterTable.currentAssigneeId,
           })
           .from(letterAssignmentTable)
           .innerJoin(
@@ -599,7 +603,23 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           .where(
             and(
               eq(letterTable.workspaceId, ws),
-              eq(letterAssignmentTable.status, "pending"),
+              or(
+                eq(letterAssignmentTable.status, "pending"),
+                // A rejection leaves the letter with whoever sent it and
+                // creates no new pending row, so it would otherwise vanish
+                // from every queue. Keep it visible until someone acts:
+                // routing the letter again, or the letter reaching a
+                // terminal state, clears it without a dismiss button.
+                and(
+                  eq(letterAssignmentTable.status, "rejected"),
+                  notInArray(letterTable.status, [...INACTIVE_LETTER_STATUSES]),
+                  sql`NOT EXISTS (
+                    SELECT 1 FROM letter_assignment AS newer
+                    WHERE newer.letter_id = ${letterAssignmentTable.letterId}
+                      AND newer.created_at > ${letterAssignmentTable.createdAt}
+                  )`,
+                ),
+              ),
             ),
           )
           .orderBy(asc(letterAssignmentTable.createdAt));

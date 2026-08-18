@@ -141,7 +141,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
           className="ml-auto"
         >
           <Clock className="h-3.5 w-3.5" />
-          {showAwaiting ? "Back to register" : "Awaiting acceptance"}
+          {showAwaiting ? "Back to register" : "Needs attention"}
         </Button>
         <Button
           size="sm"
@@ -167,7 +167,8 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
       )}
       {showAwaiting && (
         <p className="text-muted-foreground text-sm">
-          Letters assigned to someone who has not yet accepted or rejected them.
+          Letters waiting on a decision, and letters that were rejected and have
+          not been routed on since. Both clear themselves once someone acts.
         </p>
       )}
 
@@ -178,8 +179,9 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
               <TableRow>
                 <TableHead>Ref No.</TableHead>
                 <TableHead>Subject</TableHead>
-                <TableHead>Waiting on</TableHead>
-                <TableHead>Waiting for</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>With</TableHead>
+                <TableHead>For</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -193,11 +195,25 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
                     {item.refNo ?? "—"}
                   </TableCell>
                   <TableCell className="font-medium">{item.subject}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {userName(item.toUserId)}
+                  <TableCell>
+                    <Badge
+                      variant={
+                        item.status === "rejected" ? "destructive" : "outline"
+                      }
+                      className="text-xs"
+                    >
+                      {item.status === "rejected" ? "Rejected" : "Awaiting"}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {formatRelativeTime(item.createdAt)}
+                    {item.status === "rejected"
+                      ? item.currentAssigneeId
+                        ? `back with ${userName(item.currentAssigneeId)}`
+                        : "nobody"
+                      : userName(item.toUserId)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatRelativeTime(item.decidedAt ?? item.createdAt)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -272,7 +288,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
           ) : (
             awaiting.length === 0 && (
               <div className="py-10 text-center text-muted-foreground text-sm">
-                Nothing is awaiting acceptance.
+                Nothing needs attention.
               </div>
             )
           )
