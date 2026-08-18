@@ -51,6 +51,13 @@ export function useUserWebSocket() {
             return;
           }
 
+          if (message.entity === "letter-assignment") {
+            // A registrar's pending-assignment list changed; refresh whichever
+            // workspace is active (query key includes the workspace id).
+            queryClient.invalidateQueries({ queryKey: ["my-correspondence"] });
+            return;
+          }
+
           // Otherwise it's an inbound invitation.
           queryClient.invalidateQueries({ queryKey: ["invitations"] });
           queryClient.invalidateQueries({ queryKey: ["user-invitations"] });
