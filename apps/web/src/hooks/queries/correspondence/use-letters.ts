@@ -48,6 +48,8 @@ export function useLetterMutations(workspaceId: string, letterId?: string) {
     qc.invalidateQueries({ queryKey: ["letters", workspaceId] });
     qc.invalidateQueries({ queryKey: ["correspondence-summary", workspaceId] });
     qc.invalidateQueries({ queryKey: ["my-correspondence", workspaceId] });
+    // The GM watchlist changes on every capture, route and decision.
+    qc.invalidateQueries({ queryKey: ["awaiting-acceptance", workspaceId] });
     if (letterId) {
       qc.invalidateQueries({ queryKey: ["letter", workspaceId, letterId] });
     }
