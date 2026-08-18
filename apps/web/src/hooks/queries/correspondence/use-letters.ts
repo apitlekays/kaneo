@@ -34,6 +34,14 @@ export function useMyCorrespondence(workspaceId: string) {
   });
 }
 
+export function useAwaitingAcceptance(workspaceId: string) {
+  return useQuery({
+    queryKey: ["awaiting-acceptance", workspaceId],
+    queryFn: () => api.getAwaitingAcceptance(workspaceId),
+    enabled: !!workspaceId,
+  });
+}
+
 export function useLetterMutations(workspaceId: string, letterId?: string) {
   const qc = useQueryClient();
   const invalidate = () => {

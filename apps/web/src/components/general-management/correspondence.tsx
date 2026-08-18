@@ -1,4 +1,4 @@
-import { Archive, Loader2, Plus, Search } from "lucide-react";
+import { Archive, Clock, Loader2, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useLetters } from "@/hooks/queries/correspondence/use-letters";
+import {
+  useAwaitingAcceptance,
+  useLetters,
+} from "@/hooks/queries/correspondence/use-letters";
+import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { cn } from "@/lib/cn";
-import { formatDateMedium } from "@/lib/format";
+import { formatDateMedium, formatRelativeTime } from "@/lib/format";
 import { LetterCaptureDialog } from "./letter-capture-dialog";
 import { LetterDetailDialog } from "./letter-detail-dialog";
 
@@ -40,6 +44,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
   const [status, setStatus] = useState("all");
   const [q, setQ] = useState("");
   const [showDisposed, setShowDisposed] = useState(false);
+  const [showAwaiting, setShowAwaiting] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: letters = [], isLoading } = useLetters(workspaceId, {
@@ -48,6 +53,12 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
     q: q.trim() || undefined,
     disposed: showDisposed || undefined,
   });
+  const { data: awaiting = [], isLoading: isAwaitingLoading } =
+    useAwaitingAcceptance(workspaceId);
+  const { data: usersData } = useGetActiveWorkspaceUsers(workspaceId);
+  const users = usersData?.members ?? [];
+  const userName = (id: string | null) =>
+    id ? (users.find((u) => u.userId === id)?.user?.name ?? id) : "—";
 
   return (
     <div className="space-y-4">
@@ -101,7 +112,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
             className="w-64 pl-8"
           />
         </div>
-        {!showDisposed && (
+        {!showDisposed && !showAwaiting && (
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-44">
               <SelectValue>
@@ -119,9 +130,29 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
         )}
         <Button
           size="sm"
-          variant={showDisposed ? "default" : "outline"}
-          onClick={() => setShowDisposed((v) => !v)}
+          variant={showAwaiting ? "default" : "outline"}
+          onClick={() =>
+            setShowAwaiting((v) => {
+              const next = !v;
+              if (next) setShowDisposed(false);
+              return next;
+            })
+          }
           className="ml-auto"
+        >
+          <Clock className="h-3.5 w-3.5" />
+          {showAwaiting ? "Back to register" : "Awaiting acceptance"}
+        </Button>
+        <Button
+          size="sm"
+          variant={showDisposed ? "default" : "outline"}
+          onClick={() =>
+            setShowDisposed((v) => {
+              const next = !v;
+              if (next) setShowAwaiting(false);
+              return next;
+            })
+          }
         >
           <Archive className="h-3.5 w-3.5" />
           {showDisposed ? "Back to register" : "Disposed"}
@@ -134,64 +165,118 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
           register's history — they are only hidden from the working list.
         </p>
       )}
+      {showAwaiting && (
+        <p className="text-muted-foreground text-sm">
+          Letters assigned to someone who has not yet accepted or rejected them.
+        </p>
+      )}
 
       <div className="overflow-hidden rounded-xl border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Ref No.</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Subject</TableHead>
-              <TableHead>{direction === "in" ? "From" : "To"}</TableHead>
-              <TableHead>Actions</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {letters.map((letter) => (
-              <TableRow
-                key={letter.id}
-                onClick={() => setSelectedId(letter.id)}
-                className="cursor-pointer"
-              >
-                <TableCell className="font-mono text-xs">
-                  {letter.refNo ?? "—"}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {formatDateMedium(
-                    letter.receivedAt ?? letter.letterDate ?? letter.createdAt,
-                  )}
-                </TableCell>
-                <TableCell className="font-medium">{letter.subject}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {(direction === "in"
-                    ? (letter.senderName ?? letter.senderOrg)
-                    : (letter.recipientName ?? letter.recipientOrg)) ?? "—"}
-                </TableCell>
-                <TableCell>
-                  {letter.actionsTotal ? (
-                    <Badge
-                      variant={
-                        letter.actionsDone === letter.actionsTotal
-                          ? "success"
-                          : "outline"
-                      }
-                      className="text-xs"
-                    >
-                      {letter.actionsDone}/{letter.actionsTotal} done
-                    </Badge>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">—</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge className="border text-xs">{letter.status}</Badge>
-                </TableCell>
+        {showAwaiting ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ref No.</TableHead>
+                <TableHead>Subject</TableHead>
+                <TableHead>Waiting on</TableHead>
+                <TableHead>Waiting for</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {isLoading ? (
+            </TableHeader>
+            <TableBody>
+              {awaiting.map((item) => (
+                <TableRow
+                  key={item.id}
+                  onClick={() => setSelectedId(item.letterId)}
+                  className="cursor-pointer"
+                >
+                  <TableCell className="font-mono text-xs">
+                    {item.refNo ?? "—"}
+                  </TableCell>
+                  <TableCell className="font-medium">{item.subject}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {userName(item.toUserId)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatRelativeTime(item.createdAt)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ref No.</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Subject</TableHead>
+                <TableHead>{direction === "in" ? "From" : "To"}</TableHead>
+                <TableHead>Actions</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {letters.map((letter) => (
+                <TableRow
+                  key={letter.id}
+                  onClick={() => setSelectedId(letter.id)}
+                  className="cursor-pointer"
+                >
+                  <TableCell className="font-mono text-xs">
+                    {letter.refNo ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDateMedium(
+                      letter.receivedAt ??
+                        letter.letterDate ??
+                        letter.createdAt,
+                    )}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {letter.subject}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {(direction === "in"
+                      ? (letter.senderName ?? letter.senderOrg)
+                      : (letter.recipientName ?? letter.recipientOrg)) ?? "—"}
+                  </TableCell>
+                  <TableCell>
+                    {letter.actionsTotal ? (
+                      <Badge
+                        variant={
+                          letter.actionsDone === letter.actionsTotal
+                            ? "success"
+                            : "outline"
+                        }
+                        className="text-xs"
+                      >
+                        {letter.actionsDone}/{letter.actionsTotal} done
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge className="border text-xs">{letter.status}</Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {showAwaiting ? (
+          isAwaitingLoading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            awaiting.length === 0 && (
+              <div className="py-10 text-center text-muted-foreground text-sm">
+                Nothing is awaiting acceptance.
+              </div>
+            )
+          )
+        ) : isLoading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>

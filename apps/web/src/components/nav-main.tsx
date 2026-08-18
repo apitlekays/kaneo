@@ -14,6 +14,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useMyCorrespondence } from "@/hooks/queries/correspondence/use-letters";
 import { usePendingInvitations } from "@/hooks/queries/invitation/use-pending-invitations";
 import { useNotificationFeed } from "@/hooks/queries/notification/use-notification-feed";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
@@ -24,11 +25,13 @@ export function NavMain() {
   const navigate = useNavigate();
   const { data: invitations = [] } = usePendingInvitations();
   const { data: feed = [] } = useNotificationFeed();
+  const { data: mine } = useMyCorrespondence(workspace?.id ?? "");
 
   if (!workspace) return null;
 
   const pendingCount = invitations.length;
   const unreadFeedCount = feed.filter((item) => !item.isRead).length;
+  const hasPendingAssignments = (mine?.pendingAssignments?.length ?? 0) > 0;
 
   const navItems = [
     {
@@ -37,6 +40,7 @@ export function NavMain() {
       isActive: window.location.pathname === "/dashboard/home",
       badge: null,
       bellCount: unreadFeedCount,
+      hasDot: hasPendingAssignments,
     },
     {
       title: t("navigation:sidebar.projects"),
@@ -45,6 +49,7 @@ export function NavMain() {
         window.location.pathname === `/dashboard/workspace/${workspace.id}`,
       badge: null,
       bellCount: 0,
+      hasDot: false,
     },
     {
       title: t("navigation:sidebar.members"),
@@ -54,6 +59,7 @@ export function NavMain() {
         `/dashboard/workspace/${workspace.id}/members`,
       badge: null,
       bellCount: 0,
+      hasDot: false,
     },
     {
       title: t("navigation:sidebar.invitations"),
@@ -61,6 +67,7 @@ export function NavMain() {
       isActive: window.location.pathname === "/dashboard/invitations",
       badge: pendingCount > 0 ? pendingCount : null,
       bellCount: 0,
+      hasDot: false,
     },
   ];
 
@@ -88,7 +95,16 @@ export function NavMain() {
                     className="h-8 ps-3.5 text-sm hover:bg-transparent hover:text-sidebar-accent-foreground active:bg-transparent"
                     onClick={() => navigate({ to: item.url })}
                   >
-                    <span>{item.title}</span>
+                    <span className="flex items-center gap-1.5">
+                      {item.title}
+                      {item.hasDot && (
+                        <span
+                          role="status"
+                          aria-label="Awaiting your decision"
+                          className="h-1.5 w-1.5 rounded-full bg-destructive"
+                        />
+                      )}
+                    </span>
                     {item.bellCount > 0 && (
                       <span className="ml-auto flex items-center gap-1">
                         <Bell className="h-3.5 w-3.5 text-sidebar-foreground/70" />
