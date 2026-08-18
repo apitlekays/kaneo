@@ -1,4 +1,4 @@
-import { Loader2, Plus, Search } from "lucide-react";
+import { Archive, Loader2, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,12 +39,14 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
   const [direction, setDirection] = useState<"in" | "out">("in");
   const [status, setStatus] = useState("all");
   const [q, setQ] = useState("");
+  const [showDisposed, setShowDisposed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: letters = [], isLoading } = useLetters(workspaceId, {
     direction,
-    status: status === "all" ? undefined : status,
+    status: showDisposed || status === "all" ? undefined : status,
     q: q.trim() || undefined,
+    disposed: showDisposed || undefined,
   });
 
   return (
@@ -99,21 +101,39 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
             className="w-64 pl-8"
           />
         </div>
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="w-44">
-            <SelectValue>
-              {STATUS_OPTIONS.find((s) => s.value === status)?.label}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {!showDisposed && (
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="w-44">
+              <SelectValue>
+                {STATUS_OPTIONS.find((s) => s.value === status)?.label}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <Button
+          size="sm"
+          variant={showDisposed ? "default" : "outline"}
+          onClick={() => setShowDisposed((v) => !v)}
+          className="ml-auto"
+        >
+          <Archive className="h-3.5 w-3.5" />
+          {showDisposed ? "Back to register" : "Disposed"}
+        </Button>
       </div>
+
+      {showDisposed && (
+        <p className="text-muted-foreground text-sm">
+          Disposed records. These keep their reference number and stay in the
+          register's history — they are only hidden from the working list.
+        </p>
+      )}
 
       <div className="overflow-hidden rounded-xl border border-border">
         <Table>

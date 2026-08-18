@@ -212,6 +212,8 @@ export type LetterFilters = {
   type?: string;
   status?: string;
   q?: string;
+  /** Show the disposed archive instead of the working register. */
+  disposed?: boolean;
 };
 
 export async function listLetters(
@@ -223,6 +225,7 @@ export async function listLetters(
   if (filters.type) params.set("type", filters.type);
   if (filters.status) params.set("status", filters.status);
   if (filters.q) params.set("q", filters.q);
+  if (filters.disposed) params.set("disposed", "true");
   return jsonOrThrow(
     await fetch(url(`letters?${params.toString()}`), {
       credentials: "include",

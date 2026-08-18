@@ -6,6 +6,7 @@ import {
   eq,
   isNotNull,
   lt,
+  ne,
   notInArray,
   sql,
 } from "drizzle-orm";
@@ -40,6 +41,10 @@ import {
 } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { recordAuditEvent } from "./audit";
+import {
+  INACTIVE_LETTER_STATUSES,
+  letterStatusFilter,
+} from "./letter-list-filter";
 import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
 import { loadLifecycleDetail, retentionDueDate } from "./retention";
@@ -219,7 +224,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             and(
               eq(letterTable.workspaceId, ws),
               eq(letterTable.currentAssigneeId, userId),
-              notInArray(letterTable.status, ["closed", "archived"]),
+              notInArray(letterTable.status, [...INACTIVE_LETTER_STATUSES]),
             ),
           )
           .orderBy(desc(letterTable.createdAt));
@@ -265,17 +270,26 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           type: v.optional(v.picklist(TYPES)),
           status: optStr,
           q: optStr,
+          disposed: v.optional(v.picklist(["true", "false"])),
         }),
       ),
       workspaceAccess.fromQuery("workspaceId"),
       pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
-        const { direction, type, status, q } = c.req.valid("query");
+        const { direction, type, status, q, disposed } = c.req.valid("query");
         const filters = [eq(letterTable.workspaceId, ws)];
         if (direction) filters.push(eq(letterTable.direction, direction));
         if (type) filters.push(eq(letterTable.type, type));
-        if (status) filters.push(eq(letterTable.status, status));
+        const statusFilter = letterStatusFilter({
+          status,
+          disposed: disposed === "true",
+        });
+        filters.push(
+          statusFilter.kind === "equals"
+            ? eq(letterTable.status, statusFilter.status)
+            : ne(letterTable.status, statusFilter.status),
+        );
         const rows = await db
           .select()
           .from(letterTable)
