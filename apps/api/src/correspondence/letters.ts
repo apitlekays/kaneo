@@ -40,6 +40,7 @@ import {
   requireWorkspacePageAccess,
 } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
+import { broadcastToUser } from "../ws";
 import {
   type AssignmentDecision,
   assertCanDecide,
@@ -265,6 +266,10 @@ async function decideAssignment(
     });
     return row;
   });
+  if (assignment.toUserId)
+    broadcastToUser(assignment.toUserId, { entity: "letter-assignment" });
+  if (decision === "rejected" && assignment.fromUserId)
+    broadcastToUser(assignment.fromUserId, { entity: "letter-assignment" });
   return c.json(updated);
 }
 
@@ -709,6 +714,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             refNo: (created.refNo as string | null) ?? null,
             subject,
           });
+        if (assigneeId)
+          broadcastToUser(assigneeId, { entity: "letter-assignment" });
         return c.json(created, 201);
       },
     )
@@ -1007,6 +1014,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             refNo: letter.refNo,
             subject: letter.subject,
           });
+        if (b.toUserId)
+          broadcastToUser(b.toUserId, { entity: "letter-assignment" });
         return c.json(result);
       },
     )
