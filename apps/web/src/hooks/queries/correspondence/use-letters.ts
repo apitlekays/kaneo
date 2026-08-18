@@ -229,5 +229,23 @@ export function useLetterMutations(workspaceId: string, letterId?: string) {
       },
       onError,
     }),
+    acceptAssignment: useMutation({
+      mutationFn: (assignmentId: string) =>
+        api.acceptAssignment(workspaceId, id, assignmentId),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Assignment accepted");
+      },
+      onError,
+    }),
+    rejectAssignment: useMutation({
+      mutationFn: (vars: { assignmentId: string; note?: string }) =>
+        api.rejectAssignment(workspaceId, id, vars.assignmentId, vars.note),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Assignment rejected");
+      },
+      onError,
+    }),
   };
 }
