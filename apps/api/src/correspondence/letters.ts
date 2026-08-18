@@ -326,7 +326,31 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             asc(letterMinuteTable.dueAt),
             desc(letterMinuteTable.createdAt),
           );
-        return c.json({ letters, actions });
+        // Assignments awaiting my accept/reject decision.
+        const pendingAssignments = await db
+          .select({
+            id: letterAssignmentTable.id,
+            letterId: letterAssignmentTable.letterId,
+            action: letterAssignmentTable.action,
+            note: letterAssignmentTable.note,
+            createdAt: letterAssignmentTable.createdAt,
+            refNo: letterTable.refNo,
+            subject: letterTable.subject,
+          })
+          .from(letterAssignmentTable)
+          .innerJoin(
+            letterTable,
+            eq(letterAssignmentTable.letterId, letterTable.id),
+          )
+          .where(
+            and(
+              eq(letterTable.workspaceId, ws),
+              eq(letterAssignmentTable.toUserId, userId),
+              eq(letterAssignmentTable.status, "pending"),
+            ),
+          )
+          .orderBy(desc(letterAssignmentTable.createdAt));
+        return c.json({ letters, actions, pendingAssignments });
       },
     )
     // ── List (faceted) ──────────────────────────────────────────────────────
@@ -493,6 +517,41 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           dueForDisposition,
           byStatus,
         });
+      },
+    )
+    // ── GM watchlist: pending assignments nobody has accepted yet ───────────────
+    // Registered before "/letters/:id" so "awaiting-acceptance" is not
+    // captured as an :id param.
+    .get(
+      "/letters/awaiting-acceptance",
+      validator("query", v.object({ workspaceId: v.string() })),
+      workspaceAccess.fromQuery("workspaceId"),
+      pageAccess,
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const rows = await db
+          .select({
+            id: letterAssignmentTable.id,
+            letterId: letterAssignmentTable.letterId,
+            toUserId: letterAssignmentTable.toUserId,
+            action: letterAssignmentTable.action,
+            createdAt: letterAssignmentTable.createdAt,
+            refNo: letterTable.refNo,
+            subject: letterTable.subject,
+          })
+          .from(letterAssignmentTable)
+          .innerJoin(
+            letterTable,
+            eq(letterAssignmentTable.letterId, letterTable.id),
+          )
+          .where(
+            and(
+              eq(letterTable.workspaceId, ws),
+              eq(letterAssignmentTable.status, "pending"),
+            ),
+          )
+          .orderBy(asc(letterAssignmentTable.createdAt));
+        return c.json(rows);
       },
     )
     // ── Detail ────────────────────────────────────────────────────────────────

@@ -315,4 +315,84 @@ describe("API integration: bilateral handover", () => {
       .where(eq(schema.letterTable.id, created.id));
     expect(letterRow.currentAssigneeId).toBeNull();
   });
+
+  it("lists a pending assignment for its recipient", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    await captureLetter(app, officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    const response = await clerkApp.request(
+      `/api/correspondence/my-correspondence?workspaceId=${officer.workspace.id}`,
+    );
+    const body = await response.json();
+    expect(body.pendingAssignments).toHaveLength(1);
+    expect(body.pendingAssignments[0].subject).toBe("Ujian serah tugas");
+  });
+
+  it("lists pending assignments workspace-wide for the GM watchlist", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    await captureLetter(app, officer.workspace.id, clerk.user.id);
+
+    const response = await app.request(
+      `/api/correspondence/letters/awaiting-acceptance?workspaceId=${officer.workspace.id}`,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].subject).toBe("Ujian serah tugas");
+    expect(body[0].toUserId).toBe(clerk.user.id);
+  });
+
+  it("does not leak another workspace's pending assignments into the GM watchlist", async () => {
+    const officerA = await createWorkspaceMember({ role: "owner" });
+    const clerkA = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officerA.workspace.id,
+      userId: clerkA.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officerA.workspace.id, clerkA.user.id);
+
+    mockAuthenticatedSession(officerA.user);
+    const { app: appA } = createApp();
+    await captureLetter(appA, officerA.workspace.id, clerkA.user.id);
+
+    // A second, unrelated workspace with its own GM-granted owner and no
+    // captured letters of its own.
+    const officerB = await createWorkspaceMember({ role: "owner" });
+    await grantGeneralManagement(officerB.workspace.id, officerB.user.id);
+
+    mockAuthenticatedSession(officerB.user);
+    const { app: appB } = createApp();
+    const response = await appB.request(
+      `/api/correspondence/letters/awaiting-acceptance?workspaceId=${officerB.workspace.id}`,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toHaveLength(0);
+  });
 });
