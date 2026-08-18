@@ -32,8 +32,9 @@ describe("API integration: project creation", () => {
     await expect(response.text()).resolves.toBe("Unauthorized");
   });
 
-  it("creates a project for a workspace member and seeds default columns", async () => {
-    const member = await createWorkspaceMember();
+  it("creates a project for a workspace owner and seeds default columns", async () => {
+    // 4f3fa5e1 reserved project:create for owner/global-admin.
+    const member = await createWorkspaceMember({ role: "owner" });
     mockAuthenticatedSession(member.user);
     const { app } = createApp();
 

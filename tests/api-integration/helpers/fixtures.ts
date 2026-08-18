@@ -52,11 +52,20 @@ export async function createProjectFixture({
   name = "Integration Project",
   icon = "Folder",
   slug = `project-${randomUUID()}`,
+  memberUserId,
+  memberRole = "member",
 }: {
   workspaceId: string;
   name?: string;
   icon?: string;
   slug?: string;
+  /**
+   * Join this user to the project. Task routes run `requireProjectAccess`
+   * before the RBAC check, so a workspace member with `task:create` is still
+   * refused until they hold a project role.
+   */
+  memberUserId?: string;
+  memberRole?: string;
 }) {
   const [project] = await db
     .insert(schema.projectTable)
@@ -67,6 +76,14 @@ export async function createProjectFixture({
       slug,
     })
     .returning();
+
+  if (memberUserId) {
+    await db.insert(schema.projectMemberTable).values({
+      projectId: project.id,
+      userId: memberUserId,
+      role: memberRole,
+    });
+  }
 
   const insertedColumns: (typeof schema.columnTable.$inferSelect)[] = [];
 

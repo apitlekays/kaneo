@@ -19,6 +19,7 @@ describe("API integration: task creation", () => {
     const member = await createWorkspaceMember();
     const { project } = await createProjectFixture({
       workspaceId: member.workspace.id,
+      memberUserId: member.user.id,
     });
 
     mockAnonymousSession();
@@ -45,6 +46,7 @@ describe("API integration: task creation", () => {
     const member = await createWorkspaceMember();
     const { project, columns } = await createProjectFixture({
       workspaceId: member.workspace.id,
+      memberUserId: member.user.id,
       name: "Delivery",
       slug: "delivery",
     });
@@ -126,6 +128,7 @@ describe("API integration: task creation", () => {
     const outsiderId = `user-${randomUUID()}`;
     const { project } = await createProjectFixture({
       workspaceId: member.workspace.id,
+      memberUserId: member.user.id,
     });
 
     const [outsider] = await db
@@ -173,6 +176,7 @@ describe("API integration: task creation", () => {
     const member = await createWorkspaceMember();
     const { project, columns } = await createProjectFixture({
       workspaceId: member.workspace.id,
+      memberUserId: member.user.id,
     });
 
     mockAuthenticatedSession(member.user);
@@ -233,6 +237,7 @@ describe("API integration: task creation", () => {
     const member = await createWorkspaceMember();
     const { project } = await createProjectFixture({
       workspaceId: member.workspace.id,
+      memberUserId: member.user.id,
     });
 
     mockAuthenticatedSession(member.user);

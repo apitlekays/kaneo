@@ -65,6 +65,27 @@ async function postCreateTask(
   });
 }
 
+/**
+ * Task routes are gated by project membership (4f3fa5e1), not workspace
+ * permissions. Project creation still runs `requireWorkspacePermission`, so it
+ * is the vehicle for exercising workspace-role resolution.
+ */
+async function postCreateProject(
+  app: ReturnType<typeof createApp>["app"],
+  workspaceId: string,
+) {
+  return app.request("/api/project", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      workspaceId,
+      name: "RBAC probe project",
+      icon: "Folder",
+      slug: `rbac-${Math.random().toString(36).slice(2, 8)}`,
+    }),
+  });
+}
+
 describe("API integration: workspace RBAC enforcement", () => {
   beforeEach(async () => {
     await resetTestDatabase();
@@ -75,6 +96,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "member" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
 
       mockAuthenticatedSession(member.user);
@@ -84,8 +106,9 @@ describe("API integration: workspace RBAC enforcement", () => {
       expect(response.status).toBe(200);
     });
 
-    it("blocks a viewer from creating a task (viewer role lacks task:create)", async () => {
+    it("blocks a workspace member who is not on the project from creating a task", async () => {
       const member = await createWorkspaceMember({ role: "viewer" });
+      // No memberUserId: task routes are gated by project membership (4f3fa5e1).
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
       });
@@ -95,7 +118,9 @@ describe("API integration: workspace RBAC enforcement", () => {
 
       const response = await postCreateTask(app, project.id);
       expect(response.status).toBe(403);
-      await expect(response.text()).resolves.toBe("Insufficient permissions");
+      await expect(response.text()).resolves.toBe(
+        "You don't have access to this project",
+      );
 
       const persisted = await db.query.taskTable.findFirst({
         where: and(
@@ -106,7 +131,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       expect(persisted).toBeUndefined();
     });
 
-    it("blocks a member from deleting a task (member role lacks task:delete)", async () => {
+    it("blocks a non-project-member from deleting a task", async () => {
       const member = await createWorkspaceMember({ role: "member" });
       const { project, columns } = await createProjectFixture({
         workspaceId: member.workspace.id,
@@ -131,6 +156,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "admin" });
       const { project, columns } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       const task = await seedTask(project.id, columns.todo.id);
 
@@ -152,6 +178,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "owner" });
       const { project, columns } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       const task = await seedTask(project.id, columns.todo.id);
 
@@ -168,6 +195,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "admin" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
 
       const outsiderId = `user-${randomUUID()}`;
@@ -191,11 +219,8 @@ describe("API integration: workspace RBAC enforcement", () => {
   });
 
   describe("custom workspace roles", () => {
-    it("blocks a custom role that only grants task:read from creating a task", async () => {
+    it("blocks a custom role that lacks project:create from creating a project", async () => {
       const member = await createWorkspaceMember({ role: "readonly" });
-      const { project } = await createProjectFixture({
-        workspaceId: member.workspace.id,
-      });
       await createWorkspaceRoleRow(member.workspace.id, "readonly", {
         task: ["read"],
         project: ["read"],
@@ -204,7 +229,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
 
-      const response = await postCreateTask(app, project.id);
+      const response = await postCreateProject(app, member.workspace.id);
       expect(response.status).toBe(403);
     });
 
@@ -212,6 +237,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "creator" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       await createWorkspaceRoleRow(member.workspace.id, "creator", {
         task: ["create", "read"],
@@ -231,6 +257,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "viewer" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       await createWorkspaceRoleRow(member.workspace.id, "viewer", {
         task: ["create", "read", "update"],
@@ -247,9 +274,6 @@ describe("API integration: workspace RBAC enforcement", () => {
 
     it("returns 403 when the workspace_role permission JSON is malformed", async () => {
       const member = await createWorkspaceMember({ role: "broken" });
-      const { project } = await createProjectFixture({
-        workspaceId: member.workspace.id,
-      });
       // Malformed permission payload. The middleware should refuse rather than
       // crash; with no built-in fallback for "broken", access is denied.
       await createWorkspaceRoleRow(member.workspace.id, "broken", "not-json");
@@ -257,7 +281,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
 
-      const response = await postCreateTask(app, project.id);
+      const response = await postCreateProject(app, member.workspace.id);
       expect(response.status).toBe(403);
     });
 
@@ -265,6 +289,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "partial" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       // Some entries are valid string arrays, others are objects/strings/etc.
       // Middleware keeps the valid ones and ignores the rest.
@@ -290,6 +315,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "admin" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
 
       mockAuthenticatedSession(member.user);
@@ -305,6 +331,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "member" });
       const { project, columns } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       const task = await seedTask(project.id, columns.todo.id);
 
@@ -326,7 +353,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       expect(response.status).toBe(200);
     });
 
-    it("blocks a viewer from updating a task", async () => {
+    it("blocks a non-project-member from updating a task", async () => {
       const member = await createWorkspaceMember({ role: "viewer" });
       const { project, columns } = await createProjectFixture({
         workspaceId: member.workspace.id,
@@ -357,6 +384,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "member" });
       const { project, columns } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       const task = await seedTask(project.id, columns.todo.id);
 
@@ -375,6 +403,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "admin" });
       const { project, columns } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       const task = await seedTask(project.id, columns.todo.id);
 
@@ -391,7 +420,7 @@ describe("API integration: workspace RBAC enforcement", () => {
   });
 
   describe("resource coverage: project:create / update / delete", () => {
-    it("allows a member to create a project", async () => {
+    it("blocks a member from creating a project (reserved for owner/global-admin)", async () => {
       const member = await createWorkspaceMember({ role: "member" });
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
@@ -406,7 +435,7 @@ describe("API integration: workspace RBAC enforcement", () => {
           icon: "Folder",
         }),
       });
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(403);
     });
 
     it("blocks a viewer from creating a project", async () => {
@@ -431,6 +460,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "member" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
@@ -453,6 +483,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "admin" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
@@ -475,6 +506,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "member" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
@@ -489,6 +521,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "admin" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
@@ -539,6 +572,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "member" });
       const { project, columns } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       const task = await seedTask(project.id, columns.todo.id);
       // deleteLabel requires the label to be attached to a task; without a
@@ -566,6 +600,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "viewer" });
       const { project, columns } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       const task = await seedTask(project.id, columns.todo.id);
       const [label] = await db
@@ -596,6 +631,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "member" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
@@ -617,6 +653,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "viewer" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
@@ -638,6 +675,7 @@ describe("API integration: workspace RBAC enforcement", () => {
       const member = await createWorkspaceMember({ role: "member" });
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
       mockAuthenticatedSession(member.user);
       const { app } = createApp();
@@ -661,6 +699,7 @@ describe("API integration: workspace RBAC enforcement", () => {
 
       const { project } = await createProjectFixture({
         workspaceId: member.workspace.id,
+        memberUserId: member.user.id,
       });
 
       // Reload the user so the mocked session reflects the admin role.
@@ -684,14 +723,10 @@ describe("API integration: workspace RBAC enforcement", () => {
         .set({ role: null })
         .where(eq(schema.userTable.id, member.user.id));
 
-      const { project } = await createProjectFixture({
-        workspaceId: member.workspace.id,
-      });
-
       mockAuthenticatedSession({ ...member.user, role: null });
       const { app } = createApp();
 
-      const response = await postCreateTask(app, project.id);
+      const response = await postCreateProject(app, member.workspace.id);
       expect(response.status).toBe(403);
     });
   });
