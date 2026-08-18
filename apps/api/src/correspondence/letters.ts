@@ -52,6 +52,7 @@ import { recordAuditEvent } from "./audit";
 import {
   INACTIVE_LETTER_STATUSES,
   letterStatusFilter,
+  SEALED_LETTER_STATUSES,
 } from "./letter-list-filter";
 import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
@@ -227,7 +228,7 @@ async function decideAssignment(
       note: letterAssignmentTable.note,
       letterStatus: letterTable.status,
       letterAssigneeId: letterTable.currentAssigneeId,
-      letterLegalHold: letterTable.legalHold,
+      letterClosedAt: letterTable.closedAt,
     })
     .from(letterAssignmentTable)
     .innerJoin(letterTable, eq(letterAssignmentTable.letterId, letterTable.id))
@@ -241,20 +242,18 @@ async function decideAssignment(
     .limit(1);
   if (!assignment) throw new HTTPException(404, { message: "Not found" });
   assertCanDecide(assignment, userId);
-  // A decision rewrites ownership and status, so it must respect the same
-  // lifecycle the rest of the register does: a closed, archived or disposed
-  // record is finished, and a record under legal hold is frozen.
+  // A decision rewrites ownership, so it must respect the lifecycle: an
+  // archived record is kept permanently and a disposed one has had its
+  // destruction certificate issued. A closed record is NOT sealed — a
+  // follow-up reply reopens it. A legal hold is a preservation order, not a
+  // freeze on handling: it blocks disposal (see retention.ts), not custody.
   if (
-    INACTIVE_LETTER_STATUSES.includes(
-      assignment.letterStatus as (typeof INACTIVE_LETTER_STATUSES)[number],
+    SEALED_LETTER_STATUSES.includes(
+      assignment.letterStatus as (typeof SEALED_LETTER_STATUSES)[number],
     )
   )
     throw new HTTPException(409, {
       message: `Cannot accept or reject a ${assignment.letterStatus} record`,
-    });
-  if (assignment.letterLegalHold)
-    throw new HTTPException(409, {
-      message: "Cannot accept or reject a record under legal hold",
     });
 
   const owner = ownerAfterDecision(assignment, decision);
@@ -263,6 +262,14 @@ async function decideAssignment(
   // "pending registration" tile until it is registered, however it is owned.
   const nextStatus =
     assignment.letterStatus === "captured" ? "captured" : "assigned";
+  // Accepting a closed letter reopens it; leave the close date behind, or the
+  // retention clock keeps running against a record that is active again.
+  const nextClosedAt = resolveClosedAt({
+    status: nextStatus,
+    previousStatus: assignment.letterStatus,
+    previousClosedAt: assignment.letterClosedAt,
+    now: decidedAt,
+  });
 
   const updated = await db.transaction(async (tx) => {
     // The `pending` predicate is the concurrency guard: the assignment was read
@@ -284,15 +291,29 @@ async function decideAssignment(
       throw new HTTPException(409, {
         message: "This assignment was already decided",
       });
+    // The sealed predicate closes the window between the guard above and this
+    // write: a disposal committing in between makes this match nothing rather
+    // than reopening a destroyed record.
     const [row] = await tx
       .update(letterTable)
       .set({
         currentAssigneeId: owner,
         status: nextStatus,
+        closedAt: nextClosedAt,
         updatedAt: decidedAt,
       })
-      .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
+      .where(
+        and(
+          eq(letterTable.id, id),
+          eq(letterTable.workspaceId, ws),
+          notInArray(letterTable.status, [...SEALED_LETTER_STATUSES]),
+        ),
+      )
       .returning();
+    if (!row)
+      throw new HTTPException(409, {
+        message: "This record was sealed before the decision was recorded",
+      });
     await recordAuditEvent(tx, {
       workspaceId: ws,
       entityType: "letter",
@@ -399,6 +420,9 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               eq(letterTable.workspaceId, ws),
               eq(letterAssignmentTable.toUserId, userId),
               eq(letterAssignmentTable.status, "pending"),
+              // Rows written before routing was guarded can point at a sealed
+              // letter; showing them would be an item the user cannot clear.
+              notInArray(letterTable.status, [...SEALED_LETTER_STATUSES]),
             ),
           )
           .orderBy(desc(letterAssignmentTable.createdAt));
@@ -1029,6 +1053,16 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const b = c.req.valid("json");
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
+        // Routing a sealed record would create a pending row its recipient
+        // could never clear: both Accept and Reject refuse one.
+        if (
+          SEALED_LETTER_STATUSES.includes(
+            letter.status as (typeof SEALED_LETTER_STATUSES)[number],
+          )
+        )
+          throw new HTTPException(409, {
+            message: `Cannot route a ${letter.status} record`,
+          });
         const { result, bypassed } = await db.transaction(async (tx) => {
           // A recipient who is bypassed must not keep a stale pending item.
           const superseded = await tx

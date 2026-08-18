@@ -34,3 +34,12 @@ export const INACTIVE_LETTER_STATUSES = [
   "archived",
   DISPOSED_STATUS,
 ] as const;
+
+/**
+ * Statuses that seal a letter against changing hands. Narrower than
+ * INACTIVE_LETTER_STATUSES on purpose: a closed letter is not active work, but
+ * a follow-up reply can legitimately reopen it by routing it to someone.
+ * Archived and disposed records are finished — an archived one is kept
+ * permanently, and a disposed one has had its destruction certificate issued.
+ */
+export const SEALED_LETTER_STATUSES = ["archived", DISPOSED_STATUS] as const;

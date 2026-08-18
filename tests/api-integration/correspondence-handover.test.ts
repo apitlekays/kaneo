@@ -387,6 +387,187 @@ describe("API integration: bilateral handover", () => {
     expect(body[0].note).toBe("Please expedite");
   });
 
+  it("refuses to route a disposed letter", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id)
+    ).json();
+    await db
+      .update(schema.letterTable)
+      .set({ status: "disposed" })
+      .where(eq(schema.letterTable.id, created.id));
+
+    const response = await app.request(
+      `/api/correspondence/letters/${created.id}/route`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: officer.workspace.id,
+          toUserId: clerk.user.id,
+        }),
+      },
+    );
+    // Without this the clerk gets a pending item they can never clear:
+    // both Accept and Reject refuse a disposed record.
+    expect(response.status).toBe(409);
+    const rows = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("allows routing a closed letter, and accepting it reopens the record", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id)
+    ).json();
+    await db
+      .update(schema.letterTable)
+      .set({ status: "closed", closedAt: new Date("2026-01-01") })
+      .where(eq(schema.letterTable.id, created.id));
+
+    const routed = await app.request(
+      `/api/correspondence/letters/${created.id}/route`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: officer.workspace.id,
+          toUserId: clerk.user.id,
+        }),
+      },
+    );
+    expect(routed.status).toBe(200);
+
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    const accepted = await clerkApp.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/accept`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: officer.workspace.id }),
+      },
+    );
+    expect(accepted.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(schema.letterTable)
+      .where(eq(schema.letterTable.id, created.id));
+    expect(row.status).toBe("assigned");
+    expect(row.currentAssigneeId).toBe(clerk.user.id);
+    // Reopening must clear the close date, or the retention clock keeps
+    // running against a letter that is active again.
+    expect(row.closedAt).toBeNull();
+  });
+
+  it("allows a decision on a letter under legal hold", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    // A hold preserves the record from destruction; it does not freeze who
+    // is handling it.
+    await db
+      .update(schema.letterTable)
+      .set({ legalHold: true })
+      .where(eq(schema.letterTable.id, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    const accepted = await clerkApp.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/accept`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: officer.workspace.id }),
+      },
+    );
+    expect(accepted.status).toBe(200);
+    const [row] = await db
+      .select()
+      .from(schema.letterTable)
+      .where(eq(schema.letterTable.id, created.id));
+    expect(row.currentAssigneeId).toBe(clerk.user.id);
+  });
+
+  it("keeps a sealed letter out of a user's pending assignments", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    // Stands in for a row created before routing was guarded.
+    await db
+      .update(schema.letterTable)
+      .set({ status: "archived" })
+      .where(eq(schema.letterTable.id, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    const body = await (
+      await clerkApp.request(
+        `/api/correspondence/my-correspondence?workspaceId=${officer.workspace.id}`,
+      )
+    ).json();
+    expect(body.pendingAssignments).toHaveLength(0);
+  });
+
   it("keeps a rejected letter on the GM watchlist so it is not lost", async () => {
     const officer = await createWorkspaceMember({ role: "owner" });
     const clerk = await createWorkspaceMember({ role: "member" });
@@ -681,7 +862,10 @@ describe("API integration: bilateral handover", () => {
     return event;
   }
 
-  for (const status of ["closed", "archived", "disposed"]) {
+  // "closed" is deliberately absent: a closed letter is reopenable, so a
+  // follow-up reply can be routed to someone without a GM reopening it first.
+  // Archived and disposed records are sealed.
+  for (const status of ["archived", "disposed"]) {
     it(`refuses to accept an assignment on a ${status} letter`, async () => {
       const { officer, clerk, letter, assignment } =
         await seedPendingHandover();
@@ -715,29 +899,31 @@ describe("API integration: bilateral handover", () => {
     });
   }
 
-  it("refuses a decision on a letter under legal hold", async () => {
-    const { officer, clerk, letter, assignment } = await seedPendingHandover();
+  it("keeps a legal hold blocking disposal, not handling", async () => {
+    // A hold is a preservation order: it must still stop the record being
+    // destroyed, even though it no longer freezes who is handling it. The
+    // permitted half is covered by "allows a decision on a letter under
+    // legal hold" above.
+    const { officer, letter } = await seedPendingHandover();
     await db
       .update(schema.letterTable)
       .set({ legalHold: true })
       .where(eq(schema.letterTable.id, letter.id));
 
-    mockAuthenticatedSession(clerk.user);
-    const { app: clerkApp } = createApp();
-    const response = await decide(
-      clerkApp,
-      letter.id,
-      assignment.id,
-      "reject",
-      { workspaceId: officer.workspace.id, note: "Bukan bidang saya" },
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const response = await app.request(
+      `/api/correspondence/letters/${letter.id}/dispose`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: officer.workspace.id,
+          action: "destroy",
+        }),
+      },
     );
     expect(response.status).toBe(409);
-
-    const [assignmentRow] = await db
-      .select()
-      .from(schema.letterAssignmentTable)
-      .where(eq(schema.letterAssignmentTable.id, assignment.id));
-    expect(assignmentRow.status).toBe("pending");
   });
 
   it("keeps an unregistered letter at 'captured' when the recipient accepts", async () => {
