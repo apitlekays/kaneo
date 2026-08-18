@@ -126,3 +126,18 @@ export async function createProjectFixture({
     },
   };
 }
+
+/**
+ * Correspondence routes run requireWorkspacePageAccess("general-management").
+ * A plain member is refused, so grant the page explicitly.
+ */
+export async function grantGeneralManagement(
+  workspaceId: string,
+  userId: string,
+) {
+  await db.insert(schema.workspacePageAccessTable).values({
+    workspaceId,
+    userId,
+    pageSlug: "general-management",
+  });
+}
