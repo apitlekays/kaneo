@@ -546,7 +546,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               securityLabelId: b.securityLabelId ?? null,
               fileRef: b.fileRef ?? null,
               status: "captured",
-              currentAssigneeId: assigneeId,
+              // Ownership transfers only when the assignee accepts.
+              currentAssigneeId: null,
               createdBy: userId,
             })
             .returning();
@@ -827,6 +828,16 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
         const result = await db.transaction(async (tx) => {
+          // A recipient who is bypassed must not keep a stale pending item.
+          await tx
+            .update(letterAssignmentTable)
+            .set({ status: "superseded", decidedAt: new Date() })
+            .where(
+              and(
+                eq(letterAssignmentTable.letterId, id),
+                eq(letterAssignmentTable.status, "pending"),
+              ),
+            );
           const [assignment] = await tx
             .insert(letterAssignmentTable)
             .values({
@@ -843,8 +854,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           const [row] = await tx
             .update(letterTable)
             .set({
-              currentAssigneeId: b.toUserId ?? null,
-              status: "assigned",
+              // currentAssigneeId is unchanged: the handover is not complete
+              // until the recipient accepts.
               updatedAt: new Date(),
             })
             .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
