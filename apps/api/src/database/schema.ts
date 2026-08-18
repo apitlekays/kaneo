@@ -2248,7 +2248,7 @@ export const letterAssignmentTable = pgTable(
     }),
     toDeptId: text("to_dept_id"),
     action: text("action"),
-    // pending | accepted | rejected | done
+    // pending | accepted | rejected | done | superseded
     status: text("status").notNull().default("pending"),
     dueAt: timestamp("due_at", { mode: "date" }),
     decidedAt: timestamp("decided_at", { mode: "date" }),

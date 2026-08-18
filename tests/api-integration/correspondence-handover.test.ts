@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import db, { schema } from "../../apps/api/src/database";
 import { createApp } from "../../apps/api/src/index";
@@ -150,5 +150,120 @@ describe("API integration: bilateral handover", () => {
     const forSecond = rows.find((r) => r.toUserId === second.user.id);
     expect(forFirst?.status).toBe("superseded");
     expect(forSecond?.status).toBe("pending");
+  });
+
+  it("transfers ownership when the recipient accepts", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    const accepted = await clerkApp.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/accept`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: officer.workspace.id }),
+      },
+    );
+    expect(accepted.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(schema.letterTable)
+      .where(eq(schema.letterTable.id, created.id));
+    expect(row.currentAssigneeId).toBe(clerk.user.id);
+    expect(row.status).toBe("assigned");
+  });
+
+  it("returns the letter to the sender when the recipient rejects", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    await clerkApp.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/reject`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: officer.workspace.id,
+          note: "Bukan bidang saya",
+        }),
+      },
+    );
+
+    const [row] = await db
+      .select()
+      .from(schema.letterTable)
+      .where(eq(schema.letterTable.id, created.id));
+    expect(row.currentAssigneeId).toBe(officer.user.id);
+  });
+
+  it("refuses a decision from anyone but the named recipient", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    // The officer is the sender, not the recipient.
+    const response = await app.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/accept`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: officer.workspace.id }),
+      },
+    );
+    expect(response.status).toBe(403);
   });
 });

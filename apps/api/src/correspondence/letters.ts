@@ -40,6 +40,11 @@ import {
   requireWorkspacePageAccess,
 } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
+import {
+  type AssignmentDecision,
+  assertCanDecide,
+  ownerAfterDecision,
+} from "./assignment-rules";
 import { attachmentAuditAction } from "./attachment-access";
 import { recordAuditEvent } from "./audit";
 import {
@@ -197,6 +202,59 @@ async function notifyAssigned(
     resourceId: letter.id,
     resourceType: "letter",
   }).catch(() => {});
+}
+
+async function decideAssignment(
+  c: Context,
+  decision: AssignmentDecision,
+  note: string | null,
+) {
+  const ws = c.get("workspaceId") as string;
+  const userId = c.get("userId") as string;
+  const { id, aid } = c.req.param();
+
+  const [assignment] = await db
+    .select()
+    .from(letterAssignmentTable)
+    .where(
+      and(
+        eq(letterAssignmentTable.id, aid),
+        eq(letterAssignmentTable.letterId, id),
+      ),
+    )
+    .limit(1);
+  if (!assignment) throw new HTTPException(404, { message: "Not found" });
+  assertCanDecide(assignment, userId);
+
+  const owner = ownerAfterDecision(assignment, decision);
+  const decidedAt = new Date();
+
+  const updated = await db.transaction(async (tx) => {
+    await tx
+      .update(letterAssignmentTable)
+      .set({ status: decision, decidedAt, note: note ?? assignment.note })
+      .where(eq(letterAssignmentTable.id, aid));
+    const [row] = await tx
+      .update(letterTable)
+      .set({
+        currentAssigneeId: owner,
+        status: "assigned",
+        updatedAt: decidedAt,
+      })
+      .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
+      .returning();
+    await recordAuditEvent(tx, {
+      workspaceId: ws,
+      entityType: "letter",
+      entityId: id,
+      action: decision === "accepted" ? "accept" : "reject",
+      actorId: userId,
+      after: { assignmentId: aid, note },
+      ip: getIp(c),
+    });
+    return row;
+  });
+  return c.json(updated);
 }
 
 export function registerLetterRoutes(app: Hono<GmEnv>) {
@@ -1291,5 +1349,25 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           throw new HTTPException(404, { message: "File not found" });
         }
       },
+    )
+    // ── Accept / reject a pending assignment ─────────────────────────────────
+    .post(
+      "/letters/:id/assignments/:aid/accept",
+      validator("param", v.object({ id: v.string(), aid: v.string() })),
+      validator("json", v.object({ workspaceId: v.string() })),
+      workspaceAccess.fromBody("workspaceId"),
+      async (c) => decideAssignment(c, "accepted", null),
+    )
+    .post(
+      "/letters/:id/assignments/:aid/reject",
+      validator("param", v.object({ id: v.string(), aid: v.string() })),
+      validator("json", v.object({ workspaceId: v.string(), note: optStr })),
+      workspaceAccess.fromBody("workspaceId"),
+      async (c) =>
+        decideAssignment(
+          c,
+          "rejected",
+          c.req.valid("json").note?.trim() || null,
+        ),
     );
 }
