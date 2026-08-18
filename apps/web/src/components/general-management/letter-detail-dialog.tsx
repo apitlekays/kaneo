@@ -55,8 +55,10 @@ import {
   useLetterMutations,
 } from "@/hooks/queries/correspondence/use-letters";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
+import { usePdfCompression } from "@/hooks/use-pdf-compression";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
+import { compressionLabel } from "@/lib/compression-label";
 import { formatDateMedium } from "@/lib/format";
 import { toast } from "@/lib/toast";
 
@@ -818,17 +820,30 @@ function AttachmentsSection({
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const compression = usePdfCompression();
 
   const upload = async (file: File) => {
     setUploading(true);
+    let toUpload = file;
+    let note: string | null = null;
     try {
-      await uploadLetterAttachment(workspaceId, letter.id, file);
-      toast.success("Attachment uploaded");
+      const outcome = await compression.run(file);
+      toUpload = outcome.file;
+      note = compressionLabel(outcome);
+    } catch {
+      // Compression is best-effort; fall back to the file as chosen.
+    }
+    try {
+      await uploadLetterAttachment(workspaceId, letter.id, toUpload);
+      toast.success(
+        note ? `Attachment uploaded — ${note}` : "Attachment uploaded",
+      );
       qc.invalidateQueries({ queryKey: ["letter", workspaceId, letter.id] });
     } catch {
       toast.error("Upload failed");
     } finally {
       setUploading(false);
+      compression.reset();
     }
   };
 
@@ -871,6 +886,21 @@ function AttachmentsSection({
           if (inputRef.current) inputRef.current.value = "";
         }}
       />
+      {compression.busy && (
+        <div className="flex items-center gap-2 pb-2 text-muted-foreground text-xs">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          {compression.progress
+            ? `Compressing… page ${compression.progress.page} of ${compression.progress.total}`
+            : "Compressing…"}
+          <button
+            type="button"
+            className="underline hover:text-foreground"
+            onClick={compression.cancel}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       <Button
         size="sm"
         variant="outline"

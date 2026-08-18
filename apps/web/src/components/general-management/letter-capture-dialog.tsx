@@ -22,6 +22,8 @@ import { uploadLetterAttachment } from "@/fetchers/correspondence/letters";
 import { useConfigList } from "@/hooks/queries/correspondence/use-config";
 import { useLetterMutations } from "@/hooks/queries/correspondence/use-letters";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
+import { usePdfCompression } from "@/hooks/use-pdf-compression";
+import { compressionLabel } from "@/lib/compression-label";
 import { toast } from "@/lib/toast";
 
 const TYPES = [
@@ -69,6 +71,7 @@ export function LetterCaptureDialog({
   const [assigneeId, setAssigneeId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const compression = usePdfCompression();
 
   const reset = () => {
     setDirection(defaultDirection);
@@ -84,6 +87,7 @@ export function LetterCaptureDialog({
     setSecurityLabelId("");
     setAssigneeId("");
     setFile(null);
+    compression.reset();
   };
 
   const submit = () => {
@@ -108,7 +112,11 @@ export function LetterCaptureDialog({
           if (file) {
             setUploading(true);
             try {
-              await uploadLetterAttachment(workspaceId, letter.id, file);
+              await uploadLetterAttachment(
+                workspaceId,
+                letter.id,
+                compression.result?.file ?? file,
+              );
             } catch {
               toast.error("Letter saved, but the attachment upload failed");
             } finally {
@@ -291,9 +299,38 @@ export function LetterCaptureDialog({
               <input
                 type="file"
                 className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const picked = e.target.files?.[0] ?? null;
+                  setFile(picked);
+                  if (picked) {
+                    // A failed run leaves result null, so the original uploads.
+                    compression.run(picked).catch(() => {});
+                  } else {
+                    compression.reset();
+                  }
+                }}
               />
             </label>
+            {compression.busy && (
+              <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {compression.progress
+                  ? `Compressing… page ${compression.progress.page} of ${compression.progress.total}`
+                  : "Compressing…"}
+                <button
+                  type="button"
+                  className="underline hover:text-foreground"
+                  onClick={compression.cancel}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {!compression.busy && compression.result && (
+              <p className="text-muted-foreground text-xs">
+                {compressionLabel(compression.result)}
+              </p>
+            )}
           </div>
           <div className="hidden sm:col-span-2 sm:block" />
           <div className="flex justify-end gap-2 sm:col-span-2">
@@ -301,7 +338,12 @@ export function LetterCaptureDialog({
               Cancel
             </Button>
             <Button
-              disabled={!subject.trim() || m.create.isPending || uploading}
+              disabled={
+                !subject.trim() ||
+                m.create.isPending ||
+                uploading ||
+                compression.busy
+              }
               onClick={submit}
             >
               {(m.create.isPending || uploading) && (
