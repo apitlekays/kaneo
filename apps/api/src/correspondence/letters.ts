@@ -224,6 +224,9 @@ async function decideAssignment(
       action: letterAssignmentTable.action,
       status: letterAssignmentTable.status,
       note: letterAssignmentTable.note,
+      letterStatus: letterTable.status,
+      letterAssigneeId: letterTable.currentAssigneeId,
+      letterLegalHold: letterTable.legalHold,
     })
     .from(letterAssignmentTable)
     .innerJoin(letterTable, eq(letterAssignmentTable.letterId, letterTable.id))
@@ -237,20 +240,54 @@ async function decideAssignment(
     .limit(1);
   if (!assignment) throw new HTTPException(404, { message: "Not found" });
   assertCanDecide(assignment, userId);
+  // A decision rewrites ownership and status, so it must respect the same
+  // lifecycle the rest of the register does: a closed, archived or disposed
+  // record is finished, and a record under legal hold is frozen.
+  if (
+    INACTIVE_LETTER_STATUSES.includes(
+      assignment.letterStatus as (typeof INACTIVE_LETTER_STATUSES)[number],
+    )
+  )
+    throw new HTTPException(409, {
+      message: `Cannot accept or reject a ${assignment.letterStatus} record`,
+    });
+  if (assignment.letterLegalHold)
+    throw new HTTPException(409, {
+      message: "Cannot accept or reject a record under legal hold",
+    });
 
   const owner = ownerAfterDecision(assignment, decision);
   const decidedAt = new Date();
+  // A captured letter has no reference number yet: it must stay on the
+  // "pending registration" tile until it is registered, however it is owned.
+  const nextStatus =
+    assignment.letterStatus === "captured" ? "captured" : "assigned";
 
   const updated = await db.transaction(async (tx) => {
-    await tx
+    // The `pending` predicate is the concurrency guard: the assignment was read
+    // outside this transaction, so a competing decision may have landed since.
+    // Nothing else in here runs unless this update actually claims the row.
+    const decided = await tx
       .update(letterAssignmentTable)
-      .set({ status: decision, decidedAt, note: note ?? assignment.note })
-      .where(eq(letterAssignmentTable.id, aid));
+      // The sender's routing instruction stays put — in a register both it and
+      // the rejection reason are record, and the reason goes to the audit trail.
+      .set({ status: decision, decidedAt })
+      .where(
+        and(
+          eq(letterAssignmentTable.id, aid),
+          eq(letterAssignmentTable.status, "pending"),
+        ),
+      )
+      .returning({ id: letterAssignmentTable.id });
+    if (decided.length === 0)
+      throw new HTTPException(409, {
+        message: "This assignment was already decided",
+      });
     const [row] = await tx
       .update(letterTable)
       .set({
         currentAssigneeId: owner,
-        status: "assigned",
+        status: nextStatus,
         updatedAt: decidedAt,
       })
       .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
@@ -261,7 +298,16 @@ async function decideAssignment(
       entityId: id,
       action: decision === "accepted" ? "accept" : "reject",
       actorId: userId,
-      after: { assignmentId: aid, note },
+      before: {
+        currentAssigneeId: assignment.letterAssigneeId,
+        status: assignment.letterStatus,
+      },
+      after: {
+        assignmentId: aid,
+        currentAssigneeId: row.currentAssigneeId,
+        status: row.status,
+        reason: note,
+      },
       ip: getIp(c),
     });
     return row;
@@ -963,9 +1009,9 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const b = c.req.valid("json");
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
-        const result = await db.transaction(async (tx) => {
+        const { result, bypassed } = await db.transaction(async (tx) => {
           // A recipient who is bypassed must not keep a stale pending item.
-          await tx
+          const superseded = await tx
             .update(letterAssignmentTable)
             .set({ status: "superseded", decidedAt: new Date() })
             .where(
@@ -973,7 +1019,11 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
                 eq(letterAssignmentTable.letterId, id),
                 eq(letterAssignmentTable.status, "pending"),
               ),
-            );
+            )
+            .returning({
+              id: letterAssignmentTable.id,
+              toUserId: letterAssignmentTable.toUserId,
+            });
           const [assignment] = await tx
             .insert(letterAssignmentTable)
             .values({
@@ -996,6 +1046,18 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             })
             .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
             .returning();
+          // Cancelling someone's pending work is a change of record in its own
+          // right: it is recorded before the route event that caused it.
+          if (superseded.length > 0)
+            await recordAuditEvent(tx, {
+              workspaceId: ws,
+              entityType: "letter",
+              entityId: id,
+              action: "supersede",
+              actorId: userId,
+              after: { assignmentIds: superseded.map((a) => a.id) },
+              ip: getIp(c),
+            });
           await recordAuditEvent(tx, {
             workspaceId: ws,
             entityType: "letter",
@@ -1005,7 +1067,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             after: { assignment, letter: row },
             ip: getIp(c),
           });
-          return row as Row;
+          return { result: row as Row, bypassed: superseded };
         });
         // Notify the assignee (best-effort; never blocks the routing).
         if (b.toUserId)
@@ -1016,6 +1078,14 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           });
         if (b.toUserId)
           broadcastToUser(b.toUserId, { entity: "letter-assignment" });
+        // Without this the bypassed recipient keeps a lit dot on a letter they
+        // can no longer act on, and Accept later fails with a 409.
+        for (const userIdToNotify of new Set(
+          bypassed
+            .map((a) => a.toUserId)
+            .filter((u): u is string => !!u && u !== b.toUserId),
+        ))
+          broadcastToUser(userIdToNotify, { entity: "letter-assignment" });
         return c.json(result);
       },
     )

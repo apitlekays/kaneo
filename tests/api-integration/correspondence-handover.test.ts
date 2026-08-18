@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import db, { schema } from "../../apps/api/src/database";
 import { createApp } from "../../apps/api/src/index";
@@ -172,6 +172,12 @@ describe("API integration: bilateral handover", () => {
       .select()
       .from(schema.letterAssignmentTable)
       .where(eq(schema.letterAssignmentTable.letterId, created.id));
+    // Registered letters advance to "assigned" on accept; an unregistered one
+    // stays "captured" (covered separately below).
+    await db
+      .update(schema.letterTable)
+      .set({ status: "registered", refNo: "KKM/2026/0001" })
+      .where(eq(schema.letterTable.id, created.id));
 
     mockAuthenticatedSession(clerk.user);
     const { app: clerkApp } = createApp();
@@ -409,5 +415,278 @@ describe("API integration: bilateral handover", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toHaveLength(0);
+  });
+
+  // ── Lifecycle guards on a decision (accept/reject must not rewrite history) ──
+
+  /** Officer + GM-granted clerk in one workspace, with a letter routed to the clerk. */
+  async function seedPendingHandover() {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const letter = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, letter.id));
+    return { officer, clerk, app, letter, assignment };
+  }
+
+  function decide(
+    app: ReturnType<typeof createApp>["app"],
+    letterId: string,
+    assignmentId: string,
+    decision: "accept" | "reject",
+    body: object,
+  ) {
+    return app.request(
+      `/api/correspondence/letters/${letterId}/assignments/${assignmentId}/${decision}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  async function latestAuditEvent(workspaceId: string, action: string) {
+    const [event] = await db
+      .select()
+      .from(schema.gmAuditEventTable)
+      .where(
+        and(
+          eq(schema.gmAuditEventTable.workspaceId, workspaceId),
+          eq(schema.gmAuditEventTable.action, action),
+        ),
+      )
+      .orderBy(desc(schema.gmAuditEventTable.seq))
+      .limit(1);
+    return event;
+  }
+
+  for (const status of ["closed", "archived", "disposed"]) {
+    it(`refuses to accept an assignment on a ${status} letter`, async () => {
+      const { officer, clerk, letter, assignment } =
+        await seedPendingHandover();
+      await db
+        .update(schema.letterTable)
+        .set({ status })
+        .where(eq(schema.letterTable.id, letter.id));
+
+      mockAuthenticatedSession(clerk.user);
+      const { app: clerkApp } = createApp();
+      const response = await decide(
+        clerkApp,
+        letter.id,
+        assignment.id,
+        "accept",
+        { workspaceId: officer.workspace.id },
+      );
+      expect(response.status).toBe(409);
+
+      const [row] = await db
+        .select()
+        .from(schema.letterTable)
+        .where(eq(schema.letterTable.id, letter.id));
+      expect(row.status).toBe(status);
+      expect(row.currentAssigneeId).toBeNull();
+      const [assignmentRow] = await db
+        .select()
+        .from(schema.letterAssignmentTable)
+        .where(eq(schema.letterAssignmentTable.id, assignment.id));
+      expect(assignmentRow.status).toBe("pending");
+    });
+  }
+
+  it("refuses a decision on a letter under legal hold", async () => {
+    const { officer, clerk, letter, assignment } = await seedPendingHandover();
+    await db
+      .update(schema.letterTable)
+      .set({ legalHold: true })
+      .where(eq(schema.letterTable.id, letter.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    const response = await decide(
+      clerkApp,
+      letter.id,
+      assignment.id,
+      "reject",
+      { workspaceId: officer.workspace.id, note: "Bukan bidang saya" },
+    );
+    expect(response.status).toBe(409);
+
+    const [assignmentRow] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.id, assignment.id));
+    expect(assignmentRow.status).toBe("pending");
+  });
+
+  it("keeps an unregistered letter at 'captured' when the recipient accepts", async () => {
+    const { officer, clerk, letter, assignment } = await seedPendingHandover();
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    const response = await decide(
+      clerkApp,
+      letter.id,
+      assignment.id,
+      "accept",
+      { workspaceId: officer.workspace.id },
+    );
+    expect(response.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(schema.letterTable)
+      .where(eq(schema.letterTable.id, letter.id));
+    // Ownership transfers, but the letter still has no reference number, so it
+    // must stay on the "pending registration" tile.
+    expect(row.currentAssigneeId).toBe(clerk.user.id);
+    expect(row.refNo).toBeNull();
+    expect(row.status).toBe("captured");
+  });
+
+  it("records the before and after owner and status on the accept audit event", async () => {
+    const { officer, clerk, letter, assignment } = await seedPendingHandover();
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    await decide(clerkApp, letter.id, assignment.id, "accept", {
+      workspaceId: officer.workspace.id,
+    });
+
+    const event = await latestAuditEvent(officer.workspace.id, "accept");
+    expect(event.before).toMatchObject({
+      currentAssigneeId: null,
+      status: "captured",
+    });
+    expect(event.after).toMatchObject({
+      assignmentId: assignment.id,
+      currentAssigneeId: clerk.user.id,
+      status: "captured",
+    });
+  });
+
+  it("keeps the sender's routing note and records the rejection reason in the audit trail", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id)
+    ).json();
+    await app.request(`/api/correspondence/letters/${created.id}/route`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: officer.workspace.id,
+        toUserId: clerk.user.id,
+        note: "Sila ambil tindakan segera",
+      }),
+    });
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    const response = await decide(
+      clerkApp,
+      created.id,
+      assignment.id,
+      "reject",
+      { workspaceId: officer.workspace.id, note: "Bukan bidang saya" },
+    );
+    expect(response.status).toBe(200);
+
+    const [assignmentRow] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.id, assignment.id));
+    expect(assignmentRow.status).toBe("rejected");
+    // Both are record: the routing instruction stays on the row, the reason
+    // lives in the append-only trail.
+    expect(assignmentRow.note).toBe("Sila ambil tindakan segera");
+
+    const event = await latestAuditEvent(officer.workspace.id, "reject");
+    expect(event.after).toMatchObject({ reason: "Bukan bidang saya" });
+  });
+
+  it("lets only one of a concurrent accept and reject win", async () => {
+    const { officer, clerk, letter, assignment } = await seedPendingHandover();
+
+    mockAuthenticatedSession(clerk.user);
+    const { app: clerkApp } = createApp();
+    const [accepted, rejected] = await Promise.all([
+      decide(clerkApp, letter.id, assignment.id, "accept", {
+        workspaceId: officer.workspace.id,
+      }),
+      decide(clerkApp, letter.id, assignment.id, "reject", {
+        workspaceId: officer.workspace.id,
+        note: "Bukan bidang saya",
+      }),
+    ]);
+    const statuses = [accepted.status, rejected.status].sort();
+    expect(statuses).toEqual([200, 409]);
+
+    const [assignmentRow] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.id, assignment.id));
+    const [row] = await db
+      .select()
+      .from(schema.letterTable)
+      .where(eq(schema.letterTable.id, letter.id));
+    // The surviving decision and the letter's owner must agree.
+    const expectedOwner =
+      assignmentRow.status === "accepted" ? clerk.user.id : officer.user.id;
+    expect(row.currentAssigneeId).toBe(expectedOwner);
+  });
+
+  it("records an audit event and notifies the bypassed recipient when routing supersedes", async () => {
+    const { officer, letter, assignment } = await seedPendingHandover();
+    const third = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: third.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    await app.request(`/api/correspondence/letters/${letter.id}/route`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: officer.workspace.id,
+        toUserId: third.user.id,
+      }),
+    });
+
+    const event = await latestAuditEvent(officer.workspace.id, "supersede");
+    expect(event).toBeDefined();
+    expect(event.after).toMatchObject({ assignmentIds: [assignment.id] });
+    expect(event.entityId).toBe(letter.id);
   });
 });
