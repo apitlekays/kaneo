@@ -293,6 +293,16 @@ export const addMinute = (workspaceId: string, id: string, body: object) =>
 export const completeMinute = (workspaceId: string, id: string, mid: string) =>
   post<LetterMinute>(`letters/${id}/minutes/${mid}/complete`, workspaceId, {});
 
+export type PendingAssignment = {
+  id: string;
+  letterId: string;
+  refNo: string | null;
+  subject: string;
+  action: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
 export type MyCorrespondence = {
   letters: {
     id: string;
@@ -313,6 +323,7 @@ export type MyCorrespondence = {
     refNo: string | null;
     subject: string;
   }[];
+  pendingAssignments: PendingAssignment[];
 };
 
 export async function getMyCorrespondence(
@@ -320,6 +331,39 @@ export async function getMyCorrespondence(
 ): Promise<MyCorrespondence> {
   return jsonOrThrow(
     await fetch(url(`my-correspondence?workspaceId=${workspaceId}`), {
+      credentials: "include",
+    }),
+  );
+}
+
+export const acceptAssignment = (
+  workspaceId: string,
+  letterId: string,
+  assignmentId: string,
+) =>
+  post<Letter>(
+    `letters/${letterId}/assignments/${assignmentId}/accept`,
+    workspaceId,
+    {},
+  );
+
+export const rejectAssignment = (
+  workspaceId: string,
+  letterId: string,
+  assignmentId: string,
+  note?: string,
+) =>
+  post<Letter>(
+    `letters/${letterId}/assignments/${assignmentId}/reject`,
+    workspaceId,
+    { note },
+  );
+
+export async function getAwaitingAcceptance(
+  workspaceId: string,
+): Promise<(PendingAssignment & { toUserId: string | null })[]> {
+  return jsonOrThrow(
+    await fetch(url(`letters/awaiting-acceptance?workspaceId=${workspaceId}`), {
       credentials: "include",
     }),
   );

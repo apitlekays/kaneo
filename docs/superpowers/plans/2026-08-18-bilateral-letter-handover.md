@@ -151,7 +151,7 @@ git commit -m "feat(correspondence): assignment accept/reject decision rules"
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `createGmMember(overrides?: { role?: string }): Promise<SeededMemberContext>` — a workspace member who also holds `general-management` page access.
+- Produces: `grantGeneralManagement(workspaceId: string, userId: string): Promise<void>` — grants the `general-management` page to an existing workspace member.
 
 There are no correspondence integration tests yet. Every later task needs this, so build it once here.
 
@@ -392,7 +392,9 @@ Expected: PASS.
 
 - [ ] **Step 6: Run to verify the new tests fail**
 
-Expected: the route test passes already (route sets `currentAssigneeId` to the new user, not the sender — no, it fails: it sets it to `other.user.id`). The supersede test fails because nothing writes `superseded`.
+Expected: BOTH new tests FAIL.
+- The route test fails with `expected 'other-user-id' to be 'officer-id'` — the handler still moves ownership to the new assignee.
+- The supersede test fails with `expected undefined to be 'superseded'` — nothing writes that status yet.
 
 - [ ] **Step 7: Change the route handler**
 
@@ -648,7 +650,7 @@ import {
       validator("param", v.object({ id: v.string(), aid: v.string() })),
       validator("json", v.object({ workspaceId: v.string() })),
       workspaceAccess.fromBody("workspaceId"),
-      async (c) => decideAssignment(c, "accepted"),
+      async (c) => decideAssignment(c, "accepted", null),
     )
     .post(
       "/letters/:id/assignments/:aid/reject",
@@ -658,7 +660,8 @@ import {
         v.object({ workspaceId: v.string(), note: optStr }),
       ),
       workspaceAccess.fromBody("workspaceId"),
-      async (c) => decideAssignment(c, "rejected"),
+      async (c) =>
+        decideAssignment(c, "rejected", c.req.valid("json").note?.trim() || null),
     )
 ```
 
@@ -670,11 +673,14 @@ assignment, which is a tighter guard than the page.
 Add the shared handler above `registerLetterRoutes`:
 
 ```ts
-async function decideAssignment(c: Context, decision: AssignmentDecision) {
+async function decideAssignment(
+  c: Context,
+  decision: AssignmentDecision,
+  note: string | null,
+) {
   const ws = c.get("workspaceId") as string;
   const userId = c.get("userId") as string;
   const { id, aid } = c.req.param();
-  const note = decision === "rejected" ? await readNote(c) : null;
 
   const [assignment] = await db
     .select()
@@ -720,10 +726,6 @@ async function decideAssignment(c: Context, decision: AssignmentDecision) {
   return c.json(updated);
 }
 
-async function readNote(c: Context): Promise<string | null> {
-  const body = (await c.req.json().catch(() => ({}))) as { note?: string };
-  return body.note?.trim() || null;
-}
 ```
 
 - [ ] **Step 4: Run to verify they pass**

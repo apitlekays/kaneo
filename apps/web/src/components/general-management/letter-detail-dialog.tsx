@@ -338,6 +338,12 @@ type Mutations = ReturnType<typeof useLetterMutations>;
 // Handling statuses the Main User may set; registry statuses stay GM-only.
 const ASSIGNEE_STATUS_OPTIONS = ["in-action", "awaiting-response"];
 
+// "superseded" is set when routing replaces an open pending assignment;
+// give it a readable label instead of showing the raw status value.
+function assignmentStatusLabel(status: string): string {
+  return status === "superseded" ? "Superseded" : status;
+}
+
 function OverviewSection({
   letter,
   m,
@@ -361,6 +367,14 @@ function OverviewSection({
   const [categoryId, setCategoryId] = useState(letter.categoryId ?? "");
   const [securityLabelId, setSecurityLabelId] = useState(
     letter.securityLabelId ?? "",
+  );
+  const [rejectingAssignmentId, setRejectingAssignmentId] = useState<
+    string | null
+  >(null);
+  const [rejectNote, setRejectNote] = useState("");
+
+  const pendingForMe = letter.assignments.find(
+    (a) => a.status === "pending" && a.toUserId === currentUserId,
   );
 
   const isMainUser = letter.currentAssigneeId === currentUserId;
@@ -394,6 +408,81 @@ function OverviewSection({
 
   return (
     <div className="space-y-5">
+      {pendingForMe && (
+        <div className="space-y-2 rounded-md border border-border bg-muted/40 px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm">
+              You have been assigned this letter. Accept to become its Main
+              User.
+            </span>
+            <span className="flex gap-2">
+              <Button
+                size="sm"
+                disabled={m.acceptAssignment.isPending}
+                onClick={() => m.acceptAssignment.mutate(pendingForMe.id)}
+              >
+                Accept
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={m.rejectAssignment.isPending}
+                onClick={() =>
+                  setRejectingAssignmentId(
+                    rejectingAssignmentId === pendingForMe.id
+                      ? null
+                      : pendingForMe.id,
+                  )
+                }
+              >
+                Reject
+              </Button>
+            </span>
+          </div>
+          {rejectingAssignmentId === pendingForMe.id && (
+            <div className="flex flex-wrap items-end gap-2">
+              <Input
+                className="w-64"
+                value={rejectNote}
+                placeholder="Reason for rejecting (optional)"
+                onChange={(e) => setRejectNote(e.target.value)}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={m.rejectAssignment.isPending}
+                onClick={() =>
+                  m.rejectAssignment.mutate(
+                    {
+                      assignmentId: pendingForMe.id,
+                      note: rejectNote.trim() || undefined,
+                    },
+                    {
+                      onSuccess: () => {
+                        setRejectingAssignmentId(null);
+                        setRejectNote("");
+                      },
+                    },
+                  )
+                }
+              >
+                Confirm reject
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setRejectingAssignmentId(null);
+                  setRejectNote("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         {isAdmin && !letter.declaredAt && (
           <Button
@@ -751,7 +840,9 @@ function RoutingSection({
           >
             <div className="flex items-center justify-between">
               <span>To {userName(a.toUserId)}</span>
-              <Badge className="border text-xs">{a.status}</Badge>
+              <Badge className="border text-xs">
+                {assignmentStatusLabel(a.status)}
+              </Badge>
             </div>
             {a.note && <p className="text-muted-foreground">{a.note}</p>}
             {a.dueAt && (

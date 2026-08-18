@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { CorrespondenceAlerts } from "@/components/correspondence-alerts";
 import { useUserWebSocket } from "@/hooks/use-user-websocket";
 import { authClient } from "@/lib/auth-client";
 
@@ -21,5 +22,10 @@ export const Route = createFileRoute("/_layout/_authenticated")({
 
 function AuthenticatedLayout() {
   useUserWebSocket();
-  return <Outlet />;
+  return (
+    <>
+      <CorrespondenceAlerts />
+      <Outlet />
+    </>
+  );
 }

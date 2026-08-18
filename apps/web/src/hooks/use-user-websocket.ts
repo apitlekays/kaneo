@@ -51,6 +51,18 @@ export function useUserWebSocket() {
             return;
           }
 
+          if (message.entity === "letter-assignment") {
+            // A registrar's pending-assignment list changed; refresh whichever
+            // workspace is active (query key includes the workspace id).
+            queryClient.invalidateQueries({ queryKey: ["my-correspondence"] });
+            // A GM officer may be watching the workspace-wide list at the same
+            // time; it moves for exactly the same events.
+            queryClient.invalidateQueries({
+              queryKey: ["awaiting-acceptance"],
+            });
+            return;
+          }
+
           // Otherwise it's an inbound invitation.
           queryClient.invalidateQueries({ queryKey: ["invitations"] });
           queryClient.invalidateQueries({ queryKey: ["user-invitations"] });

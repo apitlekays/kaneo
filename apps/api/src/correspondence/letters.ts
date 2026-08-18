@@ -40,6 +40,12 @@ import {
   requireWorkspacePageAccess,
 } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
+import { broadcastToUser } from "../ws";
+import {
+  type AssignmentDecision,
+  assertCanDecide,
+  ownerAfterDecision,
+} from "./assignment-rules";
 import { attachmentAuditAction } from "./attachment-access";
 import { recordAuditEvent } from "./audit";
 import {
@@ -199,6 +205,120 @@ async function notifyAssigned(
   }).catch(() => {});
 }
 
+async function decideAssignment(
+  c: Context,
+  decision: AssignmentDecision,
+  note: string | null,
+) {
+  const ws = c.get("workspaceId") as string;
+  const userId = c.get("userId") as string;
+  const { id, aid } = c.req.param();
+
+  const [assignment] = await db
+    .select({
+      id: letterAssignmentTable.id,
+      letterId: letterAssignmentTable.letterId,
+      fromUserId: letterAssignmentTable.fromUserId,
+      toUserId: letterAssignmentTable.toUserId,
+      toDeptId: letterAssignmentTable.toDeptId,
+      action: letterAssignmentTable.action,
+      status: letterAssignmentTable.status,
+      note: letterAssignmentTable.note,
+      letterStatus: letterTable.status,
+      letterAssigneeId: letterTable.currentAssigneeId,
+      letterLegalHold: letterTable.legalHold,
+    })
+    .from(letterAssignmentTable)
+    .innerJoin(letterTable, eq(letterAssignmentTable.letterId, letterTable.id))
+    .where(
+      and(
+        eq(letterAssignmentTable.id, aid),
+        eq(letterAssignmentTable.letterId, id),
+        eq(letterTable.workspaceId, ws),
+      ),
+    )
+    .limit(1);
+  if (!assignment) throw new HTTPException(404, { message: "Not found" });
+  assertCanDecide(assignment, userId);
+  // A decision rewrites ownership and status, so it must respect the same
+  // lifecycle the rest of the register does: a closed, archived or disposed
+  // record is finished, and a record under legal hold is frozen.
+  if (
+    INACTIVE_LETTER_STATUSES.includes(
+      assignment.letterStatus as (typeof INACTIVE_LETTER_STATUSES)[number],
+    )
+  )
+    throw new HTTPException(409, {
+      message: `Cannot accept or reject a ${assignment.letterStatus} record`,
+    });
+  if (assignment.letterLegalHold)
+    throw new HTTPException(409, {
+      message: "Cannot accept or reject a record under legal hold",
+    });
+
+  const owner = ownerAfterDecision(assignment, decision);
+  const decidedAt = new Date();
+  // A captured letter has no reference number yet: it must stay on the
+  // "pending registration" tile until it is registered, however it is owned.
+  const nextStatus =
+    assignment.letterStatus === "captured" ? "captured" : "assigned";
+
+  const updated = await db.transaction(async (tx) => {
+    // The `pending` predicate is the concurrency guard: the assignment was read
+    // outside this transaction, so a competing decision may have landed since.
+    // Nothing else in here runs unless this update actually claims the row.
+    const decided = await tx
+      .update(letterAssignmentTable)
+      // The sender's routing instruction stays put — in a register both it and
+      // the rejection reason are record, and the reason goes to the audit trail.
+      .set({ status: decision, decidedAt })
+      .where(
+        and(
+          eq(letterAssignmentTable.id, aid),
+          eq(letterAssignmentTable.status, "pending"),
+        ),
+      )
+      .returning({ id: letterAssignmentTable.id });
+    if (decided.length === 0)
+      throw new HTTPException(409, {
+        message: "This assignment was already decided",
+      });
+    const [row] = await tx
+      .update(letterTable)
+      .set({
+        currentAssigneeId: owner,
+        status: nextStatus,
+        updatedAt: decidedAt,
+      })
+      .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
+      .returning();
+    await recordAuditEvent(tx, {
+      workspaceId: ws,
+      entityType: "letter",
+      entityId: id,
+      action: decision === "accepted" ? "accept" : "reject",
+      actorId: userId,
+      before: {
+        currentAssigneeId: assignment.letterAssigneeId,
+        status: assignment.letterStatus,
+      },
+      after: {
+        assignmentId: aid,
+        currentAssigneeId: row.currentAssigneeId,
+        status: row.status,
+        reason: note,
+      },
+      ip: getIp(c),
+    });
+    return row;
+  });
+  if (assignment.toUserId)
+    broadcastToUser(assignment.toUserId, { entity: "letter-assignment" });
+  if (decision === "rejected" && assignment.fromUserId)
+    broadcastToUser(assignment.fromUserId, { entity: "letter-assignment" });
+  return c.json(updated);
+}
+
 export function registerLetterRoutes(app: Hono<GmEnv>) {
   app
     // ── My correspondence (Home feed — any member, own items only) ────────────
@@ -257,7 +377,31 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             asc(letterMinuteTable.dueAt),
             desc(letterMinuteTable.createdAt),
           );
-        return c.json({ letters, actions });
+        // Assignments awaiting my accept/reject decision.
+        const pendingAssignments = await db
+          .select({
+            id: letterAssignmentTable.id,
+            letterId: letterAssignmentTable.letterId,
+            action: letterAssignmentTable.action,
+            note: letterAssignmentTable.note,
+            createdAt: letterAssignmentTable.createdAt,
+            refNo: letterTable.refNo,
+            subject: letterTable.subject,
+          })
+          .from(letterAssignmentTable)
+          .innerJoin(
+            letterTable,
+            eq(letterAssignmentTable.letterId, letterTable.id),
+          )
+          .where(
+            and(
+              eq(letterTable.workspaceId, ws),
+              eq(letterAssignmentTable.toUserId, userId),
+              eq(letterAssignmentTable.status, "pending"),
+            ),
+          )
+          .orderBy(desc(letterAssignmentTable.createdAt));
+        return c.json({ letters, actions, pendingAssignments });
       },
     )
     // ── List (faceted) ──────────────────────────────────────────────────────
@@ -426,6 +570,42 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         });
       },
     )
+    // ── GM watchlist: pending assignments nobody has accepted yet ───────────────
+    // Registered before "/letters/:id" so "awaiting-acceptance" is not
+    // captured as an :id param.
+    .get(
+      "/letters/awaiting-acceptance",
+      validator("query", v.object({ workspaceId: v.string() })),
+      workspaceAccess.fromQuery("workspaceId"),
+      pageAccess,
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const rows = await db
+          .select({
+            id: letterAssignmentTable.id,
+            letterId: letterAssignmentTable.letterId,
+            toUserId: letterAssignmentTable.toUserId,
+            action: letterAssignmentTable.action,
+            note: letterAssignmentTable.note,
+            createdAt: letterAssignmentTable.createdAt,
+            refNo: letterTable.refNo,
+            subject: letterTable.subject,
+          })
+          .from(letterAssignmentTable)
+          .innerJoin(
+            letterTable,
+            eq(letterAssignmentTable.letterId, letterTable.id),
+          )
+          .where(
+            and(
+              eq(letterTable.workspaceId, ws),
+              eq(letterAssignmentTable.status, "pending"),
+            ),
+          )
+          .orderBy(asc(letterAssignmentTable.createdAt));
+        return c.json(rows);
+      },
+    )
     // ── Detail ────────────────────────────────────────────────────────────────
     .get(
       "/letters/:id",
@@ -546,7 +726,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               securityLabelId: b.securityLabelId ?? null,
               fileRef: b.fileRef ?? null,
               status: "captured",
-              currentAssigneeId: assigneeId,
+              // Ownership transfers only when the assignee accepts.
+              currentAssigneeId: null,
               createdBy: userId,
             })
             .returning();
@@ -579,6 +760,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             refNo: (created.refNo as string | null) ?? null,
             subject,
           });
+        if (assigneeId)
+          broadcastToUser(assigneeId, { entity: "letter-assignment" });
         return c.json(created, 201);
       },
     )
@@ -826,7 +1009,21 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const b = c.req.valid("json");
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
-        const result = await db.transaction(async (tx) => {
+        const { result, bypassed } = await db.transaction(async (tx) => {
+          // A recipient who is bypassed must not keep a stale pending item.
+          const superseded = await tx
+            .update(letterAssignmentTable)
+            .set({ status: "superseded", decidedAt: new Date() })
+            .where(
+              and(
+                eq(letterAssignmentTable.letterId, id),
+                eq(letterAssignmentTable.status, "pending"),
+              ),
+            )
+            .returning({
+              id: letterAssignmentTable.id,
+              toUserId: letterAssignmentTable.toUserId,
+            });
           const [assignment] = await tx
             .insert(letterAssignmentTable)
             .values({
@@ -843,12 +1040,24 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           const [row] = await tx
             .update(letterTable)
             .set({
-              currentAssigneeId: b.toUserId ?? null,
-              status: "assigned",
+              // currentAssigneeId is unchanged: the handover is not complete
+              // until the recipient accepts.
               updatedAt: new Date(),
             })
             .where(and(eq(letterTable.id, id), eq(letterTable.workspaceId, ws)))
             .returning();
+          // Cancelling someone's pending work is a change of record in its own
+          // right: it is recorded before the route event that caused it.
+          if (superseded.length > 0)
+            await recordAuditEvent(tx, {
+              workspaceId: ws,
+              entityType: "letter",
+              entityId: id,
+              action: "supersede",
+              actorId: userId,
+              after: { assignmentIds: superseded.map((a) => a.id) },
+              ip: getIp(c),
+            });
           await recordAuditEvent(tx, {
             workspaceId: ws,
             entityType: "letter",
@@ -858,7 +1067,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             after: { assignment, letter: row },
             ip: getIp(c),
           });
-          return row as Row;
+          return { result: row as Row, bypassed: superseded };
         });
         // Notify the assignee (best-effort; never blocks the routing).
         if (b.toUserId)
@@ -867,6 +1076,16 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             refNo: letter.refNo,
             subject: letter.subject,
           });
+        if (b.toUserId)
+          broadcastToUser(b.toUserId, { entity: "letter-assignment" });
+        // Without this the bypassed recipient keeps a lit dot on a letter they
+        // can no longer act on, and Accept later fails with a 409.
+        for (const userIdToNotify of new Set(
+          bypassed
+            .map((a) => a.toUserId)
+            .filter((u): u is string => !!u && u !== b.toUserId),
+        ))
+          broadcastToUser(userIdToNotify, { entity: "letter-assignment" });
         return c.json(result);
       },
     )
@@ -1280,5 +1499,25 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           throw new HTTPException(404, { message: "File not found" });
         }
       },
+    )
+    // ── Accept / reject a pending assignment ─────────────────────────────────
+    .post(
+      "/letters/:id/assignments/:aid/accept",
+      validator("param", v.object({ id: v.string(), aid: v.string() })),
+      validator("json", v.object({ workspaceId: v.string() })),
+      workspaceAccess.fromBody("workspaceId"),
+      async (c) => decideAssignment(c, "accepted", null),
+    )
+    .post(
+      "/letters/:id/assignments/:aid/reject",
+      validator("param", v.object({ id: v.string(), aid: v.string() })),
+      validator("json", v.object({ workspaceId: v.string(), note: optStr })),
+      workspaceAccess.fromBody("workspaceId"),
+      async (c) =>
+        decideAssignment(
+          c,
+          "rejected",
+          c.req.valid("json").note?.trim() || null,
+        ),
     );
 }

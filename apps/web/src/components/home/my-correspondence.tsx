@@ -14,7 +14,8 @@ export default function MyCorrespondence() {
 
   const letters = data?.letters ?? [];
   const actions = data?.actions ?? [];
-  const total = letters.length + actions.length;
+  const pending = data?.pendingAssignments ?? [];
+  const total = letters.length + actions.length + pending.length;
   if (total === 0) return null;
 
   return (
@@ -22,6 +23,31 @@ export default function MyCorrespondence() {
       <div className="flex items-center gap-2 border-b border-border px-4 py-2.5 font-medium text-muted-foreground text-xs">
         <Mail className="h-3.5 w-3.5" /> Correspondence ({total})
       </div>
+
+      {pending.length > 0 && (
+        <div>
+          <div className="px-4 pt-2.5 pb-1 font-medium text-[11px] text-muted-foreground/80 uppercase tracking-wide">
+            Awaiting your decision
+          </div>
+          <ul className="divide-y divide-border">
+            {pending.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  onClick={() => setOpenId(p.letterId)}
+                  className="block w-full px-4 py-2.5 text-left text-sm hover:bg-accent/60"
+                >
+                  <div className="truncate font-medium">{p.subject}</div>
+                  <div className="text-muted-foreground text-xs">
+                    {p.refNo ?? "unregistered"} · accept or reject
+                    {p.note ? ` · ${p.note}` : ""}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {letters.length > 0 && (
         <div>

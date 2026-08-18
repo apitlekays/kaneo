@@ -34,12 +34,22 @@ export function useMyCorrespondence(workspaceId: string) {
   });
 }
 
+export function useAwaitingAcceptance(workspaceId: string) {
+  return useQuery({
+    queryKey: ["awaiting-acceptance", workspaceId],
+    queryFn: () => api.getAwaitingAcceptance(workspaceId),
+    enabled: !!workspaceId,
+  });
+}
+
 export function useLetterMutations(workspaceId: string, letterId?: string) {
   const qc = useQueryClient();
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["letters", workspaceId] });
     qc.invalidateQueries({ queryKey: ["correspondence-summary", workspaceId] });
     qc.invalidateQueries({ queryKey: ["my-correspondence", workspaceId] });
+    // The GM watchlist changes on every capture, route and decision.
+    qc.invalidateQueries({ queryKey: ["awaiting-acceptance", workspaceId] });
     if (letterId) {
       qc.invalidateQueries({ queryKey: ["letter", workspaceId, letterId] });
     }
@@ -226,6 +236,24 @@ export function useLetterMutations(workspaceId: string, letterId?: string) {
       onSuccess: () => {
         invalidate();
         toast.success("Disposition recorded");
+      },
+      onError,
+    }),
+    acceptAssignment: useMutation({
+      mutationFn: (assignmentId: string) =>
+        api.acceptAssignment(workspaceId, id, assignmentId),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Assignment accepted");
+      },
+      onError,
+    }),
+    rejectAssignment: useMutation({
+      mutationFn: (vars: { assignmentId: string; note?: string }) =>
+        api.rejectAssignment(workspaceId, id, vars.assignmentId, vars.note),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Assignment rejected");
       },
       onError,
     }),
