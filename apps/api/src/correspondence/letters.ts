@@ -214,12 +214,23 @@ async function decideAssignment(
   const { id, aid } = c.req.param();
 
   const [assignment] = await db
-    .select()
+    .select({
+      id: letterAssignmentTable.id,
+      letterId: letterAssignmentTable.letterId,
+      fromUserId: letterAssignmentTable.fromUserId,
+      toUserId: letterAssignmentTable.toUserId,
+      toDeptId: letterAssignmentTable.toDeptId,
+      action: letterAssignmentTable.action,
+      status: letterAssignmentTable.status,
+      note: letterAssignmentTable.note,
+    })
     .from(letterAssignmentTable)
+    .innerJoin(letterTable, eq(letterAssignmentTable.letterId, letterTable.id))
     .where(
       and(
         eq(letterAssignmentTable.id, aid),
         eq(letterAssignmentTable.letterId, id),
+        eq(letterTable.workspaceId, ws),
       ),
     )
     .limit(1);

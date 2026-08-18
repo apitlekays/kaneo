@@ -266,4 +266,53 @@ describe("API integration: bilateral handover", () => {
     );
     expect(response.status).toBe(403);
   });
+
+  it("refuses a decision on an assignment that belongs to a different workspace", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const clerk = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: officer.workspace.id,
+      userId: clerk.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(officer.workspace.id, clerk.user.id);
+
+    mockAuthenticatedSession(officer.user);
+    const { app } = createApp();
+    const created = await (
+      await captureLetter(app, officer.workspace.id, clerk.user.id)
+    ).json();
+    const [assignment] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.letterId, created.id));
+
+    // A member of an unrelated workspace B, who happens to know the (letterId,
+    // assignmentId) pair from workspace A, submits their OWN workspace id.
+    const attacker = await createWorkspaceMember({ role: "owner" });
+    mockAuthenticatedSession(attacker.user);
+    const { app: attackerApp } = createApp();
+    const response = await attackerApp.request(
+      `/api/correspondence/letters/${created.id}/assignments/${assignment.id}/accept`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: attacker.workspace.id }),
+      },
+    );
+    expect(response.status).toBe(404);
+
+    const [assignmentRow] = await db
+      .select()
+      .from(schema.letterAssignmentTable)
+      .where(eq(schema.letterAssignmentTable.id, assignment.id));
+    expect(assignmentRow.status).toBe("pending");
+
+    const [letterRow] = await db
+      .select()
+      .from(schema.letterTable)
+      .where(eq(schema.letterTable.id, created.id));
+    expect(letterRow.currentAssigneeId).toBeNull();
+  });
 });
