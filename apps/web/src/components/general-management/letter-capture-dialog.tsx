@@ -184,7 +184,7 @@ export function LetterCaptureDialog({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Received</Label>
+            <Label>{direction === "in" ? "Received" : "Sent"}</Label>
             <DateField value={receivedAt} onChange={setReceivedAt} />
           </div>
           <div className="space-y-1.5 sm:col-span-2">

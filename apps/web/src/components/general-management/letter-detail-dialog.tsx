@@ -483,7 +483,7 @@ function OverviewSection({
         />
         <Field label="Medium" value={letter.medium} />
         <Field
-          label="Received"
+          label={letter.direction === "in" ? "Received" : "Sent"}
           value={letter.receivedAt ? formatDateMedium(letter.receivedAt) : "—"}
         />
         <Field
