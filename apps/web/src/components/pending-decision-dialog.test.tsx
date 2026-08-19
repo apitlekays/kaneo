@@ -38,8 +38,10 @@ vi.mock("@/lib/toast", () => ({
 }));
 
 const pathname = { current: "/dashboard/correspondence/l1" };
+const navigate = vi.fn();
 vi.mock("@tanstack/react-router", () => ({
   useLocation: () => ({ pathname: pathname.current }),
+  useNavigate: () => navigate,
 }));
 
 describe("PendingDecisionDialog", () => {
@@ -50,6 +52,7 @@ describe("PendingDecisionDialog", () => {
   beforeEach(() => {
     mutate.mockReset();
     errorToast.mockReset();
+    navigate.mockReset();
     pathname.current = "/dashboard/correspondence/l1";
     items.current = [
       {
@@ -140,6 +143,23 @@ describe("PendingDecisionDialog", () => {
     render(<PendingDecisionDialog />);
     await screen.findByText("MAPIM/2026/0114");
     expect(play).not.toHaveBeenCalled();
+  });
+
+  it("navigates client-side and closes the dialog when Open is clicked", async () => {
+    render(<PendingDecisionDialog />);
+    expect(await screen.findByText("MAPIM/2026/0114")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: /open/i }));
+
+    expect(navigate).toHaveBeenCalledWith({
+      to: "/dashboard/correspondence/l1",
+    });
+    // A full page reload would remount the dialog with dismissed=false and
+    // it would auto-open again on top of the very item just opened; closing
+    // it here (and staying dismissed) is what proves this isn't a reload.
+    await waitFor(() =>
+      expect(screen.queryByText("MAPIM/2026/0114")).not.toBeInTheDocument(),
+    );
   });
 
   it("stays dismissed away from Home, but reopens once the user lands there", async () => {

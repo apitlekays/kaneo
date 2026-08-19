@@ -1,4 +1,4 @@
-import { useLocation } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -34,12 +34,15 @@ function ItemCard({
   item,
   workspaceId,
   onDone,
+  onOpen,
 }: {
   item: PendingDecisionItem;
   workspaceId: string;
   onDone: (id: string) => void;
+  onOpen: () => void;
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { mutate, isPending } = useDecidePending(workspaceId);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -85,6 +88,15 @@ function ItemCard({
       <a
         href={item.href}
         className="text-xs underline underline-offset-2 inline-block"
+        onClick={(event) => {
+          // A full page reload would remount this dialog fresh with
+          // dismissed=false, so it auto-opens again on top of the very item
+          // the user just asked to read. Navigate client-side instead, and
+          // close the dialog out of the way.
+          event.preventDefault();
+          navigate({ to: item.href });
+          onOpen();
+        }}
       >
         {t("pendingDecisions:open")}
       </a>
@@ -215,6 +227,10 @@ export function PendingDecisionDialog() {
               item={item}
               workspaceId={workspace.id}
               onDone={(id) => setDecided((prev) => [...prev, id])}
+              onOpen={() => {
+                setOpen(false);
+                setDismissed(true);
+              }}
             />
           ))}
         </div>
