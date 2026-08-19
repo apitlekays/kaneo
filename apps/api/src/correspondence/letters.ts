@@ -207,14 +207,17 @@ async function notifyAssigned(
   }).catch(() => {});
 }
 
-async function decideAssignment(
-  c: Context,
-  decision: AssignmentDecision,
-  note: string | null,
-) {
-  const ws = c.get("workspaceId") as string;
-  const userId = c.get("userId") as string;
-  const { id, aid } = c.req.param();
+export async function decideLetterAssignment(args: {
+  workspaceId: string;
+  userId: string;
+  letterId: string;
+  assignmentId: string;
+  decision: AssignmentDecision;
+  reason: string | null;
+  ip: string | null;
+}) {
+  const { workspaceId: ws, userId, letterId: id, assignmentId: aid } = args;
+  const { decision, reason: note } = args;
 
   const [assignment] = await db
     .select({
@@ -330,7 +333,7 @@ async function decideAssignment(
         status: row.status,
         reason: note,
       },
-      ip: getIp(c),
+      ip: args.ip,
     });
     return row;
   });
@@ -338,6 +341,24 @@ async function decideAssignment(
     broadcastToUser(assignment.toUserId, { entity: "letter-assignment" });
   if (decision === "rejected" && assignment.fromUserId)
     broadcastToUser(assignment.fromUserId, { entity: "letter-assignment" });
+  return updated;
+}
+
+async function decideAssignment(
+  c: Context,
+  decision: AssignmentDecision,
+  note: string | null,
+) {
+  const { id, aid } = c.req.param();
+  const updated = await decideLetterAssignment({
+    workspaceId: c.get("workspaceId") as string,
+    userId: c.get("userId") as string,
+    letterId: id,
+    assignmentId: aid,
+    decision,
+    reason: note,
+    ip: getIp(c),
+  });
   return c.json(updated);
 }
 
