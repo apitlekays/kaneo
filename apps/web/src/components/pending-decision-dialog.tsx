@@ -1,3 +1,4 @@
+import { useLocation } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -27,29 +28,6 @@ const HOME_PATH = "/dashboard/home";
 let openDialog: (() => void) | null = null;
 export function openPendingDecisions() {
   openDialog?.();
-}
-
-/**
- * `@tanstack/react-router`'s `useLocation` requires a `<RouterProvider>` in
- * scope (it throws otherwise), which this component cannot assume in
- * isolation — including in this file's own unit tests. TanStack Router
- * navigations also drive `history.pushState` internally rather than firing a
- * native `popstate` event, so a plain listener alone would miss in-app
- * navigation. Poll the pathname instead: cheap, dependency-free, and correct
- * for the one thing this needs to notice — that the user landed on Home.
- */
-function useCurrentPathname(): string {
-  const [pathname, setPathname] = useState(() => window.location.pathname);
-  useEffect(() => {
-    const update = () => setPathname(window.location.pathname);
-    window.addEventListener("popstate", update);
-    const interval = setInterval(update, 1000);
-    return () => {
-      window.removeEventListener("popstate", update);
-      clearInterval(interval);
-    };
-  }, []);
-  return pathname;
 }
 
 function ItemCard({
@@ -162,7 +140,7 @@ export function PendingDecisionDialog() {
   const { t } = useTranslation();
   const { data: workspace } = useActiveWorkspace();
   const { data } = usePendingDecisions(workspace?.id ?? "");
-  const path = useCurrentPathname();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [decided, setDecided] = useState<string[]>([]);
@@ -172,6 +150,7 @@ export function PendingDecisionDialog() {
 
   // Landing on Home clears the dismissal: the dot must never be the only thing
   // standing between someone and a decision they owe.
+  const path = location.pathname;
   const lastPath = useRef(path);
   useEffect(() => {
     if (path !== lastPath.current && path === HOME_PATH) setDismissed(false);

@@ -37,6 +37,11 @@ vi.mock("@/lib/toast", () => ({
   toast: { error: (m: string) => errorToast(m), info: vi.fn() },
 }));
 
+const pathname = { current: "/dashboard/correspondence/l1" };
+vi.mock("@tanstack/react-router", () => ({
+  useLocation: () => ({ pathname: pathname.current }),
+}));
+
 describe("PendingDecisionDialog", () => {
   afterEach(() => {
     cleanup();
@@ -45,6 +50,7 @@ describe("PendingDecisionDialog", () => {
   beforeEach(() => {
     mutate.mockReset();
     errorToast.mockReset();
+    pathname.current = "/dashboard/correspondence/l1";
     items.current = [
       {
         source: "correspondence",
@@ -134,5 +140,22 @@ describe("PendingDecisionDialog", () => {
     render(<PendingDecisionDialog />);
     await screen.findByText("MAPIM/2026/0114");
     expect(play).not.toHaveBeenCalled();
+  });
+
+  it("stays dismissed away from Home, but reopens once the user lands there", async () => {
+    const { rerender } = render(<PendingDecisionDialog />);
+    expect(await screen.findByText("MAPIM/2026/0114")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /close/i }));
+    expect(screen.queryByText("MAPIM/2026/0114")).not.toBeInTheDocument();
+
+    // Still on the same page, work is still pending: the dismissal holds.
+    rerender(<PendingDecisionDialog />);
+    expect(screen.queryByText("MAPIM/2026/0114")).not.toBeInTheDocument();
+
+    // Landing on Home clears the dismissal and the dialog reopens.
+    pathname.current = "/dashboard/home";
+    rerender(<PendingDecisionDialog />);
+    expect(await screen.findByText("MAPIM/2026/0114")).toBeInTheDocument();
   });
 });
