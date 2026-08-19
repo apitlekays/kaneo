@@ -37,5 +37,11 @@ describe("useDecidePending", () => {
     expect(keys).toContainEqual(["pending-decisions", "ws-1"]);
     expect(keys).toContainEqual(["awaiting-acceptance", "ws-1"]);
     expect(keys).toContainEqual(["my-correspondence", "ws-1"]);
+    // Mirrors the letter-page mutation's invalidations (use-letters.ts), so
+    // the letter page beneath the dialog can't keep serving a stale Accept
+    // button after the dialog already resolved the decision.
+    expect(keys).toContainEqual(["letters", "ws-1"]);
+    expect(keys).toContainEqual(["correspondence-summary", "ws-1"]);
+    expect(keys).toContainEqual(["letter", "ws-1"]);
   });
 });
