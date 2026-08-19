@@ -1,7 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Letter } from "@/fetchers/correspondence/letters";
+import type {
+  Letter,
+  WatchlistAssignment,
+} from "@/fetchers/correspondence/letters";
 import { Correspondence } from "./correspondence";
 
 // Mock the query hooks this component uses (read from the component's own
@@ -9,11 +12,12 @@ import { Correspondence } from "./correspondence";
 
 const state = vi.hoisted(() => ({
   letters: [] as Letter[],
+  awaiting: [] as WatchlistAssignment[],
 }));
 
 vi.mock("@/hooks/queries/correspondence/use-letters", () => ({
   useLetters: () => ({ data: state.letters, isLoading: false }),
-  useAwaitingAcceptance: () => ({ data: [], isLoading: false }),
+  useAwaitingAcceptance: () => ({ data: state.awaiting, isLoading: false }),
 }));
 
 vi.mock(
@@ -200,5 +204,37 @@ describe("correspondence register", () => {
     render(<Correspondence workspaceId="ws-1" />);
 
     expect(screen.getAllByText("Urgent")).toHaveLength(1);
+  });
+
+  it("labels the pending-registration tile's reference column neutrally, not direction-aware", async () => {
+    // The watchlist mixes incoming and outgoing letters (its query has no
+    // direction filter), so its header must not borrow the page's "in"/"out"
+    // toggle — that would mislabel whichever direction it doesn't match.
+    // Page direction defaults to "in", where a direction-aware header would
+    // read "ERN" — assert it does not.
+    const user = userEvent.setup();
+    state.awaiting = [
+      {
+        id: "assign-1",
+        letterId: "letter-1",
+        refNo: "REF-1",
+        externalRefNo: "ERN-1",
+        direction: "in",
+        subject: "Awaiting decision",
+        action: "inspect",
+        note: null,
+        createdAt: "2025-05-01T00:00:00.000Z",
+        toUserId: null,
+        status: "pending",
+        decidedAt: null,
+        currentAssigneeId: null,
+      },
+    ];
+
+    render(<Correspondence workspaceId="ws-1" />);
+    await user.click(screen.getByRole("button", { name: /Needs attention/ }));
+
+    expect(screen.getByText("Reference")).toBeVisible();
+    expect(screen.queryByText("ERN")).not.toBeInTheDocument();
   });
 });

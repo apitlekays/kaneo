@@ -195,7 +195,11 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{referenceHeader(direction)}</TableHead>
+                {/* This watchlist mixes incoming and outgoing letters (its
+                query has no direction filter), so a direction-specific
+                header here would mislabel half the rows. Stay neutral;
+                each row's own letterReference(item) is still accurate. */}
+                <TableHead>Reference</TableHead>
                 <TableHead>Subject</TableHead>
                 <TableHead>State</TableHead>
                 <TableHead>With</TableHead>
