@@ -640,6 +640,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             decidedAt: letterAssignmentTable.decidedAt,
             createdAt: letterAssignmentTable.createdAt,
             refNo: letterTable.refNo,
+            externalRefNo: letterTable.externalRefNo,
+            direction: letterTable.direction,
             subject: letterTable.subject,
             currentAssigneeId: letterTable.currentAssigneeId,
           })

@@ -1,6 +1,7 @@
+import type { VariantProps } from "class-variance-authority";
 import { Archive, Clock, Loader2, Plus, Search } from "lucide-react";
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { Fragment, useState } from "react";
+import { Badge, type badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useConfigList } from "@/hooks/queries/correspondence/use-config";
 import {
   useAwaitingAcceptance,
   useLetters,
@@ -25,6 +27,13 @@ import {
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { cn } from "@/lib/cn";
 import { formatDateMedium, formatRelativeTime } from "@/lib/format";
+import {
+  groupLettersByYear,
+  letterYearDate,
+  nextSortDirection,
+} from "@/lib/letter-grouping";
+import { letterReference, referenceHeader } from "@/lib/letter-reference";
+import { urgencyBadge } from "@/lib/urgency";
 import { LetterCaptureDialog } from "./letter-capture-dialog";
 import { LetterDetailDialog } from "./letter-detail-dialog";
 
@@ -46,6 +55,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
   const [showDisposed, setShowDisposed] = useState(false);
   const [showAwaiting, setShowAwaiting] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   const { data: letters = [], isLoading } = useLetters(workspaceId, {
     direction,
@@ -56,9 +66,17 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
   const { data: awaiting = [], isLoading: isAwaitingLoading } =
     useAwaitingAcceptance(workspaceId);
   const { data: usersData } = useGetActiveWorkspaceUsers(workspaceId);
+  const { data: organisations = [] } = useConfigList(
+    "organisations",
+    workspaceId,
+  );
   const users = usersData?.members ?? [];
   const userName = (id: string | null) =>
     id ? (users.find((u) => u.userId === id)?.user?.name ?? id) : "—";
+  const organisationName = new Map(
+    organisations.map((org) => [org.id, org.label as string]),
+  );
+  const groups = groupLettersByYear(letters, letterYearDate, sortDirection);
 
   return (
     <div className="space-y-4">
@@ -177,7 +195,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Ref No.</TableHead>
+                <TableHead>{referenceHeader(direction)}</TableHead>
                 <TableHead>Subject</TableHead>
                 <TableHead>State</TableHead>
                 <TableHead>With</TableHead>
@@ -192,7 +210,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
                   className="cursor-pointer"
                 >
                   <TableCell className="font-mono text-xs">
-                    {item.refNo ?? "—"}
+                    {letterReference(item)}
                   </TableCell>
                   <TableCell className="font-medium">{item.subject}</TableCell>
                   <TableCell>
@@ -223,59 +241,111 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Ref No.</TableHead>
-                <TableHead>Date</TableHead>
+                <TableHead>{referenceHeader(direction)}</TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSortDirection(nextSortDirection(sortDirection))
+                    }
+                    className="inline-flex items-center gap-1"
+                  >
+                    Date
+                    {sortDirection === "desc" ? "↓" : "↑"}
+                  </button>
+                </TableHead>
                 <TableHead>Subject</TableHead>
                 <TableHead>{direction === "in" ? "From" : "To"}</TableHead>
+                <TableHead>Urgency</TableHead>
+                <TableHead>Organisation</TableHead>
                 <TableHead>Actions</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {letters.map((letter) => (
-                <TableRow
-                  key={letter.id}
-                  onClick={() => setSelectedId(letter.id)}
-                  className="cursor-pointer"
-                >
-                  <TableCell className="font-mono text-xs">
-                    {letter.refNo ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDateMedium(
-                      letter.receivedAt ??
-                        letter.letterDate ??
-                        letter.createdAt,
-                    )}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {letter.subject}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {(direction === "in"
-                      ? (letter.senderName ?? letter.senderOrg)
-                      : (letter.recipientName ?? letter.recipientOrg)) ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    {letter.actionsTotal ? (
-                      <Badge
-                        variant={
-                          letter.actionsDone === letter.actionsTotal
-                            ? "success"
-                            : "outline"
-                        }
-                        className="text-xs"
-                      >
-                        {letter.actionsDone}/{letter.actionsTotal} done
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge className="border text-xs">{letter.status}</Badge>
-                  </TableCell>
-                </TableRow>
+              {groups.map((group) => (
+                <Fragment key={group.year}>
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="bg-muted/50 font-semibold text-muted-foreground text-xs"
+                    >
+                      {group.year}
+                    </TableCell>
+                  </TableRow>
+                  {group.letters.map((letter) => (
+                    <TableRow
+                      key={letter.id}
+                      onClick={() => setSelectedId(letter.id)}
+                      className="cursor-pointer"
+                    >
+                      <TableCell className="font-mono text-xs">
+                        {letterReference(letter)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDateMedium(
+                          letter.receivedAt ??
+                            letter.letterDate ??
+                            letter.createdAt,
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {letter.subject}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {(direction === "in"
+                          ? (letter.senderName ?? letter.senderOrg)
+                          : (letter.recipientName ?? letter.recipientOrg)) ??
+                          "—"}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const badge = urgencyBadge(letter.urgency);
+                          return badge ? (
+                            <Badge
+                              variant={
+                                badge.variant as VariantProps<
+                                  typeof badgeVariants
+                                >["variant"]
+                              }
+                              className="text-xs"
+                            >
+                              {badge.label}
+                            </Badge>
+                          ) : null;
+                        })()}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {letter.organisationId
+                          ? (organisationName.get(letter.organisationId) ?? "—")
+                          : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {letter.actionsTotal ? (
+                          <Badge
+                            variant={
+                              letter.actionsDone === letter.actionsTotal
+                                ? "success"
+                                : "outline"
+                            }
+                            className="text-xs"
+                          >
+                            {letter.actionsDone}/{letter.actionsTotal} done
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">
+                            —
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className="border text-xs">
+                          {letter.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </Fragment>
               ))}
             </TableBody>
           </Table>

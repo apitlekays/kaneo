@@ -369,6 +369,8 @@ export type WatchlistAssignment = PendingAssignment & {
   decidedAt: string | null;
   /** Who the letter fell back to. Null means it is owned by nobody. */
   currentAssigneeId: string | null;
+  externalRefNo: string | null;
+  direction: "in" | "out";
 };
 
 export async function getAwaitingAcceptance(
