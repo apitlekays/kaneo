@@ -89,6 +89,16 @@ function ItemCard({
         href={item.href}
         className="text-xs underline underline-offset-2 inline-block"
         onClick={(event) => {
+          // A modified click (new tab / new window / middle click) is asking
+          // for a real anchor, not an in-app navigation — let the browser
+          // handle it natively, same as before this was wired to the router.
+          if (
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.button !== 0
+          )
+            return;
           // A full page reload would remount this dialog fresh with
           // dismissed=false, so it auto-opens again on top of the very item
           // the user just asked to read. Navigate client-side instead, and
