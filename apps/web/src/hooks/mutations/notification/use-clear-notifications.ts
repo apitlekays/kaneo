@@ -8,6 +8,8 @@ function useClearNotifications() {
     mutationFn: clearNotifications,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      // The Home activity feed reads the same rows under its own key.
+      queryClient.invalidateQueries({ queryKey: ["notification-feed"] });
     },
   });
 }

@@ -16,6 +16,7 @@ import createNotification from "./controllers/create-notification";
 import getNotifications from "./controllers/get-notifications";
 import markAllNotificationsAsRead from "./controllers/mark-all-notifications-as-read";
 import markAsRead from "./controllers/mark-notification-as-read";
+import { FEED_TYPES } from "./feed-types";
 
 const bulkResultSchema = v.object({
   success: v.boolean(),
@@ -34,15 +35,6 @@ async function getActorName(userId: string): Promise<string> {
     .limit(1);
   return actor?.name ?? "Someone";
 }
-
-// Notification types shown in the Home activity feed (the "X did Y in Task Z"
-// list). All reference a task and carry an actorName in eventData.
-const FEED_TYPES = [
-  "task_assignee_changed",
-  "task_tagged",
-  "task_status_changed",
-  "task_commented",
-] as const;
 
 const notification = new Hono<{
   Variables: {
