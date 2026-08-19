@@ -20,6 +20,7 @@ import {
   gmCategoryTable,
   gmFilePlanNodeTable,
   gmNumberSchemeTable,
+  gmOrganisationTable,
   gmRetentionClassTable,
   gmSecurityLabelTable,
   letterAssignmentTable,
@@ -117,6 +118,7 @@ async function inWorkspace(
   table:
     | typeof gmCategoryTable
     | typeof gmFilePlanNodeTable
+    | typeof gmOrganisationTable
     | typeof gmSecurityLabelTable,
   id: string | null | undefined,
   workspaceId: string,
@@ -765,6 +767,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           [gmCategoryTable, b.categoryId],
           [gmFilePlanNodeTable, b.filePlanNodeId],
           [gmSecurityLabelTable, b.securityLabelId],
+          [gmOrganisationTable, b.organisationId],
         ] as const) {
           if (!(await inWorkspace(table, id, ws)))
             throw new HTTPException(400, { message: "Invalid reference" });
@@ -874,6 +877,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           throw new HTTPException(409, {
             message: "Letter is a declared record; content is immutable",
           });
+        if (!(await inWorkspace(gmOrganisationTable, b.organisationId, ws)))
+          throw new HTTPException(400, { message: "Invalid reference" });
         const patch: Row = { updatedAt: new Date() };
         if (b.subject !== undefined) patch.subject = b.subject.trim();
         for (const k of [
