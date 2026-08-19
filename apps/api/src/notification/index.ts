@@ -234,10 +234,13 @@ const notification = new Hono<{
 subscribeToEvent<{
   taskId: string;
   userId: string;
+  currentUserId?: string;
   title: string;
   projectId: string;
 }>("task.created", async (data) => {
-  if (data.userId) {
+  // `userId` is the new task's assignee; `currentUserId` is whoever created
+  // it. Assigning a task to yourself is not news worth interrupting for.
+  if (data.userId && data.userId !== data.currentUserId) {
     await createNotification({
       userId: data.userId,
       type: "task_created",
@@ -255,8 +258,11 @@ subscribeToEvent<{
   workspaceName: string;
   ownerEmail: string;
   ownerId?: string;
+  actorId?: string;
 }>("workspace.created", async (data) => {
-  if (data.ownerId) {
+  // Telling people about a workspace they just created themselves is the
+  // app talking to itself.
+  if (data.ownerId && data.ownerId !== data.actorId) {
     await createNotification({
       userId: data.ownerId,
       type: "workspace_created",

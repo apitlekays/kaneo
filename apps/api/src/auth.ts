@@ -378,6 +378,7 @@ export const auth = betterAuth({
             workspaceName: organization.name,
             ownerEmail: user.name,
             ownerId: user.id,
+            actorId: user.id,
           });
         },
       },
