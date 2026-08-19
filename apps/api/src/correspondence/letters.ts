@@ -12,6 +12,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute, validator } from "hono-openapi";
@@ -729,11 +730,16 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
       validator("param", v.object({ id: v.string() })),
       validator("query", v.object({ workspaceId: v.string() })),
       workspaceAccess.fromQuery("workspaceId"),
+      pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
         const { id } = c.req.valid("param");
         // Only edges whose BOTH ends live in this workspace. A link pointing
-        // outside it must never surface a letter the reader cannot see.
+        // outside it must never surface a letter the reader cannot see, and
+        // must not even enter the walk — a foreign id consuming a slot of
+        // walkThread's cap would let data the caller can never see decide
+        // whether they're told the thread was truncated.
+        const toLetterTable = alias(letterTable, "toLetterTable");
         const edges = await db
           .select({
             fromLetterId: letterLinkTable.fromLetterId,
@@ -744,7 +750,16 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             letterTable,
             eq(letterLinkTable.fromLetterId, letterTable.id),
           )
-          .where(eq(letterTable.workspaceId, ws));
+          .innerJoin(
+            toLetterTable,
+            eq(letterLinkTable.toLetterId, toLetterTable.id),
+          )
+          .where(
+            and(
+              eq(letterTable.workspaceId, ws),
+              eq(toLetterTable.workspaceId, ws),
+            ),
+          );
         const { ids, truncated } = walkThread(id, edges);
         const rows = await db
           .select({
