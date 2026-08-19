@@ -107,7 +107,10 @@ function makeLetter(overrides: Partial<Letter> = {}): Letter {
 const newLetter = makeLetter({
   id: "new-1",
   direction: "out",
-  refNo: "REF-2026-100",
+  // refNo stays null: capture never allocates a reference number (that
+  // happens at registration/dispatch), so the failure banner must not
+  // depend on one existing.
+  refNo: null,
   subject: "New outgoing letter",
 });
 
@@ -234,7 +237,7 @@ describe("LetterCaptureDialog — link picker at registration", () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "Letter registered as REF-2026-100. 1 of 3 links could not be saved.",
+          'Letter "New outgoing letter" was captured. 1 of 3 links could not be saved.',
         ),
       ).toBeVisible(),
     );

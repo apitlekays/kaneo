@@ -28,7 +28,6 @@ import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-
 import { usePdfCompression } from "@/hooks/use-pdf-compression";
 import { compressionLabel } from "@/lib/compression-label";
 import { isPdfUpload } from "@/lib/is-pdf-upload";
-import { letterReference } from "@/lib/letter-reference";
 import { toast } from "@/lib/toast";
 import { LetterLinkPicker, type PendingLink } from "./letter-link-picker";
 
@@ -91,7 +90,9 @@ export function LetterCaptureDialog({
   const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
   const [failedLinks, setFailedLinks] = useState<PendingLink[]>([]);
   const [totalLinksAttempted, setTotalLinksAttempted] = useState(0);
-  const [registeredRef, setRegisteredRef] = useState<string | null>(null);
+  // What the failure banner names the letter by — subject, not a reference
+  // number, because capture never allocates one (registration does, later).
+  const [capturedSubject, setCapturedSubject] = useState<string | null>(null);
   const [createdLetterId, setCreatedLetterId] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
 
@@ -116,7 +117,7 @@ export function LetterCaptureDialog({
     setPendingLinks([]);
     setFailedLinks([]);
     setTotalLinksAttempted(0);
-    setRegisteredRef(null);
+    setCapturedSubject(null);
     setCreatedLetterId(null);
     setLinking(false);
   };
@@ -149,7 +150,7 @@ export function LetterCaptureDialog({
   };
 
   const closeAfterFailure = () => {
-    // The letter is already registered — closing here never touches it.
+    // The letter is already captured — closing here never touches it.
     reset();
     setOpen(false);
   };
@@ -191,9 +192,12 @@ export function LetterCaptureDialog({
             }
           }
 
-          // Never roll back the created letter past this point — its
-          // reference has already been allocated from a gap-free sequence,
-          // so a failed link is recoverable but a missing reference is not.
+          // Never roll back the created letter past this point. It is
+          // already captured — a real row, tracked in the pending-
+          // registration queue — even though it has no reference number
+          // yet (that's assigned later, at registration/dispatch). A
+          // failed link is recoverable; deleting a captured letter is not
+          // something this app supports or should start doing here.
           if (pendingLinks.length > 0) {
             setLinking(true);
             const failed = await postLinks(letter.id, pendingLinks);
@@ -202,7 +206,7 @@ export function LetterCaptureDialog({
               setCreatedLetterId(letter.id);
               setTotalLinksAttempted(pendingLinks.length);
               setFailedLinks(failed);
-              setRegisteredRef(letterReference(letter));
+              setCapturedSubject(letter.subject);
               return;
             }
           }
@@ -479,7 +483,7 @@ export function LetterCaptureDialog({
           {failedLinks.length > 0 ? (
             <div className="flex flex-col gap-3 sm:col-span-2">
               <p className="text-sm text-destructive" role="alert">
-                Letter registered as {registeredRef}. {failedLinks.length} of{" "}
+                Letter "{capturedSubject}" was captured. {failedLinks.length} of{" "}
                 {totalLinksAttempted} links could not be saved.
               </p>
               <div className="flex justify-end gap-2">
