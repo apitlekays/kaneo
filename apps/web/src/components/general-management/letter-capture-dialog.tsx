@@ -18,14 +18,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { uploadLetterAttachment } from "@/fetchers/correspondence/letters";
+import {
+  linkLetter,
+  uploadLetterAttachment,
+} from "@/fetchers/correspondence/letters";
 import { useConfigList } from "@/hooks/queries/correspondence/use-config";
 import { useLetterMutations } from "@/hooks/queries/correspondence/use-letters";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { usePdfCompression } from "@/hooks/use-pdf-compression";
 import { compressionLabel } from "@/lib/compression-label";
 import { isPdfUpload } from "@/lib/is-pdf-upload";
+import { letterReference } from "@/lib/letter-reference";
 import { toast } from "@/lib/toast";
+import { LetterLinkPicker, type PendingLink } from "./letter-link-picker";
 
 const TYPES = [
   { value: "external", label: "External" },
@@ -81,6 +86,15 @@ export function LetterCaptureDialog({
   const [uploading, setUploading] = useState(false);
   const compression = usePdfCompression();
 
+  // Links are held locally because the letter being linked FROM has no id
+  // until create resolves — see postLinks below.
+  const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
+  const [failedLinks, setFailedLinks] = useState<PendingLink[]>([]);
+  const [totalLinksAttempted, setTotalLinksAttempted] = useState(0);
+  const [registeredRef, setRegisteredRef] = useState<string | null>(null);
+  const [createdLetterId, setCreatedLetterId] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
+
   const reset = () => {
     setDirection(defaultDirection);
     setType("external");
@@ -99,6 +113,45 @@ export function LetterCaptureDialog({
     setAssigneeId("");
     setFile(null);
     compression.reset();
+    setPendingLinks([]);
+    setFailedLinks([]);
+    setTotalLinksAttempted(0);
+    setRegisteredRef(null);
+    setCreatedLetterId(null);
+    setLinking(false);
+  };
+
+  // Posts a batch of links against `newLetterId` and reports which ones
+  // failed. Promise.allSettled so one rejection never stops the others from
+  // being attempted.
+  const postLinks = async (newLetterId: string, links: PendingLink[]) => {
+    const settled = await Promise.allSettled(
+      links.map((link) =>
+        linkLetter(workspaceId, newLetterId, {
+          toLetterId: link.toLetterId,
+          relation: link.relation,
+        }),
+      ),
+    );
+    return links.filter((_, i) => settled[i].status === "rejected");
+  };
+
+  const retryFailedLinks = async () => {
+    if (!createdLetterId) return;
+    setLinking(true);
+    const stillFailed = await postLinks(createdLetterId, failedLinks);
+    setLinking(false);
+    setFailedLinks(stillFailed);
+    if (stillFailed.length === 0) {
+      reset();
+      setOpen(false);
+    }
+  };
+
+  const closeAfterFailure = () => {
+    // The letter is already registered — closing here never touches it.
+    reset();
+    setOpen(false);
   };
 
   const submit = () => {
@@ -137,6 +190,23 @@ export function LetterCaptureDialog({
               setUploading(false);
             }
           }
+
+          // Never roll back the created letter past this point — its
+          // reference has already been allocated from a gap-free sequence,
+          // so a failed link is recoverable but a missing reference is not.
+          if (pendingLinks.length > 0) {
+            setLinking(true);
+            const failed = await postLinks(letter.id, pendingLinks);
+            setLinking(false);
+            if (failed.length > 0) {
+              setCreatedLetterId(letter.id);
+              setTotalLinksAttempted(pendingLinks.length);
+              setFailedLinks(failed);
+              setRegisteredRef(letterReference(letter));
+              return;
+            }
+          }
+
           reset();
           setOpen(false);
         },
@@ -398,27 +468,56 @@ export function LetterCaptureDialog({
               </p>
             )}
           </div>
-          <div className="hidden sm:col-span-2 sm:block" />
-          <div className="flex justify-end gap-2 sm:col-span-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={
-                !subject.trim() ||
-                !organisationId ||
-                m.create.isPending ||
-                uploading ||
-                compression.busy
-              }
-              onClick={submit}
-            >
-              {(m.create.isPending || uploading) && (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              )}
-              Capture
-            </Button>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Links to other letters</Label>
+            <LetterLinkPicker
+              workspaceId={workspaceId}
+              value={pendingLinks}
+              onChange={setPendingLinks}
+            />
           </div>
+          {failedLinks.length > 0 ? (
+            <div className="flex flex-col gap-3 sm:col-span-2">
+              <p className="text-sm text-destructive" role="alert">
+                Letter registered as {registeredRef}. {failedLinks.length} of{" "}
+                {totalLinksAttempted} links could not be saved.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={closeAfterFailure}>
+                  Close
+                </Button>
+                <Button disabled={linking} onClick={retryFailedLinks}>
+                  {linking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Retry
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="hidden sm:col-span-2 sm:block" />
+              <div className="flex justify-end gap-2 sm:col-span-2">
+                <Button variant="outline" onClick={() => setOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  disabled={
+                    !subject.trim() ||
+                    !organisationId ||
+                    m.create.isPending ||
+                    uploading ||
+                    linking ||
+                    compression.busy
+                  }
+                  onClick={submit}
+                >
+                  {(m.create.isPending || uploading || linking) && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  )}
+                  Capture
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>
