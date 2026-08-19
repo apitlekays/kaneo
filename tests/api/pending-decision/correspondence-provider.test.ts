@@ -1,8 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { HTTPException } from "hono/http-exception";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  correspondenceProvider,
   decodeLetterDecisionId,
   encodeLetterDecisionId,
 } from "../../../apps/api/src/pending-decision/providers/correspondence";
+
+// `decideLetterAssignment` is the only thing in this provider that touches
+// the database. Mocking it (and asserting on the mock's call count below)
+// lets the reason-guard tests prove the guard runs *before* any database
+// call, without needing a real database, and without a broken guard order
+// silently passing because the mock happened to resolve anyway.
+const decideLetterAssignmentMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../../apps/api/src/correspondence/letters", () => ({
+  decideLetterAssignment: decideLetterAssignmentMock,
+}));
 
 describe("letter decision id codec", () => {
   it("round-trips a letter and assignment id", () => {
@@ -20,5 +33,67 @@ describe("letter decision id codec", () => {
   it("rejects an id with an empty half", () => {
     expect(() => decodeLetterDecisionId("ltr_abc:")).toThrow();
     expect(() => decodeLetterDecisionId(":asg_def")).toThrow();
+  });
+});
+
+describe("correspondenceProvider.decide reason guard", () => {
+  const baseArgs = {
+    userId: "user-1",
+    workspaceId: "ws-1",
+    id: encodeLetterDecisionId("ltr_abc", "asg_def"),
+    ip: null,
+  };
+
+  beforeEach(() => {
+    decideLetterAssignmentMock.mockReset();
+    decideLetterAssignmentMock.mockResolvedValue(undefined);
+  });
+
+  it("rejects a rejection with a null reason with a 400, before any database call", async () => {
+    let caught: unknown;
+    try {
+      await correspondenceProvider.decide({
+        ...baseArgs,
+        decision: "rejected",
+        reason: null,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(HTTPException);
+    expect((caught as HTTPException).status).toBe(400);
+    expect((caught as HTTPException).message).toMatch(
+      /rejection must carry a reason/,
+    );
+    // The guard must short-circuit before decideLetterAssignment (the only
+    // database-touching call this provider makes) is ever reached.
+    expect(decideLetterAssignmentMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a rejection with a whitespace-only reason with a 400", async () => {
+    let caught: unknown;
+    try {
+      await correspondenceProvider.decide({
+        ...baseArgs,
+        decision: "rejected",
+        reason: "   ",
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(HTTPException);
+    expect((caught as HTTPException).status).toBe(400);
+    expect(decideLetterAssignmentMock).not.toHaveBeenCalled();
+  });
+
+  it("does not throw for an acceptance with a null reason", async () => {
+    await expect(
+      correspondenceProvider.decide({
+        ...baseArgs,
+        decision: "accepted",
+        reason: null,
+      }),
+    ).resolves.toBeUndefined();
+    expect(decideLetterAssignmentMock).toHaveBeenCalledTimes(1);
   });
 });

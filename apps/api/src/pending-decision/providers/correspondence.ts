@@ -71,6 +71,16 @@ export const correspondenceProvider: PendingDecisionProvider = {
   },
 
   async decide({ userId, workspaceId, id, decision, reason, ip }) {
+    // requiresReason: true above promises the client will always be asked
+    // for one on rejection; enforce it here so a client that skips the
+    // prompt (or a caller other than the web client) can't slip a
+    // reasonless rejection into the audit log.
+    if (decision === "rejected" && !reason?.trim()) {
+      throw new HTTPException(400, {
+        message: "A rejection must carry a reason",
+      });
+    }
+
     const { letterId, assignmentId } = decodeLetterDecisionId(id);
     await decideLetterAssignment({
       workspaceId,

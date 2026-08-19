@@ -1,3 +1,4 @@
+import { HTTPException } from "hono/http-exception";
 import { describe, expect, it } from "vitest";
 import { resolveProvider } from "../../../apps/api/src/pending-decision/index";
 import type { PendingDecisionProvider } from "../../../apps/api/src/pending-decision/types";
@@ -18,5 +19,14 @@ describe("resolveProvider", () => {
     expect(() => resolveProvider([stub("alpha")], "ghost")).toThrow(
       /Unknown pending-decision source/,
     );
+
+    let caught: unknown;
+    try {
+      resolveProvider([stub("alpha")], "ghost");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(HTTPException);
+    expect((caught as HTTPException).status).toBe(404);
   });
 });
