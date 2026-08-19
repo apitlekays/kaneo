@@ -1,3 +1,5 @@
+process.env.TZ = "Asia/Kuala_Lumpur";
+
 import { describe, expect, it } from "vitest";
 import {
   groupLettersByYear,
@@ -24,20 +26,26 @@ describe("letterYearDate", () => {
     expect(
       letterYearDate(
         row("a", "2025-03-04T00:00:00.000Z", "2024-01-01T00:00:00.000Z"),
-      ).getUTCFullYear(),
+      ).getFullYear(),
     ).toBe(2025);
   });
 
   it("falls back to the letter's own date", () => {
     expect(
-      letterYearDate(
-        row("a", null, "2024-01-01T00:00:00.000Z"),
-      ).getUTCFullYear(),
+      letterYearDate(row("a", null, "2024-01-01T00:00:00.000Z")).getFullYear(),
     ).toBe(2024);
   });
 
   it("falls back to the created date last", () => {
-    expect(letterYearDate(row("a", null, null)).getUTCFullYear()).toBe(2026);
+    expect(letterYearDate(row("a", null, null)).getFullYear()).toBe(2026);
+  });
+
+  it("groups by local year: letter at year-end UTC (2025) groups under 2026 in Malaysia", () => {
+    // At 2025-12-31T20:00Z, it is already 2026-01-01 in UTC+8.
+    // The Date column would show Jan 1, 2026. Grouping must match.
+    const boundaryLetter = row("boundary", "2025-12-31T20:00:00.000Z");
+    const groups = groupLettersByYear([boundaryLetter], letterYearDate, "desc");
+    expect(groups[0].year).toBe(2026);
   });
 });
 

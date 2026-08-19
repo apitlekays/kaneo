@@ -3,6 +3,10 @@
  * date rather than when it was entered: the office registers historical
  * correspondence, and grouping by entry date would file decades of letters
  * under the year someone typed them in.
+ *
+ * Uses local time (not UTC): the Date column renders the same timestamp via
+ * Intl.DateTimeFormat with no timeZone option (viewer's local time). A heading
+ * that disagrees with the date beside it is worse than either choice alone.
  */
 export function letterYearDate(letter: {
   receivedAt: string | null;
@@ -24,7 +28,7 @@ export function groupLettersByYear<T>(
 ): { year: number; letters: T[] }[] {
   const buckets = new Map<number, T[]>();
   for (const letter of letters) {
-    const year = dateOf(letter).getUTCFullYear();
+    const year = dateOf(letter).getFullYear();
     const bucket = buckets.get(year);
     if (bucket) bucket.push(letter);
     else buckets.set(year, [letter]);
