@@ -1229,6 +1229,23 @@
 				"title": "Time tracking started",
 				"contentWithTask": "Time tracking started on task: {{taskTitle}}",
 				"contentWithoutTask": "Time tracking started on a task"
+			},
+			"task_tagged": {
+				"title": "You were tagged",
+				"content": "{{actorName}} tagged you in \"{{taskTitle}}\""
+			},
+			"task_commented": {
+				"title": "New comment",
+				"content": "{{actorName}} commented on \"{{taskTitle}}\""
+			},
+			"due_date_reminder": {
+				"title": "Task due soon",
+				"contentOneHour": "\"{{taskTitle}}\" is due in 1 hour",
+				"contentOneDay": "\"{{taskTitle}}\" is due in 1 day"
+			},
+			"task_overdue": {
+				"title": "Task overdue",
+				"content": "\"{{taskTitle}}\" is past its due date"
 			}
 		}
 	},
