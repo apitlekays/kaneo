@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, ChevronRight, Volume2, VolumeX } from "lucide-react";
+import { Bell, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Collapsible,
@@ -18,7 +18,6 @@ import { useMyCorrespondence } from "@/hooks/queries/correspondence/use-letters"
 import { usePendingInvitations } from "@/hooks/queries/invitation/use-pending-invitations";
 import { useNotificationFeed } from "@/hooks/queries/notification/use-notification-feed";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
-import { useChimePreference } from "@/hooks/use-chime-preference";
 
 export function NavMain() {
   const { t } = useTranslation();
@@ -27,7 +26,6 @@ export function NavMain() {
   const { data: invitations = [] } = usePendingInvitations();
   const { data: feed = [] } = useNotificationFeed();
   const { data: mine } = useMyCorrespondence(workspace?.id ?? "");
-  const { muted, setMuted } = useChimePreference();
 
   if (!workspace) return null;
 
@@ -86,25 +84,6 @@ export function NavMain() {
             <span>{t("navigation:sidebar.overview")}</span>
             <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/60 transition-transform duration-200" />
           </CollapsibleTrigger>
-          {/* Per-device: the chime is welcome at home and not in a shared office. */}
-          <button
-            type="button"
-            aria-pressed={muted}
-            aria-label={
-              muted
-                ? "Unmute the new-correspondence chime"
-                : "Mute the new-correspondence chime"
-            }
-            title={muted ? "Chime muted" : "Chime on"}
-            onClick={() => setMuted(!muted)}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/60 hover:text-sidebar-accent-foreground"
-          >
-            {muted ? (
-              <VolumeX className="h-3.5 w-3.5" />
-            ) : (
-              <Volume2 className="h-3.5 w-3.5" />
-            )}
-          </button>
         </div>
         <CollapsiblePanel>
           <SidebarGroupContent>
