@@ -60,6 +60,10 @@ export function useUserWebSocket() {
             queryClient.invalidateQueries({
               queryKey: ["awaiting-acceptance"],
             });
+            // The central dialog reads the same fact from a different route.
+            queryClient.invalidateQueries({
+              queryKey: ["pending-decisions"],
+            });
             return;
           }
 

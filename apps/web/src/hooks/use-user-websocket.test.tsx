@@ -56,6 +56,9 @@ describe("useUserWebSocket", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: ["awaiting-acceptance"],
     });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["pending-decisions"],
+    });
   });
 
   it("leaves the assignment queries alone for an invitation event", () => {
