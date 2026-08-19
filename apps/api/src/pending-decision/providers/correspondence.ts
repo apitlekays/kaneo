@@ -88,7 +88,11 @@ export const correspondenceProvider: PendingDecisionProvider = {
       letterId,
       assignmentId,
       decision,
-      reason,
+      // The old accept route hard-codes null so acceptance never carries a
+      // note into the audit chain (`after.reason` is canonicalized and
+      // hashed into the chain). Mirror that here so accepting through this
+      // provider can't seal actor-supplied text a rejection would.
+      reason: decision === "rejected" ? reason : null,
       ip,
     });
   },

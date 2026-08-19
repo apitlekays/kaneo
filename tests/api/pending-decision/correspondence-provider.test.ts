@@ -96,4 +96,21 @@ describe("correspondenceProvider.decide reason guard", () => {
     ).resolves.toBeUndefined();
     expect(decideLetterAssignmentMock).toHaveBeenCalledTimes(1);
   });
+
+  // The old `/letters/:id/assignments/:aid/accept` route hard-codes `null`
+  // for the accept reason, so acceptance can never carry a note into the
+  // audit chain (`after.reason` is canonicalized and SHA-256'd into the hash
+  // chain). This provider must not let actor-supplied text slip in on the
+  // path the old route blocks.
+  it("forwards a null reason to decideLetterAssignment on accept, even when the caller supplied one", async () => {
+    await correspondenceProvider.decide({
+      ...baseArgs,
+      decision: "accepted",
+      reason: "Looks good, proceeding",
+    });
+    expect(decideLetterAssignmentMock).toHaveBeenCalledTimes(1);
+    expect(decideLetterAssignmentMock).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: null }),
+    );
+  });
 });
