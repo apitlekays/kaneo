@@ -4,6 +4,7 @@ import {
   asc,
   desc,
   eq,
+  inArray,
   isNotNull,
   lt,
   ne,
@@ -13,7 +14,7 @@ import {
 } from "drizzle-orm";
 import type { Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { validator } from "hono-openapi";
+import { describeRoute, validator } from "hono-openapi";
 import * as v from "valibot";
 import db from "../database";
 import {
@@ -55,6 +56,7 @@ import {
   letterStatusFilter,
   SEALED_LETTER_STATUSES,
 } from "./letter-list-filter";
+import { walkThread } from "./letter-thread";
 import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
 import { letterUrgencySchema } from "./register-fields";
@@ -529,10 +531,40 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const countMap = new Map(
           counts.map((r) => [r.letterId, { total: r.total, done: r.done }]),
         );
+        // Links in both directions, merged into one per-letter count: a
+        // letter linked only as a target still has a link.
+        const linkRows = await db
+          .select({
+            letterId: letterLinkTable.fromLetterId,
+            n: sql<number>`count(*)::int`,
+          })
+          .from(letterLinkTable)
+          .innerJoin(
+            letterTable,
+            eq(letterLinkTable.fromLetterId, letterTable.id),
+          )
+          .where(eq(letterTable.workspaceId, ws))
+          .groupBy(letterLinkTable.fromLetterId);
+        const inboundLinkRows = await db
+          .select({
+            letterId: letterLinkTable.toLetterId,
+            n: sql<number>`count(*)::int`,
+          })
+          .from(letterLinkTable)
+          .innerJoin(
+            letterTable,
+            eq(letterLinkTable.toLetterId, letterTable.id),
+          )
+          .where(eq(letterTable.workspaceId, ws))
+          .groupBy(letterLinkTable.toLetterId);
+        const linkMap = new Map<string, number>();
+        for (const r of [...linkRows, ...inboundLinkRows])
+          linkMap.set(r.letterId, (linkMap.get(r.letterId) ?? 0) + r.n);
         const withCounts = filtered.map((r) => ({
           ...r,
           actionsTotal: countMap.get(r.id)?.total ?? 0,
           actionsDone: countMap.get(r.id)?.done ?? 0,
+          linkCount: linkMap.get(r.id) ?? 0,
         }));
         return c.json(withCounts);
       },
@@ -684,6 +716,61 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         return c.json(rows);
       },
     )
+    // ── Thread: every letter linked to this one, in either direction ──────────
+    // Registered before "/letters/:id" so "thread" is not captured as an
+    // :id param, the same way "/letters/awaiting-acceptance" is placed above.
+    .get(
+      "/letters/:id/thread",
+      describeRoute({
+        operationId: "getLetterThread",
+        tags: ["Correspondence"],
+        description: "Every letter linked to this one, newest first",
+      }),
+      validator("param", v.object({ id: v.string() })),
+      validator("query", v.object({ workspaceId: v.string() })),
+      workspaceAccess.fromQuery("workspaceId"),
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const { id } = c.req.valid("param");
+        // Only edges whose BOTH ends live in this workspace. A link pointing
+        // outside it must never surface a letter the reader cannot see.
+        const edges = await db
+          .select({
+            fromLetterId: letterLinkTable.fromLetterId,
+            toLetterId: letterLinkTable.toLetterId,
+          })
+          .from(letterLinkTable)
+          .innerJoin(
+            letterTable,
+            eq(letterLinkTable.fromLetterId, letterTable.id),
+          )
+          .where(eq(letterTable.workspaceId, ws));
+        const { ids, truncated } = walkThread(id, edges);
+        const rows = await db
+          .select({
+            id: letterTable.id,
+            refNo: letterTable.refNo,
+            externalRefNo: letterTable.externalRefNo,
+            subject: letterTable.subject,
+            direction: letterTable.direction,
+            receivedAt: letterTable.receivedAt,
+            letterDate: letterTable.letterDate,
+            createdAt: letterTable.createdAt,
+          })
+          .from(letterTable)
+          .where(
+            and(inArray(letterTable.id, ids), eq(letterTable.workspaceId, ws)),
+          );
+        const letters = rows
+          .map((r) => ({
+            ...r,
+            date: r.receivedAt ?? r.letterDate ?? r.createdAt,
+            isSeed: r.id === id,
+          }))
+          .sort((a, b) => b.date.getTime() - a.date.getTime());
+        return c.json({ letters, truncated });
+      },
+    )
     // ── Detail ────────────────────────────────────────────────────────────────
     .get(
       "/letters/:id",
@@ -701,27 +788,36 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           throw new HTTPException(403, {
             message: "You don't have access to this correspondence",
           });
-        const [attachments, minutes, assignments, links] = await Promise.all([
-          db
-            .select()
-            .from(letterAttachmentTable)
-            .where(eq(letterAttachmentTable.letterId, id))
-            .orderBy(asc(letterAttachmentTable.createdAt)),
-          db
-            .select()
-            .from(letterMinuteTable)
-            .where(eq(letterMinuteTable.letterId, id))
-            .orderBy(asc(letterMinuteTable.createdAt)),
-          db
-            .select()
-            .from(letterAssignmentTable)
-            .where(eq(letterAssignmentTable.letterId, id))
-            .orderBy(desc(letterAssignmentTable.createdAt)),
-          db
-            .select()
-            .from(letterLinkTable)
-            .where(eq(letterLinkTable.fromLetterId, id)),
-        ]);
+        const [attachments, minutes, assignments, outboundLinks, inboundLinks] =
+          await Promise.all([
+            db
+              .select()
+              .from(letterAttachmentTable)
+              .where(eq(letterAttachmentTable.letterId, id))
+              .orderBy(asc(letterAttachmentTable.createdAt)),
+            db
+              .select()
+              .from(letterMinuteTable)
+              .where(eq(letterMinuteTable.letterId, id))
+              .orderBy(asc(letterMinuteTable.createdAt)),
+            db
+              .select()
+              .from(letterAssignmentTable)
+              .where(eq(letterAssignmentTable.letterId, id))
+              .orderBy(desc(letterAssignmentTable.createdAt)),
+            db
+              .select()
+              .from(letterLinkTable)
+              .where(eq(letterLinkTable.fromLetterId, id)),
+            db
+              .select()
+              .from(letterLinkTable)
+              .where(eq(letterLinkTable.toLetterId, id)),
+          ]);
+        const links = [
+          ...outboundLinks.map((l) => ({ ...l, outbound: true })),
+          ...inboundLinks.map((l) => ({ ...l, outbound: false })),
+        ];
         const outgoing = await loadOutgoingDetail(id);
         const lifecycle = await loadLifecycleDetail(id);
         return c.json({

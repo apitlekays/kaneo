@@ -94,6 +94,10 @@ export type LetterLink = {
   toLetterId: string;
   relation: string;
   createdAt: string;
+  // Present on the letter detail response only: true when this letter is
+  // the `from` side of the link, false when it is the `to` side. Absent on
+  // the plain create-link response.
+  outbound?: boolean;
 };
 export type DraftVersion = {
   id: string;
