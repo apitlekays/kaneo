@@ -107,9 +107,15 @@ backfill runs and because a future workspace may register a letter before
 its organisations are configured; required in the form so no new letter
 arrives without one.
 
-Changing any of these three fields after registration writes an audit event,
-like any other letter edit. Urgency in particular may be escalated later,
-and that change must be attributable.
+All three fields are captured at registration and, as built, cannot be
+changed afterwards. Registration sets `declaredAt`, and the edit route
+(`PUT /letters/:id`) 409s on any letter that has `declaredAt` set — a
+registered letter is a declared record, and content, including urgency, is
+immutable once it is one. In particular, urgency cannot currently be
+escalated post-registration; the web app also wires no UI to the letter
+update mutation. Allowing a post-registration urgency change would need its
+own design, since it means carving an exemption into the declared-record
+immutability rule rather than just adding a field.
 
 ## Registration form
 
