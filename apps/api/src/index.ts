@@ -45,6 +45,7 @@ import { migrateColumns } from "./migrations/column-migration";
 import notification from "./notification";
 import notificationPreferences from "./notification-preferences";
 import oauth from "./oauth";
+import pendingDecision from "./pending-decision";
 import { initializePlugins } from "./plugins";
 import { migrateGitHubIntegration } from "./plugins/github/migration";
 import project from "./project";
@@ -597,6 +598,7 @@ export function createApp() {
   api.route("/workspace-access", workspaceAccess);
   api.route("/asset-registry", assetRegistry);
   api.route("/correspondence", correspondence);
+  api.route("/pending-decision", pendingDecision);
 
   app.route(
     "/",
