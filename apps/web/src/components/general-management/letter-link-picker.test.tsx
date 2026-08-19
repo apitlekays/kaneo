@@ -178,4 +178,43 @@ describe("LetterLinkPicker", () => {
     expect(screen.getByText("A different letter")).toBeVisible();
     expect(screen.queryByText("This letter itself")).not.toBeInTheDocument();
   });
+
+  it("offers an already-linked letter under a different relation, but not under the one it's already linked as", async () => {
+    // The backend has no unique constraint on (fromLetterId, toLetterId) —
+    // the same pair can be linked twice under different relations — so the
+    // picker must only suppress the exact (letter, relation) pair already
+    // added, not the letter across every relation.
+    const user = userEvent.setup();
+    state.letters = [
+      makeLetter({ id: "letter-l2", subject: "Already linked as related" }),
+    ];
+    const existing: PendingLink = {
+      toLetterId: "letter-l2",
+      relation: "related",
+      label: "REF-1 — Already linked as related",
+    };
+
+    render(
+      <LetterLinkPicker
+        workspaceId="ws-1"
+        value={[existing]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    // Default relation selection is "related" — same as the existing link,
+    // so the letter must NOT be offered again under that relation.
+    expect(
+      screen.queryByText("Already linked as related"),
+    ).not.toBeInTheDocument();
+
+    // Switch the relation to "supersedes" — a different relation for the
+    // same pair is allowed, so the letter must now be offered.
+    await user.click(screen.getByRole("combobox"));
+    await user.click(
+      await screen.findByRole("option", { name: /supersedes/i }),
+    );
+
+    expect(screen.getByText("Already linked as related")).toBeVisible();
+  });
 });

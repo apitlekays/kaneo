@@ -58,11 +58,20 @@ export function LetterLinkPicker({
   const [term, setTerm] = useState("");
   const [relation, setRelation] = useState<LinkRelation>("related");
 
-  const linkedIds = new Set(value.map((link) => link.toLetterId));
+  // The backend allows the same pair of letters to be linked twice under
+  // different relations (no unique constraint on fromLetterId/toLetterId),
+  // so only the identical (letter, relation) pair the user has already
+  // added is a genuinely useless offer — not the letter under every
+  // relation. This must recompute whenever `relation` changes.
+  const linkedUnderSelectedRelation = new Set(
+    value
+      .filter((link) => link.relation === relation)
+      .map((link) => link.toLetterId),
+  );
   const q = term.trim().toLowerCase();
   const candidates = letters.filter((letter) => {
     if (excludeId && letter.id === excludeId) return false;
-    if (linkedIds.has(letter.id)) return false;
+    if (linkedUnderSelectedRelation.has(letter.id)) return false;
     if (!q) return true;
     return (
       letter.subject.toLowerCase().includes(q) ||
