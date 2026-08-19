@@ -503,7 +503,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
                 r.subject?.toLowerCase().includes(term) ||
                 r.refNo?.toLowerCase().includes(term) ||
                 r.senderName?.toLowerCase().includes(term) ||
-                r.senderOrg?.toLowerCase().includes(term),
+                r.senderOrg?.toLowerCase().includes(term) ||
+                r.externalRefNo?.toLowerCase().includes(term),
             )
           : rows;
         // Delegated-action progress per letter (minutes with an assignee).
