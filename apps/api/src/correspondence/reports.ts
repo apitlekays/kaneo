@@ -6,6 +6,7 @@ import db from "../database";
 import {
   gmAuditEventTable,
   gmCategoryTable,
+  gmOrganisationTable,
   gmSecurityLabelTable,
   letterDispositionTable,
   letterTable,
@@ -62,7 +63,7 @@ export function registerReportRoutes(app: Hono<GmEnv>) {
         const { direction } = c.req.valid("query");
         const filters = [eq(letterTable.workspaceId, ws)];
         if (direction) filters.push(eq(letterTable.direction, direction));
-        const [letters, categories, labels] = await Promise.all([
+        const [letters, categories, labels, organisations] = await Promise.all([
           db
             .select()
             .from(letterTable)
@@ -76,9 +77,14 @@ export function registerReportRoutes(app: Hono<GmEnv>) {
             .select()
             .from(gmSecurityLabelTable)
             .where(eq(gmSecurityLabelTable.workspaceId, ws)),
+          db
+            .select()
+            .from(gmOrganisationTable)
+            .where(eq(gmOrganisationTable.workspaceId, ws)),
         ]);
         const catMap = new Map(categories.map((r) => [r.id, r.label]));
         const labelMap = new Map(labels.map((r) => [r.id, r.label]));
+        const orgMap = new Map(organisations.map((r) => [r.id, r.label]));
         const csv = toCsv(
           [
             "RefNo",
@@ -87,7 +93,10 @@ export function registerReportRoutes(app: Hono<GmEnv>) {
             "Status",
             "Subject",
             "Party",
-            "Organisation",
+            "Party organisation",
+            "ERN",
+            "Urgency",
+            "Owning organisation",
             "Category",
             "Security",
             "Received",
@@ -102,6 +111,9 @@ export function registerReportRoutes(app: Hono<GmEnv>) {
             l.subject,
             l.direction === "in" ? l.senderName : l.recipientName,
             l.direction === "in" ? l.senderOrg : l.recipientOrg,
+            l.externalRefNo,
+            l.urgency,
+            l.organisationId ? (orgMap.get(l.organisationId) ?? "") : "",
             l.categoryId ? (catMap.get(l.categoryId) ?? "") : "",
             l.securityLabelId ? (labelMap.get(l.securityLabelId) ?? "") : "",
             l.receivedAt,
