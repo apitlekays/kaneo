@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { VariantProps } from "class-variance-authority";
 import {
   Archive,
   CheckCircle2,
@@ -21,7 +22,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
-import { Badge } from "@/components/ui/badge";
+import { Badge, type badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import {
@@ -65,6 +66,7 @@ import { compressionLabel } from "@/lib/compression-label";
 import { formatDateMedium } from "@/lib/format";
 import { isPdfUpload } from "@/lib/is-pdf-upload";
 import { toast } from "@/lib/toast";
+import { urgencyBadge } from "@/lib/urgency";
 
 const STATUSES = [
   "captured",
@@ -172,6 +174,21 @@ function Body({
                 {letter.refNo ?? "unregistered"}
               </span>
               <Badge className="border">{letter.status}</Badge>
+              {(() => {
+                const badge = urgencyBadge(letter.urgency);
+                return badge ? (
+                  <Badge
+                    variant={
+                      badge.variant as VariantProps<
+                        typeof badgeVariants
+                      >["variant"]
+                    }
+                    className="text-xs"
+                  >
+                    {badge.label}
+                  </Badge>
+                ) : null;
+              })()}
               <span>{letter.direction === "in" ? "Masuk" : "Keluar"}</span>
               <span>{letter.type}</span>
             </div>

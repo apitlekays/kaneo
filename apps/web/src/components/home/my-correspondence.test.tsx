@@ -92,4 +92,36 @@ describe("MyCorrespondence", () => {
 
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("marks an urgent letter and leaves a normal one unmarked", () => {
+    data.current = {
+      letters: [
+        {
+          id: "letter-1",
+          refNo: "KKM/2026/1",
+          subject: "Surat siasatan",
+          direction: "in",
+          status: "assigned",
+          urgency: "urgent",
+          receivedAt: null,
+          createdAt: "2026-08-18T01:00:00.000Z",
+        },
+        {
+          id: "letter-2",
+          refNo: "KKM/2026/2",
+          subject: "Surat makluman",
+          direction: "in",
+          status: "assigned",
+          urgency: "normal",
+          receivedAt: null,
+          createdAt: "2026-08-18T01:00:00.000Z",
+        },
+      ],
+      actions: [],
+      pendingAssignments: [],
+    };
+    render(<MyCorrespondence />);
+
+    expect(screen.getAllByText("Urgent")).toHaveLength(1);
+  });
 });

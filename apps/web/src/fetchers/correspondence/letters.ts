@@ -313,6 +313,7 @@ export type MyCorrespondence = {
     subject: string;
     direction: "in" | "out";
     status: string;
+    urgency: string;
     receivedAt: string | null;
     createdAt: string;
   }[];

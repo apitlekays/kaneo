@@ -1,9 +1,12 @@
+import type { VariantProps } from "class-variance-authority";
 import { Mail } from "lucide-react";
 import { useState } from "react";
 import { LetterDetailDialog } from "@/components/general-management/letter-detail-dialog";
+import { Badge, type badgeVariants } from "@/components/ui/badge";
 import { useMyCorrespondence } from "@/hooks/queries/correspondence/use-letters";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { formatDateMedium } from "@/lib/format";
+import { urgencyBadge } from "@/lib/urgency";
 
 /** The current user's correspondence — letters they lead + actions minuted to them. */
 export default function MyCorrespondence() {
@@ -62,7 +65,24 @@ export default function MyCorrespondence() {
                   onClick={() => setOpenId(l.id)}
                   className="block w-full px-4 py-2.5 text-left text-sm hover:bg-accent/60"
                 >
-                  <div className="truncate font-medium">{l.subject}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="truncate font-medium">{l.subject}</div>
+                    {(() => {
+                      const badge = urgencyBadge(l.urgency);
+                      return badge ? (
+                        <Badge
+                          variant={
+                            badge.variant as VariantProps<
+                              typeof badgeVariants
+                            >["variant"]
+                          }
+                          className="text-xs"
+                        >
+                          {badge.label}
+                        </Badge>
+                      ) : null;
+                    })()}
+                  </div>
                   <div className="text-muted-foreground text-xs">
                     {l.refNo ?? "unregistered"} ·{" "}
                     {l.direction === "in" ? "Masuk" : "Keluar"} · {l.status}

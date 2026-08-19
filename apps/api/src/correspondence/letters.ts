@@ -383,6 +383,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             subject: letterTable.subject,
             direction: letterTable.direction,
             status: letterTable.status,
+            urgency: letterTable.urgency,
             receivedAt: letterTable.receivedAt,
             createdAt: letterTable.createdAt,
           })
