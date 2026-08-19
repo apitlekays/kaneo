@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useMyCorrespondence } from "@/hooks/queries/correspondence/use-letters";
-import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
-import { useAssignmentAlerts } from "@/hooks/use-assignment-alerts";
+import useGetNotifications from "@/hooks/queries/notification/use-get-notifications";
 import { useChimePreference } from "@/hooks/use-chime-preference";
+import { useUnseenAlerts } from "@/hooks/use-notification-alerts";
 import { createChime } from "@/lib/play-chime";
 import { toast } from "@/lib/toast";
 
+type Notified = { id: string; title: string | null; type: string };
+
 /**
- * Mounted once, workspace-agnostic: reads the active workspace itself so the
- * authenticated layout (which has no workspace in scope) can mount it as
- * <CorrespondenceAlerts /> alongside useUserWebSocket().
+ * Mounted once for the whole app. Every module that calls createNotification
+ * on the API gets a toast and a chime from here — no module writes alert code
+ * of its own.
  */
-export function CorrespondenceAlerts() {
-  const { data: workspace } = useActiveWorkspace();
-  const { data } = useMyCorrespondence(workspace?.id ?? "");
+export function AppAlerts() {
+  const { data } = useGetNotifications();
   const { muted } = useChimePreference();
 
   // One Audio element for the session, read through a ref: rebuilding it on
@@ -50,23 +50,37 @@ export function CorrespondenceAlerts() {
     };
   }, [chime]);
 
-  const onNew = useCallback(
-    (assignment: { refNo: string | null; subject: string }) => {
+  const onUnseen = useCallback(
+    (items: Notified[]) => {
+      // One chime per burst, never one per item.
       chime.play();
-      toast.info(
-        `New correspondence: ${assignment.refNo ?? assignment.subject}`,
-      );
+      if (items.length === 1) {
+        const only = items[0];
+        toast.info(only.title ?? only.type);
+        return;
+      }
+      toast.info(`${items.length} new notifications`);
     },
     [chime],
   );
 
+  // Map rather than cast: `data` comes from the hono client, whose inferred
+  // row type carries more fields and may serialise them differently. Mapping
+  // to exactly what the alert needs keeps this honest if that type shifts.
+  const items = useMemo(
+    () =>
+      data?.map((n) => ({
+        id: String(n.id),
+        title: n.title ?? null,
+        type: n.type,
+      })) as Notified[] | undefined,
+    [data],
+  );
+
   // Never default to [] here: the hook seeds its "seen" set from the first
   // non-undefined list. Passing [] while the query is loading would seed an
-  // empty set, then announce the entire real list as "new" once it arrives.
-  useAssignmentAlerts(data?.pendingAssignments, onNew);
+  // empty set, then announce every existing notification as new.
+  useUnseenAlerts(items, onUnseen);
 
-  // Renders nothing either way; the explicit check documents that this is a
-  // no-op (no query enabled, nothing to alert on) when no workspace is active.
-  if (!workspace) return null;
   return null;
 }

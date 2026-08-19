@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { CorrespondenceAlerts } from "@/components/correspondence-alerts";
+import { AppAlerts } from "@/components/app-alerts";
 import { useUserWebSocket } from "@/hooks/use-user-websocket";
 import { authClient } from "@/lib/auth-client";
 
@@ -24,7 +24,7 @@ function AuthenticatedLayout() {
   useUserWebSocket();
   return (
     <>
-      <CorrespondenceAlerts />
+      <AppAlerts />
       <Outlet />
     </>
   );
