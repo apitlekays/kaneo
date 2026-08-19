@@ -14,10 +14,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { useMyCorrespondence } from "@/hooks/queries/correspondence/use-letters";
 import { usePendingInvitations } from "@/hooks/queries/invitation/use-pending-invitations";
 import { useNotificationFeed } from "@/hooks/queries/notification/use-notification-feed";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
+import { usePendingActions } from "@/hooks/use-pending-actions";
 
 export function NavMain() {
   const { t } = useTranslation();
@@ -25,13 +25,12 @@ export function NavMain() {
   const navigate = useNavigate();
   const { data: invitations = [] } = usePendingInvitations();
   const { data: feed = [] } = useNotificationFeed();
-  const { data: mine } = useMyCorrespondence(workspace?.id ?? "");
+  const { hasAny: hasPendingActions } = usePendingActions();
 
   if (!workspace) return null;
 
   const pendingCount = invitations.length;
   const unreadFeedCount = feed.filter((item) => !item.isRead).length;
-  const hasPendingAssignments = (mine?.pendingAssignments?.length ?? 0) > 0;
 
   const navItems = [
     {
@@ -40,7 +39,7 @@ export function NavMain() {
       isActive: window.location.pathname === "/dashboard/home",
       badge: null,
       bellCount: unreadFeedCount,
-      hasDot: hasPendingAssignments,
+      hasDot: hasPendingActions,
     },
     {
       title: t("navigation:sidebar.projects"),
