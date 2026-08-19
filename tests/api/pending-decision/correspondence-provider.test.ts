@@ -113,4 +113,25 @@ describe("correspondenceProvider.decide reason guard", () => {
       expect.objectContaining({ reason: null }),
     );
   });
+
+  // The two reject tests above both throw at the guard before
+  // decideLetterAssignment is ever reached, and no other test exercises a
+  // *successful* reject through the provider. Without this, the ternary
+  // could be flattened to `reason: null` and every existing test would stay
+  // green — silently dropping rejection reasons from a hash-chained legal
+  // register. This is the regression net for that branch.
+  it("forwards the reason intact to decideLetterAssignment on a successful reject", async () => {
+    await correspondenceProvider.decide({
+      ...baseArgs,
+      decision: "rejected",
+      reason: "Wrong department",
+    });
+    expect(decideLetterAssignmentMock).toHaveBeenCalledTimes(1);
+    expect(decideLetterAssignmentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decision: "rejected",
+        reason: "Wrong department",
+      }),
+    );
+  });
 });
