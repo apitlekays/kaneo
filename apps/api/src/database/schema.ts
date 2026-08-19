@@ -1821,6 +1821,28 @@ export const gmCategoryTable = pgTable(
   ],
 );
 
+// Owning organisation for a letter (MAPIM Malaysia, UmmahPrima, StageMaster,
+// LadangUmmah, …). Same shape as gmCategoryTable.
+export const gmOrganisationTable = pgTable(
+  "gm_organisation",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gm_organisation_workspaceId_idx").on(table.workspaceId),
+    unique("gm_organisation_ws_key_unique").on(table.workspaceId, table.key),
+  ],
+);
+
 // Security classification labels (Public/Internal/Confidential/Restricted…),
 // ranked so access rules can compare sensitivity.
 export const gmSecurityLabelTable = pgTable(
@@ -2101,6 +2123,14 @@ export const letterTable = pgTable(
       .references(() => workspaceTable.id, { onDelete: "cascade" }),
     // Assigned at registration (incoming) / dispatch (outgoing); null before.
     refNo: text("ref_no"),
+    // Sender's own reference. Primary lookup key for incoming letters.
+    externalRefNo: text("external_ref_no"),
+    // urgent | normal
+    urgency: text("urgency").notNull().default("normal"),
+    organisationId: text("organisation_id").references(
+      () => gmOrganisationTable.id,
+      { onDelete: "set null" },
+    ),
     fileRef: text("file_ref"),
     jilid: integer("jilid"),
     // in | out
@@ -2166,6 +2196,7 @@ export const letterTable = pgTable(
       table.type,
     ),
     index("letter_ws_refno_idx").on(table.workspaceId, table.refNo),
+    index("letter_ws_ern_idx").on(table.workspaceId, table.externalRefNo),
   ],
 );
 
