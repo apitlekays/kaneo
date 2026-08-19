@@ -251,7 +251,11 @@ export function LetterCaptureDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Organisation</Label>
+            <Label>
+              {direction === "in"
+                ? "Sender organisation"
+                : "Recipient organisation"}
+            </Label>
             <Input
               value={senderOrg}
               onChange={(e) => setSenderOrg(e.target.value)}
