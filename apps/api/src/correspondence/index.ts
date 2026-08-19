@@ -13,6 +13,7 @@ import {
   gmDistributionListTable,
   gmFilePlanNodeTable,
   gmNumberSchemeTable,
+  gmOrganisationTable,
   gmRetentionClassTable,
   gmSecurityLabelTable,
   gmSenderProfileTable,
@@ -282,6 +283,103 @@ registerConfigResource(app, {
       .set({ active: false })
       .where(
         and(eq(gmCategoryTable.id, id), eq(gmCategoryTable.workspaceId, ws)),
+      )
+      .returning();
+    return { before: before as Row, after: after as Row };
+  },
+});
+
+// ── gm_organisation ──────────────────────────────────────────────────────────
+registerConfigResource(app, {
+  path: "organisations",
+  entityType: "gm_organisation",
+  createSchema: v.object({
+    workspaceId: v.string(),
+    key: v.string(),
+    label: v.string(),
+    active: optBool,
+  }),
+  updateSchema: v.object({
+    workspaceId: v.string(),
+    key: optStr,
+    label: optStr,
+    active: optBool,
+  }),
+  list: (ws, includeInactive) =>
+    db
+      .select()
+      .from(gmOrganisationTable)
+      .where(
+        includeInactive
+          ? eq(gmOrganisationTable.workspaceId, ws)
+          : and(
+              eq(gmOrganisationTable.workspaceId, ws),
+              eq(gmOrganisationTable.active, true),
+            ),
+      )
+      .orderBy(asc(gmOrganisationTable.createdAt)),
+  create: async (tx, ws, b) => {
+    const [row] = await tx
+      .insert(gmOrganisationTable)
+      .values({
+        workspaceId: ws,
+        key: b.key as string,
+        label: b.label as string,
+        active: (b.active as boolean | undefined) ?? true,
+      })
+      .returning();
+    return row as Row;
+  },
+  update: async (tx, ws, id, b) => {
+    const [before] = await tx
+      .select()
+      .from(gmOrganisationTable)
+      .where(
+        and(
+          eq(gmOrganisationTable.id, id),
+          eq(gmOrganisationTable.workspaceId, ws),
+        ),
+      )
+      .limit(1);
+    if (!before) return null;
+    const [after] = await tx
+      .update(gmOrganisationTable)
+      .set(
+        patch<typeof gmOrganisationTable.$inferInsert>(b, [
+          "key",
+          "label",
+          "active",
+        ]),
+      )
+      .where(
+        and(
+          eq(gmOrganisationTable.id, id),
+          eq(gmOrganisationTable.workspaceId, ws),
+        ),
+      )
+      .returning();
+    return { before: before as Row, after: after as Row };
+  },
+  deactivate: async (tx, ws, id) => {
+    const [before] = await tx
+      .select()
+      .from(gmOrganisationTable)
+      .where(
+        and(
+          eq(gmOrganisationTable.id, id),
+          eq(gmOrganisationTable.workspaceId, ws),
+        ),
+      )
+      .limit(1);
+    if (!before) return null;
+    const [after] = await tx
+      .update(gmOrganisationTable)
+      .set({ active: false })
+      .where(
+        and(
+          eq(gmOrganisationTable.id, id),
+          eq(gmOrganisationTable.workspaceId, ws),
+        ),
       )
       .returning();
     return { before: before as Row, after: after as Row };

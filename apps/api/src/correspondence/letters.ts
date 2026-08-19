@@ -56,6 +56,7 @@ import {
 } from "./letter-list-filter";
 import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
+import { letterUrgencySchema } from "./register-fields";
 import { loadLifecycleDetail, retentionDueDate } from "./retention";
 import {
   assertNoOpenActions,
@@ -745,6 +746,9 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           filePlanNodeId: optStr,
           securityLabelId: optStr,
           fileRef: optStr,
+          externalRefNo: optStr,
+          urgency: v.optional(letterUrgencySchema),
+          organisationId: optStr,
           assigneeId: optStr,
         }),
       ),
@@ -790,6 +794,9 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               filePlanNodeId: b.filePlanNodeId ?? null,
               securityLabelId: b.securityLabelId ?? null,
               fileRef: b.fileRef ?? null,
+              externalRefNo: b.externalRefNo ?? null,
+              urgency: b.urgency ?? "normal",
+              organisationId: b.organisationId ?? null,
               status: "captured",
               // Ownership transfers only when the assignee accepts.
               currentAssigneeId: null,
@@ -848,6 +855,9 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           letterDate: optDate,
           receivedAt: optDate,
           fileRef: optStr,
+          externalRefNo: optStr,
+          urgency: v.optional(letterUrgencySchema),
+          organisationId: optStr,
           medium: v.optional(v.picklist(MEDIUMS)),
         }),
       ),
@@ -874,6 +884,9 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           "recipientOrg",
           "recipientEmail",
           "fileRef",
+          "externalRefNo",
+          "urgency",
+          "organisationId",
           "medium",
         ] as const) {
           if (b[k] !== undefined) patch[k] = b[k];
