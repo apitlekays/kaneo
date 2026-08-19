@@ -5,8 +5,14 @@ const chime = vi.hoisted(() => ({ play: vi.fn(), unlock: vi.fn() }));
 
 vi.mock("@/lib/play-chime", () => ({ createChime: () => chime }));
 
+const notifications = vi.hoisted(() => ({
+  current: undefined as
+    | { id: string; title: string | null; type: string }[]
+    | undefined,
+}));
+
 vi.mock("@/hooks/queries/notification/use-get-notifications", () => ({
-  default: () => ({ data: undefined }),
+  default: () => ({ data: notifications.current }),
 }));
 
 import { AppAlerts } from "./app-alerts";
@@ -16,6 +22,7 @@ describe("AppAlerts", () => {
     cleanup();
     chime.unlock.mockClear();
     chime.play.mockClear();
+    notifications.current = undefined;
   });
 
   it("unlocks audio on the first user interaction, once", () => {
@@ -30,10 +37,19 @@ describe("AppAlerts", () => {
     expect(chime.unlock).toHaveBeenCalledTimes(1);
   });
 
-  it("stays silent when the notification list is still loading", () => {
-    // If a `?? []` default ever creeps in, the seen-set seeds empty and every
-    // existing notification announces itself as new the moment data arrives.
-    render(<AppAlerts />);
+  it("stays silent when the first real list arrives after loading", () => {
+    // The seen-set seeds from the FIRST non-undefined list. If anyone gives
+    // that list a `?? []` default, the seed is empty and every notification
+    // already in the user's history announces itself on page load.
+    notifications.current = undefined;
+    const { rerender } = render(<AppAlerts />);
+
+    notifications.current = [
+      { id: "n1", title: "Existing one", type: "info" },
+      { id: "n2", title: "Existing two", type: "info" },
+    ];
+    rerender(<AppAlerts />);
+
     expect(chime.play).not.toHaveBeenCalled();
   });
 });
