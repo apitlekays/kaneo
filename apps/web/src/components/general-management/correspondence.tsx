@@ -66,9 +66,13 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
   const { data: awaiting = [], isLoading: isAwaitingLoading } =
     useAwaitingAcceptance(workspaceId);
   const { data: usersData } = useGetActiveWorkspaceUsers(workspaceId);
+  // includeInactive: a retired organisation must keep showing its label on
+  // historical letters, even though it's no longer offered for new ones (the
+  // capture dialog's own useConfigList call stays active-only for that).
   const { data: organisations = [] } = useConfigList(
     "organisations",
     workspaceId,
+    true,
   );
   const users = usersData?.members ?? [];
   const userName = (id: string | null) =>

@@ -13,6 +13,7 @@ import { Correspondence } from "./correspondence";
 const state = vi.hoisted(() => ({
   letters: [] as Letter[],
   awaiting: [] as WatchlistAssignment[],
+  organisations: [] as { id: string; label: string; active: boolean }[],
 }));
 
 vi.mock("@/hooks/queries/correspondence/use-letters", () => ({
@@ -28,7 +29,18 @@ vi.mock(
 );
 
 vi.mock("@/hooks/queries/correspondence/use-config", () => ({
-  useConfigList: () => ({ data: [] }),
+  // Mirrors the real fetcher's includeInactive semantics so the
+  // "retired organisation" test actually exercises the caller passing
+  // includeInactive: true, rather than always returning everything.
+  useConfigList: (
+    _resource: string,
+    _workspaceId: string,
+    includeInactive = false,
+  ) => ({
+    data: includeInactive
+      ? state.organisations
+      : state.organisations.filter((o) => o.active),
+  }),
 }));
 
 vi.mock("./letter-capture-dialog", () => ({
@@ -236,5 +248,27 @@ describe("correspondence register", () => {
 
     expect(screen.getByText("Reference")).toBeVisible();
     expect(screen.queryByText("ERN")).not.toBeInTheDocument();
+  });
+
+  it("shows a retired organisation's label on its historical letter, not em-dash", async () => {
+    // The org config list includes inactive rows here (useConfigList is
+    // called with includeInactive: true from the register), so a letter
+    // owned by a deactivated organisation still resolves its name instead
+    // of falling through to "—".
+    state.organisations = [
+      { id: "org-retired", label: "Retired Org Sdn Bhd", active: false },
+    ];
+    state.letters = [
+      makeLetter({
+        id: "letter-retired-org",
+        subject: "Letter for a retired organisation",
+        organisationId: "org-retired",
+        receivedAt: "2025-05-01T00:00:00.000Z",
+      }),
+    ];
+
+    render(<Correspondence workspaceId="ws-1" />);
+
+    expect(screen.getByText("Retired Org Sdn Bhd")).toBeVisible();
   });
 });

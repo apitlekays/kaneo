@@ -6,10 +6,14 @@ import {
 } from "@/fetchers/correspondence";
 import { toast } from "@/lib/toast";
 
-export function useConfigList(resource: string, workspaceId: string) {
+export function useConfigList(
+  resource: string,
+  workspaceId: string,
+  includeInactive = false,
+) {
   return useQuery({
-    queryKey: ["gm-config", resource, workspaceId],
-    queryFn: () => configResource(resource).list(workspaceId),
+    queryKey: ["gm-config", resource, workspaceId, includeInactive],
+    queryFn: () => configResource(resource).list(workspaceId, includeInactive),
     enabled: !!workspaceId,
   });
 }
