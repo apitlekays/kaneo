@@ -44,6 +44,19 @@ const ENTITY_INVALIDATIONS: Record<string, string[][]> = {
   "workspace-access": [["page-access"], ["workspace-members-list"]],
   // General Management → Correspondence: refresh config lists + audit widgets.
   correspondence: [["gm-config"], ["gm-audit-verify"]],
+  // Central pending-decision dialog: the first path segment of a decision
+  // made through /pending-decision is "pending-decision", not
+  // "correspondence" — but for the correspondence provider it's the same
+  // underlying letter custody transfer, so it must refresh the same surfaces
+  // the old accept/reject route's "correspondence" entry does (including the
+  // GM audit-chain verification widget), plus the dialog's own queries.
+  "pending-decision": [
+    ["pending-decisions"],
+    ["awaiting-acceptance"],
+    ["my-correspondence"],
+    ["gm-config"],
+    ["gm-audit-verify"],
+  ],
   // Asset registry: refresh the list, any open detail, summary, work orders.
   "asset-registry": [
     ["assets"],
