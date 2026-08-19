@@ -43,6 +43,18 @@ function buildSpecs(userOptions: Option[]): Record<string, Spec> {
         { key: "label", label: "Label" },
       ],
     },
+    organisations: {
+      title: "Organisation",
+      description: "Group entities a letter can belong to.",
+      fields: [
+        { key: "key", label: "Key", type: "text", required: true },
+        { key: "label", label: "Label", type: "text", required: true },
+      ],
+      columns: [
+        { key: "label", label: "Label" },
+        { key: "key", label: "Key" },
+      ],
+    },
     "security-labels": {
       title: "Security label",
       description: "Classification levels; higher rank = more sensitive.",
@@ -350,6 +362,7 @@ const TABS: { value: string; label: string }[] = [
   { value: "number-schemes", label: "Numbering" },
   { value: "file-plan", label: "File plan" },
   { value: "categories", label: "Categories" },
+  { value: "organisations", label: "Organisations" },
   { value: "security-labels", label: "Security" },
   { value: "approval-chains", label: "Approval chains" },
   { value: "distribution-lists", label: "Distribution" },

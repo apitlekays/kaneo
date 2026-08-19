@@ -55,6 +55,10 @@ export function LetterCaptureDialog({
     "security-labels",
     workspaceId,
   );
+  const { data: organisations = [] } = useConfigList(
+    "organisations",
+    workspaceId,
+  );
   const { data: usersData } = useGetActiveWorkspaceUsers(workspaceId);
   const users = usersData?.members ?? [];
 
@@ -69,6 +73,9 @@ export function LetterCaptureDialog({
   const [receivedAt, setReceivedAt] = useState<Date | null>(new Date());
   const [categoryId, setCategoryId] = useState("");
   const [securityLabelId, setSecurityLabelId] = useState("");
+  const [externalRefNo, setExternalRefNo] = useState("");
+  const [urgency, setUrgency] = useState("normal");
+  const [organisationId, setOrganisationId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -86,13 +93,16 @@ export function LetterCaptureDialog({
     setReceivedAt(new Date());
     setCategoryId("");
     setSecurityLabelId("");
+    setExternalRefNo("");
+    setUrgency("normal");
+    setOrganisationId("");
     setAssigneeId("");
     setFile(null);
     compression.reset();
   };
 
   const submit = () => {
-    if (!subject.trim()) return;
+    if (!subject.trim() || !organisationId) return;
     m.create.mutate(
       {
         direction,
@@ -106,6 +116,9 @@ export function LetterCaptureDialog({
         receivedAt: receivedAt?.toISOString(),
         categoryId: categoryId || undefined,
         securityLabelId: securityLabelId || undefined,
+        externalRefNo: externalRefNo.trim() || undefined,
+        urgency,
+        organisationId: organisationId || undefined,
         assigneeId: assigneeId || undefined,
       },
       {
@@ -196,6 +209,20 @@ export function LetterCaptureDialog({
             <Label>{direction === "in" ? "Received" : "Sent"}</Label>
             <DateField value={receivedAt} onChange={setReceivedAt} />
           </div>
+          <div className="space-y-1.5">
+            <Label>Urgency</Label>
+            <Select value={urgency} onValueChange={setUrgency}>
+              <SelectTrigger>
+                <SelectValue>
+                  {urgency === "urgent" ? "Urgent" : "Normal"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="urgent">Urgent</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>
               Subject <span className="text-destructive">*</span>
@@ -204,6 +231,14 @@ export function LetterCaptureDialog({
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="Subject of the letter"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>External ref. no.</Label>
+            <Input
+              value={externalRefNo}
+              onChange={(e) => setExternalRefNo(e.target.value)}
+              placeholder="Reference no. on the incoming letter"
             />
           </div>
           <div className="space-y-1.5">
@@ -233,6 +268,26 @@ export function LetterCaptureDialog({
           <div className="space-y-1.5">
             <Label>Letter date</Label>
             <DateField value={letterDate} onChange={setLetterDate} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>
+              Owning organisation <span className="text-destructive">*</span>
+            </Label>
+            <Select value={organisationId} onValueChange={setOrganisationId}>
+              <SelectTrigger>
+                <SelectValue>
+                  {(organisations.find((org) => org.id === organisationId)
+                    ?.label as string) ?? "—"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {organisations.map((org) => (
+                  <SelectItem key={org.id} value={org.id}>
+                    {org.label as string}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Category</Label>
@@ -347,6 +402,7 @@ export function LetterCaptureDialog({
             <Button
               disabled={
                 !subject.trim() ||
+                !organisationId ||
                 m.create.isPending ||
                 uploading ||
                 compression.busy

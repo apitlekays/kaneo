@@ -12,6 +12,9 @@ export type Letter = {
   id: string;
   workspaceId: string;
   refNo: string | null;
+  externalRefNo: string | null;
+  urgency: string;
+  organisationId: string | null;
   fileRef: string | null;
   jilid: number | null;
   direction: "in" | "out";
