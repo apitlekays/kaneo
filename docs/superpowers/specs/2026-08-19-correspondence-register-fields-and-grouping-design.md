@@ -40,14 +40,17 @@ linked to one another in the database, but the feature is unusable.
   order of the year headings and the order within them; the register never
   collapses to a flat list.
 
-### Known consequence, accepted
+### Why the letter's own date, not the registration date
 
 A letter dated December 2025 but registered in January 2026 appears under
-the **2025** heading while its reference number says 2026. This follows
-directly from grouping on the letter's own date rather than the
-registration date. It is the chosen behaviour, not an oversight, but anyone
-reading the register should know the heading and the number can disagree by
-one year at the boundary.
+the **2025** heading while its reference number says 2026.
+
+This is the point, not a wart. The office plans to register letters that
+predate the current year — backfilling historical correspondence into the
+register — and grouping by registration date would pile every one of them
+under the year the data-entry happened, which would tell nobody anything.
+Grouping by the letter's own date puts each letter in the year it belongs
+to regardless of when it was typed in.
 
 ## Data model
 
@@ -83,14 +86,26 @@ every existing workspace:
 New workspaces start empty, consistent with every other GM config table
 (none is seeded today).
 
-**No backfill of `organisation_id` on existing letters.** Assigning every
-historical letter to MAPIM Malaysia would fabricate a record in an
-audit-logged register. Existing rows show "—" and any report grouped by
-organisation carries an unassigned bucket.
-
-**Organisation is nullable in the database but required in the registration
-form.** Old letters legitimately have none; new ones should always carry
+**Existing letters are backfilled to MAPIM Malaysia.** I initially argued
+against this on the grounds that it writes a classification nobody entered
+into an audit-logged register; the decision is to backfill, and the
+reasoning holds — every letter in the register predates the other three
+companies, so MAPIM Malaysia is the accurate answer rather than an invented
 one.
+
+The backfill is scoped defensively: it updates only rows where
+`organisation_id IS NULL`, so re-running the migration cannot overwrite a
+value someone has since set by hand. It is a single bulk `UPDATE` recorded
+in the migration file, not per-letter audit events — the hash chain will
+show no per-letter attribution for it, and the migration's comment states
+plainly what it did and why so anyone auditing the register later finds the
+explanation in the history rather than a mystery.
+
+**Organisation stays nullable in the database but is required in the
+registration form.** Nullable because the column has to exist before the
+backfill runs and because a future workspace may register a letter before
+its organisations are configured; required in the form so no new letter
+arrives without one.
 
 Changing any of these three fields after registration writes an audit event,
 like any other letter edit. Urgency in particular may be escalated later,
@@ -188,11 +203,21 @@ links in local state and posts them *after* the create call returns, against
 the new letter's id. Two consequences the implementation must handle:
 
 - If the create succeeds and a link post fails, the letter exists without
-  that link. Surface the failure and leave the letter registered — never
-  roll back a registered record over a link, because the reference number
-  has already been allocated from a gap-free sequence.
+  that link. Never roll back a registered record over a link — the
+  reference number has already been allocated from a gap-free sequence.
 - The dialog must not close until the link posts settle, or a failure
   disappears unseen.
+
+**On failure the dialog stays open and says so**, naming which links failed
+and leaving them selected, with a **Retry links** action that re-posts only
+the failed ones. The letter is already registered at that point, so the
+dialog makes that explicit — "Letter registered as MAPIM/2026/0114. 2 of 3
+links could not be saved." — rather than looking like the whole
+registration failed.
+
+The registrant can also close the dialog and add the links later: the
+detail view's Linked tab carries the same picker, so a failed link is never
+a dead end.
 
 ### In the detail view
 
@@ -206,15 +231,46 @@ reply is its meaning.
 
 ### In the list
 
-Threading — indenting a reply under the letter it answers — **conflicts
-with year grouping**. A 2026 reply to a 2025 letter cannot sit inside both
-the 2025 group and its own. Threading and year grouping cannot both be the
-register's primary structure.
+Threading in place — indenting a reply under the letter it answers —
+**conflicts with year grouping**. A 2026 reply to a 2025 letter cannot sit
+inside both the 2025 group and its own. So the thread lives in a dialog
+instead of restructuring the register.
 
-So the list gets a **link icon with a count** in a narrow column. Clicking
-it expands the linked letters inline beneath the row: a temporary,
-on-demand thread rather than a permanent restructuring. Each entry shows
-the counterpart's reference, subject and year, and clicks through.
+**The icon.** Any letter with at least one link, in either direction,
+carries a clickable thread icon in a narrow column. Letters with no links
+carry nothing.
+
+This requires the list query to know which letters have links. The query
+already computes `actionsDone` / `actionsTotal` per letter with a
+correlated subquery (`letters.ts` list route); the link count follows the
+same shape. Without it the client would need one request per row to decide
+whether to draw an icon.
+
+**The dialog.** Clicking the icon opens a dialog showing the whole thread:
+the most recent letter at the top, down to the first correspondence,
+ordered by date received (descending). The letter the reader clicked from
+is highlighted so they do not lose their place. Each entry shows reference,
+subject, direction and date, and clicking one opens that letter.
+
+**The thread is computed server-side**, at a new endpoint
+`GET /letters/:id/thread?workspaceId=`.
+
+It walks `letter_link` transitively in **both** directions from the seed
+letter, so any letter in a chain returns the same complete thread no matter
+which one you open it from. Three constraints the traversal must honour:
+
+- **A visited set.** The links form a graph, not a tree — two letters can
+  reference each other, and a cycle would otherwise loop forever.
+- **A hard cap of 100 letters**, returned with a flag when the thread is
+  truncated. A pathological or accidental web of links must not turn one
+  click into an unbounded query.
+- **Workspace scoping on every hop.** The traversal joins through
+  `letter.workspace_id` at each step, so a link that somehow points across
+  workspaces cannot leak a letter the reader may not see.
+
+Results are ordered by `receivedAt ?? letterDate ?? createdAt` descending —
+the same date the register groups and sorts by, so the thread and the
+register agree about when a letter happened.
 
 ## Urgency across the four surfaces
 
@@ -265,6 +321,8 @@ workspace.
 
 - Pagination for the register list, and the server-side sorting it would
   require.
-- Backfilling `organisation_id` on historical letters.
-- True threaded display in the register.
+- Inline threaded display in the register rows. The thread dialog replaces
+  it; the register keeps one structure, by year.
 - Restructuring the free-text `senderOrg` / `recipientOrg` fields.
+- Per-letter audit events for the organisation backfill. It is one bulk
+  `UPDATE` documented in the migration.
