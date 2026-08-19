@@ -71,4 +71,30 @@ describe("notification copy", () => {
     expect(getNotificationTitle(notification, t)).toBe("Letter assigned");
     expect(getNotificationContent(notification, t)).toBe("A letter needs you");
   });
+
+  it("prefixes an urgent letter assignment", () => {
+    const notification = {
+      type: "letter_assigned",
+      title: "Correspondence to inspect — REF-1",
+      content: "A letter needs you",
+      eventData: { letterId: "l1", urgency: "urgent" },
+    };
+
+    expect(getNotificationTitle(notification, t)).toBe(
+      "Urgent: Correspondence to inspect — REF-1",
+    );
+  });
+
+  it("leaves a normal assignment unprefixed", () => {
+    const notification = {
+      type: "letter_assigned",
+      title: "Correspondence to inspect — REF-1",
+      content: "A letter needs you",
+      eventData: { letterId: "l1", urgency: "normal" },
+    };
+
+    expect(getNotificationTitle(notification, t)).toBe(
+      "Correspondence to inspect — REF-1",
+    );
+  });
 });

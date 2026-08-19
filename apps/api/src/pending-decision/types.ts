@@ -11,6 +11,12 @@ export type PendingDecisionItem = {
   href: string;
   createdAt: Date;
   requiresReason: boolean;
+  /**
+   * Optional emphasis a provider wants shown on the card. Keeps the dialog
+   * free of any one module's vocabulary — correspondence sends urgency here
+   * rather than the dialog learning what a letter is.
+   */
+  badges?: { label: string; tone: "urgent" | "info" }[];
 };
 
 export type PendingDecisionProvider = {

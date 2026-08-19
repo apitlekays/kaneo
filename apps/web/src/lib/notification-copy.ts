@@ -82,6 +82,14 @@ export function getNotificationTitle(
           ...eventData,
           defaultValue: notification.title ?? notification.type,
         });
+      case "letter_assigned": {
+        const title = notification.title ?? notification.type;
+        // The register's own urgency badge lives in lib/urgency.ts and only
+        // reaches the register table; a notification is read outside that
+        // context (bell, toast), so it needs its own cue baked into the
+        // title rather than reusing that module.
+        return eventData.urgency === "urgent" ? `Urgent: ${title}` : title;
+      }
       default:
         break;
     }

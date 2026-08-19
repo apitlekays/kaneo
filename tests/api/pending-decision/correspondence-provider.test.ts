@@ -4,6 +4,7 @@ import {
   correspondenceProvider,
   decodeLetterDecisionId,
   encodeLetterDecisionId,
+  toPendingItem,
 } from "../../../apps/api/src/pending-decision/providers/correspondence";
 
 // `decideLetterAssignment` is the only thing in this provider that touches
@@ -33,6 +34,26 @@ describe("letter decision id codec", () => {
   it("rejects an id with an empty half", () => {
     expect(() => decodeLetterDecisionId("ltr_abc:")).toThrow();
     expect(() => decodeLetterDecisionId(":asg_def")).toThrow();
+  });
+});
+
+describe("toPendingItem urgency badge", () => {
+  const baseRow = {
+    id: "asg_def",
+    letterId: "ltr_abc",
+    action: "inspect",
+    note: null,
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    refNo: "REF-1",
+    subject: "Test subject",
+  };
+
+  it("flags an urgent letter with a badge and leaves a normal one bare", () => {
+    const urgentItem = toPendingItem({ ...baseRow, urgency: "urgent" });
+    expect(urgentItem.badges).toEqual([{ label: "Urgent", tone: "urgent" }]);
+
+    const normalItem = toPendingItem({ ...baseRow, urgency: "normal" });
+    expect(normalItem.badges ?? []).toEqual([]);
   });
 });
 

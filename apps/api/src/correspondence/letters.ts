@@ -198,13 +198,19 @@ async function resolveLetterAccess(
 /** Notify a user that a letter is awaiting their inspection (Main User). */
 async function notifyAssigned(
   toUserId: string,
-  letter: { id: string; refNo: string | null; subject: string },
+  letter: {
+    id: string;
+    refNo: string | null;
+    subject: string;
+    urgency: string;
+  },
 ) {
   await createNotification({
     userId: toUserId,
     type: "letter_assigned",
     title: `Correspondence to inspect — ${letter.refNo ?? letter.subject}`,
     content: letter.subject,
+    eventData: { letterId: letter.id, urgency: letter.urgency },
     resourceId: letter.id,
     resourceType: "letter",
   }).catch(() => {});
@@ -837,6 +843,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             id: created.id as string,
             refNo: (created.refNo as string | null) ?? null,
             subject,
+            urgency: created.urgency as string,
           });
         if (assigneeId)
           broadcastToUser(assigneeId, { entity: "letter-assignment" });
@@ -1171,6 +1178,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             id,
             refNo: letter.refNo,
             subject: letter.subject,
+            urgency: letter.urgency,
           });
         if (b.toUserId)
           broadcastToUser(b.toUserId, { entity: "letter-assignment" });

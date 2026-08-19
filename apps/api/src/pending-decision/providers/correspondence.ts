@@ -24,6 +24,39 @@ export function decodeLetterDecisionId(id: string): {
   return { letterId, assignmentId };
 }
 
+/** Row shape produced by the `list` query — kept beside its mapper so the
+ * two stay in sync without a database round-trip in tests. */
+type LetterAssignmentRow = {
+  id: string;
+  letterId: string;
+  action: string | null;
+  note: string | null;
+  createdAt: Date;
+  refNo: string | null;
+  subject: string;
+  urgency: string;
+};
+
+/** Pure row-to-item mapper, extracted so it can be tested without a database. */
+export function toPendingItem(row: LetterAssignmentRow): PendingDecisionItem {
+  return {
+    source: "correspondence",
+    id: encodeLetterDecisionId(row.letterId, row.id),
+    title: row.refNo ?? "Unregistered",
+    subtitle: row.subject,
+    context: [
+      `Action: ${row.action}`,
+      ...(row.note ? [`Instruction: ${row.note}`] : []),
+    ],
+    href: `/dashboard/correspondence/${row.letterId}`,
+    createdAt: row.createdAt,
+    requiresReason: true,
+    ...(row.urgency === "urgent"
+      ? { badges: [{ label: "Urgent", tone: "urgent" as const }] }
+      : {}),
+  };
+}
+
 export const correspondenceProvider: PendingDecisionProvider = {
   source: "correspondence",
 
@@ -37,6 +70,7 @@ export const correspondenceProvider: PendingDecisionProvider = {
         createdAt: letterAssignmentTable.createdAt,
         refNo: letterTable.refNo,
         subject: letterTable.subject,
+        urgency: letterTable.urgency,
       })
       .from(letterAssignmentTable)
       .innerJoin(
@@ -55,19 +89,7 @@ export const correspondenceProvider: PendingDecisionProvider = {
       )
       .orderBy(desc(letterAssignmentTable.createdAt));
 
-    return rows.map((row) => ({
-      source: "correspondence",
-      id: encodeLetterDecisionId(row.letterId, row.id),
-      title: row.refNo ?? "Unregistered",
-      subtitle: row.subject,
-      context: [
-        `Action: ${row.action}`,
-        ...(row.note ? [`Instruction: ${row.note}`] : []),
-      ],
-      href: `/dashboard/correspondence/${row.letterId}`,
-      createdAt: row.createdAt,
-      requiresReason: true,
-    }));
+    return rows.map(toPendingItem);
   },
 
   async decide({ userId, workspaceId, id, decision, reason, ip }) {

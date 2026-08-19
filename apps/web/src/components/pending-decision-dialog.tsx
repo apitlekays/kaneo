@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -80,6 +81,19 @@ function ItemCard({
     <div className="rounded-lg border border-border p-4 space-y-2">
       <div className="font-medium">{item.title}</div>
       <div className="text-sm text-muted-foreground">{item.subtitle}</div>
+      {item.badges && item.badges.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {item.badges.map((badge) => (
+            <Badge
+              key={badge.label}
+              variant={badge.tone === "urgent" ? "destructive" : "default"}
+              className="text-xs"
+            >
+              {badge.label}
+            </Badge>
+          ))}
+        </div>
+      )}
       {item.context.map((line) => (
         <div key={line} className="text-xs text-muted-foreground">
           {line}
