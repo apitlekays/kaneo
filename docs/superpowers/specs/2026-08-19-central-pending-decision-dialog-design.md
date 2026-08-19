@@ -69,6 +69,8 @@ export type PendingDecisionProvider = {
     id: string;
     decision: "accepted" | "rejected";
     reason: string | null;
+    /** Caller's IP; the correspondence audit event records it. */
+    ip: string | null;
   }): Promise<void>;
 };
 ```
