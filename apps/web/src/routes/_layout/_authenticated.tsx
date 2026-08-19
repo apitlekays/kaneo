@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AppAlerts } from "@/components/app-alerts";
+import { PendingDecisionDialog } from "@/components/pending-decision-dialog";
 import { useUserWebSocket } from "@/hooks/use-user-websocket";
 import { authClient } from "@/lib/auth-client";
 
@@ -25,6 +26,7 @@ function AuthenticatedLayout() {
   return (
     <>
       <AppAlerts />
+      <PendingDecisionDialog />
       <Outlet />
     </>
   );

@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Bell, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { openPendingDecisions } from "@/components/pending-decision-dialog";
 import {
   Collapsible,
   CollapsiblePanel,
@@ -94,7 +95,10 @@ export function NavMain() {
                     isActive={item.isActive}
                     size="default"
                     className="h-8 ps-3.5 text-sm hover:bg-transparent hover:text-sidebar-accent-foreground active:bg-transparent"
-                    onClick={() => navigate({ to: item.url })}
+                    onClick={() => {
+                      navigate({ to: item.url });
+                      if (item.hasDot) openPendingDecisions();
+                    }}
                   >
                     <span className="flex items-center gap-1.5">
                       {item.title}

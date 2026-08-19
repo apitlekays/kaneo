@@ -1965,6 +1965,19 @@
 			}
 		}
 	},
+	"pendingDecisions": {
+		"title": "Waiting for your decision",
+		"description": "Accept or reject each item to clear it from your queue.",
+		"accept": "Accept",
+		"reject": "Reject",
+		"confirmRejection": "Confirm rejection",
+		"cancel": "Cancel",
+		"open": "Open",
+		"reasonPlaceholder": "Why are you rejecting this?",
+		"alreadyHandled": "Already handled by someone else.",
+		"partialFailure": "Couldn't load items from: {{sources}}",
+		"genericError": "That didn't go through. Try again."
+	},
 	"minutes": {
 		"pageTitle": "Minutes",
 		"searchPlaceholder": "Search meetings…",
