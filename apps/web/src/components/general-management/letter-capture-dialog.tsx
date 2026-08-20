@@ -1,5 +1,5 @@
 import { Loader2, Paperclip } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,6 +53,15 @@ export function LetterCaptureDialog({
   trigger: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  // The dialog is mounted once and never remounted, so an async write that
+  // started while it was open (e.g. a retry's postLinks()) can still land
+  // after the user has since dismissed it. Kept in sync with `open` via the
+  // effect below and read after any such await, so a stale result can be
+  // discarded instead of resurrecting the failure banner post-dismissal.
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
   const m = useLetterMutations(workspaceId);
   const { data: categories = [] } = useConfigList("categories", workspaceId);
   const { data: securityLabels = [] } = useConfigList(
@@ -141,6 +150,11 @@ export function LetterCaptureDialog({
     if (!createdLetterId) return;
     setLinking(true);
     const stillFailed = await postLinks(createdLetterId, failedLinks);
+    // The user may have dismissed the dialog (Escape, backdrop, header X, or
+    // Close) while this was in flight. handleOpenChange already reset the
+    // form for that case — don't let this stale result undo that by
+    // repopulating failedLinks after the fact.
+    if (!openRef.current) return;
     setLinking(false);
     setFailedLinks(stillFailed);
     if (stillFailed.length === 0) {

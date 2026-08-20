@@ -336,4 +336,65 @@ describe("LetterCaptureDialog — link picker at registration", () => {
     expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Capture" })).toBeInTheDocument();
   });
+
+  it("discards a retry result that settles after the dialog was dismissed", async () => {
+    const user = userEvent.setup();
+    state.letters = [
+      makeLetter({ id: "letter-a", subject: "Alpha letter", refNo: "REF-A" }),
+    ];
+
+    // The initial post (from Capture) fails, landing us in the
+    // failure-banner state with a Retry button available.
+    mockLinkLetter.mockRejectedValueOnce(new Error("network error"));
+
+    await openDialogAndFillRequiredFields(user);
+    await addLink(user, "Alpha letter");
+
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await resolveCreateWith(newLetter);
+
+    await waitFor(() => expect(mockLinkLetter).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Letter "New outgoing letter" was captured. 1 of 1 links could not be saved.',
+        ),
+      ).toBeVisible(),
+    );
+
+    // The retry's post is held open until we settle it ourselves, so we can
+    // dismiss the dialog while it's still in flight.
+    let rejectRetry: (err: Error) => void = () => {};
+    mockLinkLetter.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRetry = reject;
+        }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+    await waitFor(() => expect(mockLinkLetter).toHaveBeenCalledTimes(2));
+
+    // Dismiss via Escape — not Close, which is disabled during a retry —
+    // while the retry promise is still unsettled.
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Register correspondence"),
+      ).not.toBeInTheDocument(),
+    );
+
+    // Now let the retry settle (still failing). Its state writes must be
+    // discarded rather than repopulating the failure banner post-dismissal.
+    await act(async () => {
+      rejectRetry(new Error("network error"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Capture" })).toBeInTheDocument();
+  });
 });
