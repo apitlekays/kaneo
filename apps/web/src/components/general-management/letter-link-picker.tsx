@@ -34,6 +34,15 @@ function candidateLabel(letter: Letter): string {
   return `${letterReference(letter)} — ${letter.subject}`;
 }
 
+// A link the picker should treat as already present without owning it —
+// e.g. a link the letter already has, saved to the server before this
+// picker instance ever mounted. Identified the same way a pending link is:
+// by the (letter, relation) pair, not the letter alone.
+export type ExistingLink = {
+  toLetterId: string;
+  relation: LinkRelation;
+};
+
 /**
  * Controlled picker for linking one letter to another. Holds no server
  * state — the caller owns `value`/`onChange` because two very different
@@ -46,11 +55,18 @@ export function LetterLinkPicker({
   value,
   onChange,
   excludeId,
+  alreadyLinked = [],
 }: {
   workspaceId: string;
   value: PendingLink[];
   onChange: (next: PendingLink[]) => void;
   excludeId?: string;
+  // Links the letter already has (from the server), so re-offering a
+  // counterpart under a relation it's already linked under doesn't produce
+  // a second, identical link. Reuses the same (toLetterId, relation)
+  // matching as the pending-link dedup below rather than a second
+  // mechanism.
+  alreadyLinked?: ExistingLink[];
 }) {
   // The letters list endpoint returns every letter in the workspace
   // unpaginated, so filtering candidates client-side is correct here.
@@ -60,11 +76,12 @@ export function LetterLinkPicker({
 
   // The backend allows the same pair of letters to be linked twice under
   // different relations (no unique constraint on fromLetterId/toLetterId),
-  // so only the identical (letter, relation) pair the user has already
-  // added is a genuinely useless offer — not the letter under every
-  // relation. This must recompute whenever `relation` changes.
+  // so only the identical (letter, relation) pair already linked — whether
+  // still pending (`value`) or already saved (`alreadyLinked`) — is a
+  // genuinely useless offer, not the letter under every relation. This
+  // must recompute whenever `relation` changes.
   const linkedUnderSelectedRelation = new Set(
-    value
+    [...value, ...alreadyLinked]
       .filter((link) => link.relation === relation)
       .map((link) => link.toLetterId),
   );
@@ -88,8 +105,15 @@ export function LetterLinkPicker({
     setTerm("");
   };
 
-  const removeLink = (toLetterId: string) => {
-    onChange(value.filter((link) => link.toLetterId !== toLetterId));
+  // The same letter can be added twice under different relations (see the
+  // dedup guard above), so a link is only uniquely identified by the pair —
+  // not by `toLetterId` alone. Using just the id here would give two badges
+  // the same React key and the same accessible name, and removing either
+  // one would remove both.
+  const linkKey = (link: PendingLink) => `${link.toLetterId}:${link.relation}`;
+
+  const removeLink = (key: string) => {
+    onChange(value.filter((link) => linkKey(link) !== key));
   };
 
   return (
@@ -97,17 +121,13 @@ export function LetterLinkPicker({
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {value.map((link) => (
-            <Badge
-              key={link.toLetterId}
-              className="gap-1 pe-1"
-              variant="outline"
-            >
+            <Badge key={linkKey(link)} className="gap-1 pe-1" variant="outline">
               <span className="text-muted-foreground">{link.relation}:</span>
               {link.label}
               <button
-                aria-label={`Remove link to ${link.label}`}
+                aria-label={`Remove ${link.relation} link to ${link.label}`}
                 className="ms-0.5 flex items-center rounded-sm p-0.5 hover:bg-accent"
-                onClick={() => removeLink(link.toLetterId)}
+                onClick={() => removeLink(linkKey(link))}
                 type="button"
               >
                 <XIcon className="size-3" />

@@ -3,7 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Letter } from "@/fetchers/correspondence/letters";
 import { letterReference } from "@/lib/letter-reference";
-import { LetterLinkPicker, type PendingLink } from "./letter-link-picker";
+import {
+  type ExistingLink,
+  LetterLinkPicker,
+  type PendingLink,
+} from "./letter-link-picker";
 
 // Mock the letters query hook the picker reads candidates from (mirrors
 // correspondence.test.tsx's mock of the same module).
@@ -150,11 +154,47 @@ describe("LetterLinkPicker", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: `Remove link to ${existing.label}`,
+        name: `Remove ${existing.relation} link to ${existing.label}`,
       }),
     );
 
     expect(onChange).toHaveBeenCalledWith([]);
+  });
+
+  it("removes only the matching (letter, relation) pair, not every relation the same letter is linked under", async () => {
+    // I1: the same letter can be linked twice under different relations, so
+    // it must be possible to remove one without removing the other — badge
+    // key, filter, and aria-label must all key on (toLetterId, relation),
+    // not toLetterId alone.
+    const user = userEvent.setup();
+    state.letters = [];
+    const replyLink: PendingLink = {
+      toLetterId: "letter-y",
+      relation: "reply",
+      label: "REF-Y — Shared subject",
+    };
+    const relatedLink: PendingLink = {
+      toLetterId: "letter-y",
+      relation: "related",
+      label: "REF-Y — Shared subject",
+    };
+    const onChange = vi.fn();
+
+    render(
+      <LetterLinkPicker
+        workspaceId="ws-1"
+        value={[replyLink, relatedLink]}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: `Remove reply link to ${replyLink.label}`,
+      }),
+    );
+
+    expect(onChange).toHaveBeenCalledWith([relatedLink]);
   });
 
   it("never offers the letter being edited as its own link", async () => {
@@ -216,5 +256,44 @@ describe("LetterLinkPicker", () => {
     );
 
     expect(screen.getByText("Already linked as related")).toBeVisible();
+  });
+
+  it("I2: does not re-offer a letter the detail view already links via `alreadyLinked`, but does under a different relation", async () => {
+    // The detail view has no pendingLinks for a link it already saved — it
+    // has no local record of it at all until this prop seeds one. Without
+    // this, linking a letter, then opening the picker again, re-offers the
+    // exact same counterpart under the exact same relation: two clicks
+    // produce two identical, permanent links (there is no delete route).
+    const user = userEvent.setup();
+    state.letters = [
+      makeLetter({ id: "letter-linked", subject: "Already saved as related" }),
+    ];
+    const alreadyLinked: ExistingLink[] = [
+      { toLetterId: "letter-linked", relation: "related" },
+    ];
+
+    render(
+      <LetterLinkPicker
+        workspaceId="ws-1"
+        value={[]}
+        onChange={vi.fn()}
+        alreadyLinked={alreadyLinked}
+      />,
+    );
+
+    // Default relation is "related" — matches the saved link, so it must
+    // not be offered again.
+    expect(
+      screen.queryByText("Already saved as related"),
+    ).not.toBeInTheDocument();
+
+    // A different relation for the same pair is a genuinely new link, so
+    // it must still be offered.
+    await user.click(screen.getByRole("combobox"));
+    await user.click(
+      await screen.findByRole("option", { name: /supersedes/i }),
+    );
+
+    expect(screen.getByText("Already saved as related")).toBeVisible();
   });
 });
