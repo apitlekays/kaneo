@@ -1,5 +1,5 @@
 import { Loader2, Paperclip } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,7 +63,22 @@ export function LetterCaptureDialog({
   // submission captures its own generation up front and, after any await,
   // compares it against the live one to tell whether it's still the
   // submission the user is looking at.
+  //
+  // A stale generation is not by itself a reason to reset the form, though
+  // — the dialog may since have been reopened and be mid-entry on a
+  // different letter, and clearing it out from under the user reproduces
+  // the exact harm this whole mechanism exists to prevent. What decides
+  // whether resetting is safe is whether the dialog is *currently closed*
+  // (an already-captured letter's populated form left behind, inviting a
+  // duplicate Capture) — a second, separate piece of state from `gen`.
+  // Reading `open` directly here would not work: a value closed over at
+  // render time, not the live value, is exactly what made the old
+  // `openRef`-only version of this bug possible in the first place.
   const gen = useRef(0);
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
   const m = useLetterMutations(workspaceId);
   const { data: categories = [] } = useConfigList("categories", workspaceId);
   const { data: securityLabels = [] } = useConfigList(
@@ -157,13 +172,18 @@ export function LetterCaptureDialog({
     // The user may have dismissed the dialog (Escape, backdrop, header X, or
     // Close) while this was in flight — or dismissed it AND reopened it to
     // capture something else. Either way this result belongs to a
-    // submission that is no longer the one on screen: reset (in case
-    // dismissal didn't already, e.g. this resolved before that ran) and
-    // surface the outcome as a toast instead of repopulating failedLinks or
-    // touching setOpen, which could otherwise close a dialog the user has
-    // since reopened for a different letter.
+    // submission that is no longer the one on screen: never repopulate
+    // failedLinks or touch setOpen, which could otherwise close a dialog
+    // the user has since reopened for a different letter. Only reset the
+    // form if the dialog is currently closed — that's an already-captured
+    // letter's populated form left behind, inviting a duplicate Capture.
+    // If it's open again, the user may be mid-entry on something new;
+    // clearing it out from under them is the exact harm this guard exists
+    // to prevent, so leave it untouched. Either way, surface the outcome as
+    // a toast — a failed link must not vanish unseen just because it's not
+    // safe to reset.
     if (gen.current !== mine) {
-      reset();
+      if (!openRef.current) reset();
       if (stillFailed.length > 0) {
         const count = stillFailed.length;
         toast.error(
@@ -254,15 +274,18 @@ export function LetterCaptureDialog({
             // was in flight, or dismissed it AND reopened it to start a
             // different letter. failedLinks is still [] at this point, so
             // handleOpenChange's reset-on-close guard never fired; there is
-            // no stale failure state for it to have cleaned up, and any
-            // failures here must not vanish unseen. Reset (the letter is
-            // captured either way — a failed link is recoverable, this
-            // form's contents are not what's on screen anymore) and, if any
-            // links failed, say so via toast instead of the banner. Never
-            // touch setOpen here: the dialog may already be closed, or
-            // reopened for a different letter entirely.
+            // no stale failure state for it to have cleaned up. Never touch
+            // setOpen or write banner state here: the dialog may already be
+            // closed, or reopened for a different letter entirely. Only
+            // reset the form if it's currently closed (an already-captured
+            // letter's populated form left behind, inviting a duplicate
+            // Capture) — if it's open again the user may be mid-entry on a
+            // new letter, and clearing that out from under them is the
+            // exact harm this guard exists to prevent. Either way, a failed
+            // link must not vanish unseen just because it's not safe to
+            // reset, so say so via toast regardless.
             if (gen.current !== mine) {
-              reset();
+              if (!openRef.current) reset();
               if (failed.length > 0) {
                 const count = failed.length;
                 toast.error(

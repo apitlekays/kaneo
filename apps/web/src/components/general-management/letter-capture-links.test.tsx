@@ -631,5 +631,71 @@ describe("LetterCaptureDialog — link picker at registration", () => {
       expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/New outgoing letter/)).not.toBeInTheDocument();
     });
+
+    it("(d) leaves a reopened, in-progress entry untouched when a stale result resolves while the dialog is open", async () => {
+      // The distinction that matters for reset() is not "same submission or
+      // not" but "stale AND the dialog is currently closed". A stale result
+      // landing while the dialog is open (the user reopened it and started
+      // typing something new) must not clear that typed entry out from
+      // under them — that is the exact harm (c) above is about.
+      const user = userEvent.setup();
+      state.letters = [
+        makeLetter({ id: "letter-a", subject: "Alpha letter", refNo: "REF-A" }),
+      ];
+
+      let rejectFirstPost: (err: Error) => void = () => {};
+      mockLinkLetter.mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirstPost = reject;
+          }),
+      );
+
+      await openDialogAndFillRequiredFields(user);
+      await addLink(user, "Alpha letter");
+      await user.click(screen.getByRole("button", { name: "Capture" }));
+
+      const [, createOpts] = mockCreateMutate.mock.calls.at(-1) ?? [];
+      act(() => {
+        void createOpts?.onSuccess?.(newLetter);
+      });
+
+      await waitFor(() => expect(mockLinkLetter).toHaveBeenCalledTimes(1));
+
+      // Dismiss while the first submission's link post is still in flight...
+      await user.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Register correspondence"),
+        ).not.toBeInTheDocument(),
+      );
+
+      // ...reopen, and type a subject for a genuinely new entry.
+      await user.click(screen.getByRole("button", { name: "Open" }));
+      const subjectInput = screen.getByPlaceholderText("Subject of the letter");
+      await user.clear(subjectInput);
+      await user.type(subjectInput, "A brand new entry the user is typing");
+
+      // Now let the first submission's link post settle (as a failure —
+      // the toast should still fire; only the reset must be suppressed).
+      await act(async () => {
+        rejectFirstPost(new Error("network error"));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // The dialog is open, so the reset must NOT have run: the user's
+      // typed subject is exactly what they left it as.
+      expect(screen.getByPlaceholderText("Subject of the letter")).toHaveValue(
+        "A brand new entry the user is typing",
+      );
+      // No banner over it either.
+      expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
+      // The failure must still not vanish unseen, even though it wasn't
+      // safe to reset for.
+      expect(mockToastError).toHaveBeenCalledWith(
+        "1 link could not be saved, but the letter was captured and is safe.",
+      );
+    });
   });
 });
