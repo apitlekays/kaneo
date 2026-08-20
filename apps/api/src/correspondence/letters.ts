@@ -1537,6 +1537,14 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const userId = c.get("userId") as string;
         const { id } = c.req.valid("param");
         const b = c.req.valid("json");
+        // A letter linking to itself would show up in BOTH halves of its
+        // own detail query (outbound and inbound), duplicating the row
+        // under one React key and doubling linkCount — and there is no
+        // delete route to undo it once written.
+        if (b.toLetterId === id)
+          throw new HTTPException(400, {
+            message: "A letter cannot be linked to itself",
+          });
         const [letter, target] = await Promise.all([
           loadLetter(ws, id),
           loadLetter(ws, b.toLetterId),
