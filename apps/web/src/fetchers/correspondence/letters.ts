@@ -49,6 +49,8 @@ export type Letter = {
   // Present on the list endpoint: delegated-action progress.
   actionsTotal?: number;
   actionsDone?: number;
+  // Present on the list endpoint: number of links to/from other letters.
+  linkCount?: number;
 };
 
 export type LetterAttachment = {
@@ -396,6 +398,30 @@ export const setLetterStatus = (
 
 export const linkLetter = (workspaceId: string, id: string, body: object) =>
   post<LetterLink>(`letters/${id}/links`, workspaceId, body);
+
+export type ThreadEntry = {
+  id: string;
+  refNo: string | null;
+  externalRefNo: string | null;
+  subject: string;
+  direction: string;
+  date: string;
+  isSeed: boolean;
+};
+
+export async function getLetterThread(
+  workspaceId: string,
+  id: string,
+): Promise<{ letters: ThreadEntry[]; truncated: boolean }> {
+  return jsonOrThrow(
+    await fetch(
+      url(
+        `letters/${id}/thread?workspaceId=${encodeURIComponent(workspaceId)}`,
+      ),
+      { credentials: "include" },
+    ),
+  );
+}
 
 // ── Outgoing pipeline (Block 3) ──────────────────────────────────────────────
 export const saveDraftVersion = (

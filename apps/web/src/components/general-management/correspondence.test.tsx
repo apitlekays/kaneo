@@ -48,7 +48,16 @@ vi.mock("./letter-capture-dialog", () => ({
 }));
 
 vi.mock("./letter-detail-dialog", () => ({
-  LetterDetailDialog: () => null,
+  // Renders the open letterId (or nothing) so tests can observe whether a
+  // click opened the letter detail dialog.
+  LetterDetailDialog: ({ letterId }: { letterId: string | null }) =>
+    letterId ? <div data-testid="detail-open">{letterId}</div> : null,
+}));
+
+vi.mock("./letter-thread-dialog", () => ({
+  // Same idea, for the thread dialog.
+  LetterThreadDialog: ({ letterId }: { letterId: string | null }) =>
+    letterId ? <div data-testid="thread-open">{letterId}</div> : null,
 }));
 
 function makeLetter(overrides: Partial<Letter>): Letter {
@@ -270,5 +279,53 @@ describe("correspondence register", () => {
     render(<Correspondence workspaceId="ws-1" />);
 
     expect(screen.getByText("Retired Org Sdn Bhd")).toBeVisible();
+  });
+
+  it("shows the thread icon only for a letter with links, not for one without", async () => {
+    state.letters = [
+      makeLetter({
+        id: "letter-linked",
+        subject: "Has a thread",
+        linkCount: 2,
+        receivedAt: "2025-05-01T00:00:00.000Z",
+      }),
+      makeLetter({
+        id: "letter-unlinked",
+        subject: "No thread",
+        linkCount: 0,
+        receivedAt: "2025-05-02T00:00:00.000Z",
+      }),
+    ];
+
+    render(<Correspondence workspaceId="ws-1" />);
+
+    expect(
+      screen.getAllByRole("button", { name: /view letter thread/i }),
+    ).toHaveLength(1);
+  });
+
+  it("opens the thread dialog from the icon without opening the letter detail", async () => {
+    const user = userEvent.setup();
+    state.letters = [
+      makeLetter({
+        id: "letter-linked",
+        subject: "Has a thread",
+        linkCount: 1,
+        receivedAt: "2025-05-01T00:00:00.000Z",
+      }),
+    ];
+
+    render(<Correspondence workspaceId="ws-1" />);
+
+    // The row itself has an onClick that opens the letter detail — clicking
+    // the icon inside it must not also trigger that.
+    await user.click(
+      screen.getByRole("button", { name: /view letter thread/i }),
+    );
+
+    expect(screen.getByTestId("thread-open")).toHaveTextContent(
+      "letter-linked",
+    );
+    expect(screen.queryByTestId("detail-open")).not.toBeInTheDocument();
   });
 });

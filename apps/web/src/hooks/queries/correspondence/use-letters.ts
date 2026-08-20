@@ -18,6 +18,14 @@ export function useLetter(workspaceId: string, id: string | null) {
   });
 }
 
+export function useLetterThread(workspaceId: string, id: string | null) {
+  return useQuery({
+    queryKey: ["letter-thread", workspaceId, id],
+    queryFn: () => api.getLetterThread(workspaceId, id as string),
+    enabled: !!workspaceId && !!id,
+  });
+}
+
 export function useCorrespondenceSummary(workspaceId: string) {
   return useQuery({
     queryKey: ["correspondence-summary", workspaceId],

@@ -1,5 +1,5 @@
 import type { VariantProps } from "class-variance-authority";
-import { Archive, Clock, Loader2, Plus, Search } from "lucide-react";
+import { Archive, Clock, Link2, Loader2, Plus, Search } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Badge, type badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ import { letterReference, referenceHeader } from "@/lib/letter-reference";
 import { urgencyBadge } from "@/lib/urgency";
 import { LetterCaptureDialog } from "./letter-capture-dialog";
 import { LetterDetailDialog } from "./letter-detail-dialog";
+import { LetterThreadDialog } from "./letter-thread-dialog";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All statuses" },
@@ -55,6 +56,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
   const [showDisposed, setShowDisposed] = useState(false);
   const [showAwaiting, setShowAwaiting] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   const { data: letters = [], isLoading } = useLetters(workspaceId, {
@@ -268,6 +270,9 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
                 <TableHead>Organisation</TableHead>
                 <TableHead>Actions</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="w-8">
+                  <span className="sr-only">Thread</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -275,7 +280,7 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
                 <Fragment key={group.year}>
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={9}
                       className="bg-muted/50 font-semibold text-muted-foreground text-xs"
                     >
                       {group.year}
@@ -351,6 +356,24 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
                           {letter.status}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        {(letter.linkCount ?? 0) > 0 && (
+                          <button
+                            type="button"
+                            aria-label="View letter thread"
+                            onClick={(event) => {
+                              // The row itself opens the letter detail on
+                              // click — this icon must open the thread
+                              // instead, not both.
+                              event.stopPropagation();
+                              setThreadId(letter.id);
+                            }}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <Link2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </Fragment>
@@ -387,6 +410,15 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
         workspaceId={workspaceId}
         letterId={selectedId}
         onClose={() => setSelectedId(null)}
+      />
+      <LetterThreadDialog
+        workspaceId={workspaceId}
+        letterId={threadId}
+        onClose={() => setThreadId(null)}
+        onOpenLetter={(id) => {
+          setThreadId(null);
+          setSelectedId(id);
+        }}
       />
     </div>
   );
