@@ -397,4 +397,63 @@ describe("LetterCaptureDialog — link picker at registration", () => {
     expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Capture" })).toBeInTheDocument();
   });
+
+  it("discards an initial link-post result that settles after the dialog was dismissed", async () => {
+    const user = userEvent.setup();
+    state.letters = [
+      makeLetter({ id: "letter-a", subject: "Alpha letter", refNo: "REF-A" }),
+    ];
+
+    // The initial post is held open until we settle it ourselves, so we can
+    // dismiss the dialog before it resolves. failedLinks is still [] at
+    // this point (there has been no failure yet), so handleOpenChange's
+    // reset-on-close guard does not fire on this dismissal — this is
+    // exactly the gap the fix has to cover on its own.
+    let rejectInitialPost: (err: Error) => void = () => {};
+    mockLinkLetter.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectInitialPost = reject;
+        }),
+    );
+
+    await openDialogAndFillRequiredFields(user);
+    await addLink(user, "Alpha letter");
+
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+
+    // Fire onSuccess without awaiting it to completion — unlike
+    // resolveCreateWith, which awaits the whole callback, this scenario
+    // holds the link post open deliberately, so awaiting the full callback
+    // here would deadlock. postLinks() calls linkLetter for every pending
+    // link synchronously (via Array#map) before its own first await, so
+    // this still reaches the held mock before the act() call returns.
+    const [, createOpts] = mockCreateMutate.mock.calls.at(-1) ?? [];
+    act(() => {
+      void createOpts?.onSuccess?.(newLetter);
+    });
+
+    await waitFor(() => expect(mockLinkLetter).toHaveBeenCalledTimes(1));
+
+    // Dismiss via Escape while the initial post is still in flight.
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Register correspondence"),
+      ).not.toBeInTheDocument(),
+    );
+
+    // Now let the post settle as a failure. Its state writes must be
+    // discarded rather than surfacing a failure banner post-dismissal.
+    await act(async () => {
+      rejectInitialPost(new Error("network error"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Capture" })).toBeInTheDocument();
+  });
 });

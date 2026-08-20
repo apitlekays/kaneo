@@ -231,6 +231,15 @@ export function LetterCaptureDialog({
             setLinking(true);
             const failed = await postLinks(letter.id, pendingLinks);
             setLinking(false);
+            // The user may have dismissed the dialog (Cancel, Escape,
+            // backdrop, or header X) while this — the *initial* link post —
+            // was in flight. failedLinks is still [] at this point, so
+            // handleOpenChange's reset-on-close guard never fired; there is
+            // no stale failure state for it to have cleaned up. Bail out
+            // entirely rather than writing failure state (or, below,
+            // reset()) against a dialog the user may since have reopened
+            // and started a fresh entry in.
+            if (!openRef.current) return;
             if (failed.length > 0) {
               setCreatedLetterId(letter.id);
               setTotalLinksAttempted(pendingLinks.length);
