@@ -71,7 +71,11 @@ import { isPdfUpload } from "@/lib/is-pdf-upload";
 import { letterReference } from "@/lib/letter-reference";
 import { toast } from "@/lib/toast";
 import { urgencyBadge } from "@/lib/urgency";
-import { LetterLinkPicker, type PendingLink } from "./letter-link-picker";
+import {
+  type ExistingLink,
+  LetterLinkPicker,
+  type PendingLink,
+} from "./letter-link-picker";
 
 const STATUSES = [
   "captured",
@@ -943,6 +947,21 @@ function LinkedSection({
   const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
   const [adding, setAdding] = useState(false);
 
+  // I2: seed the picker's exclusion from the links the letter already has,
+  // so straight after linking it doesn't re-offer the same counterpart
+  // under the same relation — there is no delete route for a link, so a
+  // duplicate produced that way is permanent. Same (toLetterId, relation)
+  // resolution as the outbound/inbound rendering above: the counterpart is
+  // `toLetterId` on the outbound half of a link, `fromLetterId` on the
+  // inbound half.
+  const alreadyLinked: ExistingLink[] = letter.links.map((l) => {
+    const outbound = l.outbound ?? true;
+    return {
+      toLetterId: outbound ? l.toLetterId : l.fromLetterId,
+      relation: l.relation as ExistingLink["relation"],
+    };
+  });
+
   const addLinks = async () => {
     if (pendingLinks.length === 0) return;
     const links = pendingLinks;
@@ -1005,6 +1024,7 @@ function LinkedSection({
           value={pendingLinks}
           onChange={setPendingLinks}
           excludeId={letter.id}
+          alreadyLinked={alreadyLinked}
         />
         <Button
           size="sm"
