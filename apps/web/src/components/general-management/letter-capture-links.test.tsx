@@ -299,4 +299,41 @@ describe("LetterCaptureDialog — link picker at registration", () => {
       relation: "related",
     });
   });
+
+  it("clears a stale failure banner when dismissed with Escape and reopened", async () => {
+    const user = userEvent.setup();
+    state.letters = [
+      makeLetter({ id: "letter-a", subject: "Alpha letter", refNo: "REF-A" }),
+    ];
+    mockLinkLetter.mockRejectedValue(new Error("network error"));
+
+    await openDialogAndFillRequiredFields(user);
+    await addLink(user, "Alpha letter");
+
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await resolveCreateWith(newLetter);
+
+    await waitFor(() => expect(mockLinkLetter).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Letter "New outgoing letter" was captured. 1 of 1 links could not be saved.',
+        ),
+      ).toBeVisible(),
+    );
+
+    // Dismiss the way Escape does — bypassing the Close button entirely —
+    // and make sure that still leaves a clean form behind.
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Register correspondence"),
+      ).not.toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Capture" })).toBeInTheDocument();
+  });
 });

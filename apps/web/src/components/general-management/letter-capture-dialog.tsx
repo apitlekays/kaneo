@@ -155,6 +155,21 @@ export function LetterCaptureDialog({
     setOpen(false);
   };
 
+  // Escape, backdrop click and the header X all route through here, same as
+  // the Close button — otherwise this single, never-remounted dialog would
+  // reopen showing a stale failure banner from the previous submission.
+  // Dismissal is never blocked; we just make sure it leaves a clean form.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && failedLinks.length > 0) {
+      const count = failedLinks.length;
+      reset();
+      toast.error(
+        `${count} link${count === 1 ? "" : "s"} could not be saved, but the letter was captured and is safe.`,
+      );
+    }
+    setOpen(next);
+  };
+
   const submit = () => {
     if (!subject.trim() || !organisationId) return;
     m.create.mutate(
@@ -219,7 +234,7 @@ export function LetterCaptureDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
@@ -487,7 +502,11 @@ export function LetterCaptureDialog({
                 {totalLinksAttempted} links could not be saved.
               </p>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={closeAfterFailure}>
+                <Button
+                  variant="outline"
+                  disabled={linking}
+                  onClick={closeAfterFailure}
+                >
                   Close
                 </Button>
                 <Button disabled={linking} onClick={retryFailedLinks}>
