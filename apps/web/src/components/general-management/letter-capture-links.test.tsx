@@ -22,6 +22,11 @@ const mockUploadLetterAttachment = vi.hoisted(() => vi.fn());
 const mockUpdateLetter = vi.hoisted(() => vi.fn());
 const mockSetLetterStatus = vi.hoisted(() => vi.fn());
 const mockDisposeLetter = vi.hoisted(() => vi.fn());
+const mockToastError = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/toast", () => ({
+  toast: { error: mockToastError },
+}));
 
 vi.mock("@/hooks/queries/correspondence/use-letters", () => ({
   // The picker rendered inside the dialog reads its candidate list from
@@ -455,5 +460,176 @@ describe("LetterCaptureDialog — link picker at registration", () => {
 
     expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Capture" })).toBeInTheDocument();
+  });
+
+  // C1: a submission-generation counter replaces the old "is the dialog
+  // open right now" boolean, which cannot distinguish "still this
+  // submission" from "a later, unrelated one". These three tests pin the
+  // three ways that boolean broke.
+  describe("C1 — generation guard distinguishes submissions, not just open/closed", () => {
+    it("(a) surfaces a failed initial link post via toast instead of letting it vanish unseen when dismissed first", async () => {
+      const user = userEvent.setup();
+      state.letters = [
+        makeLetter({ id: "letter-a", subject: "Alpha letter", refNo: "REF-A" }),
+      ];
+
+      let rejectInitialPost: (err: Error) => void = () => {};
+      mockLinkLetter.mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectInitialPost = reject;
+          }),
+      );
+
+      await openDialogAndFillRequiredFields(user);
+      await addLink(user, "Alpha letter");
+      await user.click(screen.getByRole("button", { name: "Capture" }));
+
+      const [, createOpts] = mockCreateMutate.mock.calls.at(-1) ?? [];
+      act(() => {
+        void createOpts?.onSuccess?.(newLetter);
+      });
+
+      await waitFor(() => expect(mockLinkLetter).toHaveBeenCalledTimes(1));
+
+      // Dismiss while the initial post is still in flight. failedLinks is
+      // still [] at this point, so handleOpenChange's own reset-on-close
+      // toast never fires — there is nothing yet for it to report.
+      await user.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Register correspondence"),
+        ).not.toBeInTheDocument(),
+      );
+
+      // Now let it fail. With only a boolean guard this result is simply
+      // discarded — no banner (the dialog is closed), no toast, no record
+      // of which link was meant. That silent loss is what this asserts
+      // against.
+      await act(async () => {
+        rejectInitialPost(new Error("network error"));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockToastError).toHaveBeenCalledWith(
+        "1 link could not be saved, but the letter was captured and is safe.",
+      );
+    });
+
+    it("(b) resets the form on a dismissal that lands after the initial link post SUCCEEDS, so reopening doesn't show a stale filled form", async () => {
+      const user = userEvent.setup();
+      state.letters = [
+        makeLetter({ id: "letter-a", subject: "Alpha letter", refNo: "REF-A" }),
+      ];
+
+      let resolveInitialPost: (value: unknown) => void = () => {};
+      mockLinkLetter.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitialPost = resolve;
+          }),
+      );
+
+      await openDialogAndFillRequiredFields(user);
+      await addLink(user, "Alpha letter");
+      await user.click(screen.getByRole("button", { name: "Capture" }));
+
+      const [, createOpts] = mockCreateMutate.mock.calls.at(-1) ?? [];
+      act(() => {
+        void createOpts?.onSuccess?.(newLetter);
+      });
+
+      await waitFor(() => expect(mockLinkLetter).toHaveBeenCalledTimes(1));
+
+      await user.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Register correspondence"),
+        ).not.toBeInTheDocument(),
+      );
+
+      // Now let the link post succeed. A boolean "is it open" guard returns
+      // early here too (dialog is closed) — which, before the fix, skipped
+      // the unconditional reset() that runs on a clean success path,
+      // leaving the fully populated form (including the letter that was
+      // just captured) behind for the next open.
+      await act(async () => {
+        resolveInitialPost({
+          id: "link-1",
+          fromLetterId: "new-1",
+          toLetterId: "letter-a",
+          relation: "related",
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Open" }));
+
+      expect(screen.getByPlaceholderText("Subject of the letter")).toHaveValue(
+        "",
+      );
+    });
+
+    it("(c) never force-closes the dialog or paints a stale banner over a fresh entry started after a dismiss + reopen", async () => {
+      const user = userEvent.setup();
+      state.letters = [
+        makeLetter({ id: "letter-a", subject: "Alpha letter", refNo: "REF-A" }),
+      ];
+
+      let rejectFirstPost: (err: Error) => void = () => {};
+      mockLinkLetter.mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirstPost = reject;
+          }),
+      );
+
+      await openDialogAndFillRequiredFields(user);
+      await addLink(user, "Alpha letter");
+      await user.click(screen.getByRole("button", { name: "Capture" }));
+
+      const [, createOpts] = mockCreateMutate.mock.calls.at(-1) ?? [];
+      act(() => {
+        void createOpts?.onSuccess?.(newLetter);
+      });
+
+      await waitFor(() => expect(mockLinkLetter).toHaveBeenCalledTimes(1));
+
+      // Dismiss while the first submission's link post is still in flight...
+      await user.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Register correspondence"),
+        ).not.toBeInTheDocument(),
+      );
+
+      // ...then reopen and start a second, unrelated entry. A boolean "is it
+      // open" guard is true again here, indistinguishable from the first
+      // submission still being the live one.
+      await user.click(screen.getByRole("button", { name: "Open" }));
+      const subjectInput = screen.getByPlaceholderText("Subject of the letter");
+      await user.clear(subjectInput);
+      await user.type(subjectInput, "Second letter, unrelated to the first");
+      expect(screen.getByText("Register correspondence")).toBeVisible();
+
+      // Now the FIRST submission's link post resolves as a failure. Before
+      // the fix this would paint a banner naming the first ("New outgoing
+      // letter") submission over the second form — or, on a success, run
+      // reset(); setOpen(false) and force the dialog closed out from under
+      // whatever the user is doing now.
+      await act(async () => {
+        rejectFirstPost(new Error("network error"));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Never force-closed by a stale result.
+      expect(screen.getByText("Register correspondence")).toBeVisible();
+      // Never a banner naming the first, already-dismissed submission.
+      expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/New outgoing letter/)).not.toBeInTheDocument();
+    });
   });
 });

@@ -1,5 +1,5 @@
 import { Loader2, Paperclip } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,14 +54,16 @@ export function LetterCaptureDialog({
 }) {
   const [open, setOpen] = useState(false);
   // The dialog is mounted once and never remounted, so an async write that
-  // started while it was open (e.g. a retry's postLinks()) can still land
-  // after the user has since dismissed it. Kept in sync with `open` via the
-  // effect below and read after any such await, so a stale result can be
-  // discarded instead of resurrecting the failure banner post-dismissal.
-  const openRef = useRef(open);
-  useEffect(() => {
-    openRef.current = open;
-  }, [open]);
+  // started while it was open (a link post, or a retry) can still resolve
+  // after the user has since dismissed the dialog, or dismissed AND
+  // reopened it to capture something else entirely. A boolean "is it open
+  // now" can't tell those two cases apart — reopening makes it true again,
+  // so a late result from the PREVIOUS submission would look current. `gen`
+  // is a generation counter bumped on every open-state transition; each
+  // submission captures its own generation up front and, after any await,
+  // compares it against the live one to tell whether it's still the
+  // submission the user is looking at.
+  const gen = useRef(0);
   const m = useLetterMutations(workspaceId);
   const { data: categories = [] } = useConfigList("categories", workspaceId);
   const { data: securityLabels = [] } = useConfigList(
@@ -148,14 +150,28 @@ export function LetterCaptureDialog({
 
   const retryFailedLinks = async () => {
     if (!createdLetterId) return;
+    const mine = gen.current;
     setLinking(true);
     const stillFailed = await postLinks(createdLetterId, failedLinks);
-    // The user may have dismissed the dialog (Escape, backdrop, header X, or
-    // Close) while this was in flight. handleOpenChange already reset the
-    // form for that case — don't let this stale result undo that by
-    // repopulating failedLinks after the fact.
-    if (!openRef.current) return;
     setLinking(false);
+    // The user may have dismissed the dialog (Escape, backdrop, header X, or
+    // Close) while this was in flight — or dismissed it AND reopened it to
+    // capture something else. Either way this result belongs to a
+    // submission that is no longer the one on screen: reset (in case
+    // dismissal didn't already, e.g. this resolved before that ran) and
+    // surface the outcome as a toast instead of repopulating failedLinks or
+    // touching setOpen, which could otherwise close a dialog the user has
+    // since reopened for a different letter.
+    if (gen.current !== mine) {
+      reset();
+      if (stillFailed.length > 0) {
+        const count = stillFailed.length;
+        toast.error(
+          `${count} link${count === 1 ? "" : "s"} could not be saved, but the letter was captured and is safe.`,
+        );
+      }
+      return;
+    }
     setFailedLinks(stillFailed);
     if (stillFailed.length === 0) {
       reset();
@@ -174,6 +190,7 @@ export function LetterCaptureDialog({
   // reopen showing a stale failure banner from the previous submission.
   // Dismissal is never blocked; we just make sure it leaves a clean form.
   const handleOpenChange = (next: boolean) => {
+    gen.current += 1;
     if (!next && failedLinks.length > 0) {
       const count = failedLinks.length;
       reset();
@@ -206,6 +223,7 @@ export function LetterCaptureDialog({
       },
       {
         onSuccess: async (letter) => {
+          const mine = gen.current;
           if (file) {
             setUploading(true);
             try {
@@ -233,13 +251,26 @@ export function LetterCaptureDialog({
             setLinking(false);
             // The user may have dismissed the dialog (Cancel, Escape,
             // backdrop, or header X) while this — the *initial* link post —
-            // was in flight. failedLinks is still [] at this point, so
+            // was in flight, or dismissed it AND reopened it to start a
+            // different letter. failedLinks is still [] at this point, so
             // handleOpenChange's reset-on-close guard never fired; there is
-            // no stale failure state for it to have cleaned up. Bail out
-            // entirely rather than writing failure state (or, below,
-            // reset()) against a dialog the user may since have reopened
-            // and started a fresh entry in.
-            if (!openRef.current) return;
+            // no stale failure state for it to have cleaned up, and any
+            // failures here must not vanish unseen. Reset (the letter is
+            // captured either way — a failed link is recoverable, this
+            // form's contents are not what's on screen anymore) and, if any
+            // links failed, say so via toast instead of the banner. Never
+            // touch setOpen here: the dialog may already be closed, or
+            // reopened for a different letter entirely.
+            if (gen.current !== mine) {
+              reset();
+              if (failed.length > 0) {
+                const count = failed.length;
+                toast.error(
+                  `${count} link${count === 1 ? "" : "s"} could not be saved, but the letter was captured and is safe.`,
+                );
+              }
+              return;
+            }
             if (failed.length > 0) {
               setCreatedLetterId(letter.id);
               setTotalLinksAttempted(pendingLinks.length);
