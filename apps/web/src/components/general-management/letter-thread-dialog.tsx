@@ -46,8 +46,8 @@ export function LetterThreadDialog({
             <>
               {data.truncated && (
                 <p className="mb-3 text-muted-foreground text-xs">
-                  This thread was too long to show in full. Showing the most
-                  recent entries.
+                  This thread was too long to show in full. Showing the 100
+                  letters most closely linked to this one.
                 </p>
               )}
               <ul className="space-y-2">

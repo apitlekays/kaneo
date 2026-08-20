@@ -95,7 +95,16 @@ describe("LetterThreadDialog", () => {
       />,
     );
 
-    expect(screen.getByText(/too long to show in full/i)).toBeVisible();
+    // M1: the walk is by link distance (BFS from the seed), not by date —
+    // there's no ORDER BY on the edge query — so what survives the cap is
+    // the letters nearest by link, not the newest. The banner must not
+    // claim recency it doesn't have.
+    expect(
+      screen.getByText(
+        "This thread was too long to show in full. Showing the 100 letters most closely linked to this one.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/most recent/i)).not.toBeInTheDocument();
 
     state.thread = {
       letters: [makeEntry({ id: "letter-a", isSeed: true })],
