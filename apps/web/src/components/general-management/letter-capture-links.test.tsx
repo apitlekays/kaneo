@@ -697,5 +697,191 @@ describe("LetterCaptureDialog — link picker at registration", () => {
         "1 link could not be saved, but the letter was captured and is safe.",
       );
     });
+
+    it("(R1) the Cancel button bumps the generation like every other dismissal route, so a stale in-flight failure surfaces via toast instead of writing an invisible banner behind a closed dialog", async () => {
+      // Before this fix, Cancel called setOpen(false) directly instead of
+      // going through handleOpenChange, so gen was never bumped. Unlike
+      // every other dismissal route (Escape, backdrop, header X, Close),
+      // Cancel is also never disabled — it's clickable at any point during
+      // Capture, including while the initial link post is still in flight
+      // for the CURRENT generation. Clicking it there used to leave
+      // gen.current === mine, so the async handler took the "current"
+      // branch and wrote banner state against a dialog the user had just
+      // closed: no banner (closed), no toast (only the stale branch raises
+      // one) — the failure vanished. This is failure mode C1(a), reachable
+      // through a route the earlier C1 tests (which all use Escape) never
+      // exercised.
+      const user = userEvent.setup();
+      state.letters = [
+        makeLetter({ id: "letter-a", subject: "Alpha letter", refNo: "REF-A" }),
+      ];
+
+      let rejectInitialPost: (err: Error) => void = () => {};
+      mockLinkLetter.mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectInitialPost = reject;
+          }),
+      );
+
+      await openDialogAndFillRequiredFields(user);
+      await addLink(user, "Alpha letter");
+      await user.click(screen.getByRole("button", { name: "Capture" }));
+
+      const [, createOpts] = mockCreateMutate.mock.calls.at(-1) ?? [];
+      act(() => {
+        void createOpts?.onSuccess?.(newLetter);
+      });
+
+      await waitFor(() => expect(mockLinkLetter).toHaveBeenCalledTimes(1));
+
+      // Click Cancel — the button, not Escape — while the initial link
+      // post is still in flight for the current generation.
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Register correspondence"),
+        ).not.toBeInTheDocument(),
+      );
+
+      // Now let it fail.
+      await act(async () => {
+        rejectInitialPost(new Error("network error"));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // The failure must surface via toast, not vanish.
+      expect(mockToastError).toHaveBeenCalledWith(
+        "1 link could not be saved, but the letter was captured and is safe.",
+      );
+
+      // And reopening must show a clean form — not the previous letter's
+      // populated fields plus a stale failure banner (which is exactly
+      // what the comment above handleOpenChange claims never happens).
+      await user.click(screen.getByRole("button", { name: "Open" }));
+      expect(screen.getByPlaceholderText("Subject of the letter")).toHaveValue(
+        "",
+      );
+      expect(screen.queryByText(/could not be saved/i)).not.toBeInTheDocument();
+    });
+
+    it("(R2) a dismiss + reopen DURING the create request (not the link post) is still caught, because `mine` is captured before the mutation is even sent", async () => {
+      // mine used to be captured as the first line of onSuccess, which only
+      // runs once the create request has already resolved. A dismiss +
+      // reopen that happens WHILE the create is still pending was
+      // therefore invisible to it: onSuccess would read gen.current only
+      // after the reopen had already bumped it, so its own (really stale)
+      // submission would look current, fall through to the no-pending-
+      // links path, and wipe the freshly reopened entry.
+      const user = userEvent.setup();
+
+      await openDialogAndFillRequiredFields(user);
+      await user.click(screen.getByRole("button", { name: "Capture" }));
+      expect(mockCreateMutate).toHaveBeenCalledTimes(1);
+
+      // The create request is now "pending" — onSuccess has not been
+      // invoked yet. Dismiss and reopen while it's still outstanding.
+      await user.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Register correspondence"),
+        ).not.toBeInTheDocument(),
+      );
+      await user.click(screen.getByRole("button", { name: "Open" }));
+
+      // Start a genuinely new, unrelated entry in the reopened dialog.
+      const subjectInput = screen.getByPlaceholderText("Subject of the letter");
+      await user.clear(subjectInput);
+      await user.type(subjectInput, "A second, unrelated entry");
+
+      // NOW the first create request resolves — late, for a generation
+      // that's no longer current. It has no links, so with the bug this
+      // falls straight through to reset(); setOpen(false).
+      const [, createOpts] = mockCreateMutate.mock.calls.at(-1) ?? [];
+      await act(async () => {
+        await createOpts?.onSuccess?.(newLetter);
+      });
+
+      // The dialog must still be open, with the user's second entry intact
+      // — not force-closed, not reset back to empty.
+      expect(screen.getByText("Register correspondence")).toBeVisible();
+      expect(screen.getByPlaceholderText("Subject of the letter")).toHaveValue(
+        "A second, unrelated entry",
+      );
+    });
+
+    it("(R3) a stale generation is still caught for a letter with an attachment and NO links, where the only await is the upload", async () => {
+      // The staleness check used to live inside `if (pendingLinks.length >
+      // 0)`, so a letter captured with just a file and no links skipped it
+      // entirely — the attachment upload above awaits just as long as a
+      // link post does, and a dismiss + reopen during it fell straight
+      // through to the unconditional reset()/setOpen(false), clearing the
+      // reopened entry and force-closing the dialog regardless of gen.
+      const user = userEvent.setup();
+
+      let resolveUpload: (value: unknown) => void = () => {};
+      mockUploadLetterAttachment.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveUpload = resolve;
+          }),
+      );
+
+      await openDialogAndFillRequiredFields(user);
+
+      // Attach a file. Empty MIME type + a .pdf name passes isPdfUpload
+      // (some systems report no MIME type at all) while taking
+      // compressPdfIfScanned's immediate "not-pdf" shortcut (it only
+      // special-cases `file.type === "application/pdf"`), so no real PDF
+      // engine work is triggered here — only the upload fetcher, which is
+      // held open above.
+      const file = new File(["scan bytes"], "scan.pdf", { type: "" });
+      const fileInput = screen.getByLabelText(/choose a file/i);
+      await user.upload(fileInput, file);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Capture" }),
+        ).not.toBeDisabled(),
+      );
+
+      // No links attached — this is the fall-through path R3 is about.
+      await user.click(screen.getByRole("button", { name: "Capture" }));
+
+      const [, createOpts] = mockCreateMutate.mock.calls.at(-1) ?? [];
+      act(() => {
+        void createOpts?.onSuccess?.(newLetter);
+      });
+
+      await waitFor(() =>
+        expect(mockUploadLetterAttachment).toHaveBeenCalledTimes(1),
+      );
+
+      // Dismiss and reopen while the upload is still in flight, then start
+      // a fresh, unrelated entry.
+      await user.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Register correspondence"),
+        ).not.toBeInTheDocument(),
+      );
+      await user.click(screen.getByRole("button", { name: "Open" }));
+      const subjectInput = screen.getByPlaceholderText("Subject of the letter");
+      await user.clear(subjectInput);
+      await user.type(subjectInput, "A fresh entry started during the upload");
+
+      // Now let the (stale) upload resolve.
+      await act(async () => {
+        resolveUpload({});
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Never force-closed, never reset out from under the fresh entry.
+      expect(screen.getByText("Register correspondence")).toBeVisible();
+      expect(screen.getByPlaceholderText("Subject of the letter")).toHaveValue(
+        "A fresh entry started during the upload",
+      );
+    });
   });
 });

@@ -195,6 +195,13 @@ export function LetterCaptureDialog({
     setFailedLinks(stillFailed);
     if (stillFailed.length === 0) {
       reset();
+      // R1 audit: same reasoning as closeAfterFailure — a direct setOpen
+      // that has to bump gen itself since it isn't routed through
+      // handleOpenChange. No live race today (Retry is disabled while
+      // `linking`, so nothing else for this generation can be in flight
+      // when this line runs), but kept consistent with the counter's
+      // stated contract rather than leaving another quiet gap.
+      gen.current += 1;
       setOpen(false);
     }
   };
@@ -202,6 +209,20 @@ export function LetterCaptureDialog({
   const closeAfterFailure = () => {
     // The letter is already captured — closing here never touches it.
     reset();
+    // R1 audit: this is a direct setOpen, not handleOpenChange, so it has
+    // to bump gen itself. Nothing is provably racing it right now — Close
+    // is disabled while `linking`, and failedLinks (which is what makes
+    // this button reachable at all) can only be populated once the
+    // initial post has already resolved — but the counter's whole contract
+    // is "bumped on every open-state transition", and this closes the
+    // dialog. Leaving it unbumped is exactly the kind of gap that let
+    // Cancel silently regress; a future change to Close's disabled
+    // condition, or a new concurrent action, could reopen the same class
+    // of bug here. Not routed through handleOpenChange itself: that would
+    // also re-run its own reset()+toast-on-failedLinks branch against the
+    // stale (pre-reset) `failedLinks` closure value, showing a duplicate
+    // toast this button has never shown.
+    gen.current += 1;
     setOpen(false);
   };
 
@@ -223,6 +244,13 @@ export function LetterCaptureDialog({
 
   const submit = () => {
     if (!subject.trim() || !organisationId) return;
+    // R2: captured here, before the create request is even sent — not as
+    // the first line of onSuccess, which only runs once that request has
+    // already resolved. A dismiss + reopen that happens DURING the create
+    // (not after it) would otherwise be invisible to onSuccess: it would
+    // read gen.current only after the reopen had already bumped it, so its
+    // own submission would look current when it is not.
+    const mine = gen.current;
     m.create.mutate(
       {
         direction,
@@ -243,7 +271,6 @@ export function LetterCaptureDialog({
       },
       {
         onSuccess: async (letter) => {
-          const mine = gen.current;
           if (file) {
             setUploading(true);
             try {
@@ -265,45 +292,65 @@ export function LetterCaptureDialog({
           // yet (that's assigned later, at registration/dispatch). A
           // failed link is recoverable; deleting a captured letter is not
           // something this app supports or should start doing here.
+          let failed: PendingLink[] = [];
           if (pendingLinks.length > 0) {
             setLinking(true);
-            const failed = await postLinks(letter.id, pendingLinks);
+            failed = await postLinks(letter.id, pendingLinks);
             setLinking(false);
-            // The user may have dismissed the dialog (Cancel, Escape,
-            // backdrop, or header X) while this — the *initial* link post —
-            // was in flight, or dismissed it AND reopened it to start a
-            // different letter. failedLinks is still [] at this point, so
-            // handleOpenChange's reset-on-close guard never fired; there is
-            // no stale failure state for it to have cleaned up. Never touch
-            // setOpen or write banner state here: the dialog may already be
-            // closed, or reopened for a different letter entirely. Only
-            // reset the form if it's currently closed (an already-captured
-            // letter's populated form left behind, inviting a duplicate
-            // Capture) — if it's open again the user may be mid-entry on a
-            // new letter, and clearing that out from under them is the
-            // exact harm this guard exists to prevent. Either way, a failed
-            // link must not vanish unseen just because it's not safe to
-            // reset, so say so via toast regardless.
-            if (gen.current !== mine) {
-              if (!openRef.current) reset();
-              if (failed.length > 0) {
-                const count = failed.length;
-                toast.error(
-                  `${count} link${count === 1 ? "" : "s"} could not be saved, but the letter was captured and is safe.`,
-                );
-              }
-              return;
-            }
+          }
+
+          // R3: this check used to live *inside* the `pendingLinks.length >
+          // 0` block above, so a letter captured with an attachment and no
+          // links skipped it entirely — the attachment upload above awaits
+          // just as long as a link post does, and a dismiss + reopen during
+          // it fell straight through to the unconditional reset()/
+          // setOpen(false) below with a stale generation. Runs after BOTH
+          // possible awaits (the upload, the link post — either, neither,
+          // or both may have happened), so it covers every path through
+          // this handler, not just the one with pending links.
+          //
+          // The user may have dismissed the dialog (Cancel, Escape,
+          // backdrop, or header X) while any of that was in flight, or
+          // dismissed it AND reopened it to start a different letter.
+          // failedLinks is still [] at this point, so handleOpenChange's
+          // reset-on-close guard never fired; there is no stale failure
+          // state for it to have cleaned up. Never touch setOpen or write
+          // banner state here: the dialog may already be closed, or
+          // reopened for a different letter entirely. Only reset the form
+          // if it's currently closed (an already-captured letter's
+          // populated form left behind, inviting a duplicate Capture) — if
+          // it's open again the user may be mid-entry on a new letter, and
+          // clearing that out from under them is the exact harm this guard
+          // exists to prevent. Either way, a failed link must not vanish
+          // unseen just because it's not safe to reset, so say so via toast
+          // regardless.
+          if (gen.current !== mine) {
+            if (!openRef.current) reset();
             if (failed.length > 0) {
-              setCreatedLetterId(letter.id);
-              setTotalLinksAttempted(pendingLinks.length);
-              setFailedLinks(failed);
-              setCapturedSubject(letter.subject);
-              return;
+              const count = failed.length;
+              toast.error(
+                `${count} link${count === 1 ? "" : "s"} could not be saved, but the letter was captured and is safe.`,
+              );
             }
+            return;
+          }
+          if (failed.length > 0) {
+            setCreatedLetterId(letter.id);
+            setTotalLinksAttempted(pendingLinks.length);
+            setFailedLinks(failed);
+            setCapturedSubject(letter.subject);
+            return;
           }
 
           reset();
+          // R1 audit: same reasoning as closeAfterFailure/retryFailedLinks
+          // — a direct setOpen that has to bump gen itself. Only reached
+          // once the stale check above has already confirmed this is
+          // still the current generation, so nothing downstream of this
+          // point depends on gen for correctness within this call; bumped
+          // anyway to keep the counter's contract ("bumped on every
+          // open-state transition") true for whatever comes next.
+          gen.current += 1;
           setOpen(false);
         },
       },
@@ -596,7 +643,10 @@ export function LetterCaptureDialog({
             <>
               <div className="hidden sm:col-span-2 sm:block" />
               <div className="flex justify-end gap-2 sm:col-span-2">
-                <Button variant="outline" onClick={() => setOpen(false)}>
+                <Button
+                  variant="outline"
+                  onClick={() => handleOpenChange(false)}
+                >
                   Cancel
                 </Button>
                 <Button
