@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import type { VariantProps } from "class-variance-authority";
 import {
   Archive,
@@ -48,6 +49,7 @@ import {
   attachmentDownloadUrl,
   attachmentPreviewUrl,
   dispositionCertificateUrl,
+  type Letter,
   type LetterDetail,
   uploadLetterAttachment,
   verifySignature,
@@ -57,6 +59,7 @@ import { useConfigList } from "@/hooks/queries/correspondence/use-config";
 import {
   useLetter,
   useLetterMutations,
+  useLetters,
 } from "@/hooks/queries/correspondence/use-letters";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { usePdfCompression } from "@/hooks/use-pdf-compression";
@@ -65,8 +68,10 @@ import { cn } from "@/lib/cn";
 import { compressionLabel } from "@/lib/compression-label";
 import { formatDateMedium } from "@/lib/format";
 import { isPdfUpload } from "@/lib/is-pdf-upload";
+import { letterReference } from "@/lib/letter-reference";
 import { toast } from "@/lib/toast";
 import { urgencyBadge } from "@/lib/urgency";
+import { LetterLinkPicker, type PendingLink } from "./letter-link-picker";
 
 const STATUSES = [
   "captured",
@@ -328,22 +333,7 @@ function Body({
           />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="linked">
-          <div className="space-y-2">
-            {letter.links.length === 0 && (
-              <p className="text-muted-foreground text-sm">
-                No linked letters.
-              </p>
-            )}
-            {letter.links.map((l) => (
-              <div
-                key={l.id}
-                className="rounded-md border border-border px-3 py-2 text-sm"
-              >
-                <span className="text-muted-foreground">{l.relation}: </span>
-                {l.toLetterId}
-              </div>
-            ))}
-          </div>
+          <LinkedSection workspaceId={workspaceId} letter={letter} m={m} />
         </DialogSidebarPanel>
       </DialogSidebar>
     </>
@@ -916,6 +906,113 @@ function RoutingSection({
           }
         >
           Route
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Names a link the way the register does, but distinguishes an outbound
+// link ("this letter replies to X") from an inbound one ("X replies to
+// this letter") — showing both as "Reply" would misstate who answered
+// whom.
+function linkLabel(relation: string, outbound: boolean, ref: string): string {
+  if (relation === "reply")
+    return outbound ? `Reply to ${ref}` : `Replied to by ${ref}`;
+  if (relation === "supersedes")
+    return outbound ? `Supersedes ${ref}` : `Superseded by ${ref}`;
+  return `Related to ${ref}`;
+}
+
+function LinkedSection({
+  workspaceId,
+  letter,
+  m,
+}: {
+  workspaceId: string;
+  letter: LetterDetail;
+  m: Mutations;
+}) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  // The letters list endpoint returns every letter in the workspace, so the
+  // same cache entry LetterLinkPicker uses resolves link rows to a
+  // reference/subject without a per-row fetch.
+  const { data: letters = [] } = useLetters(workspaceId, {});
+  const lettersById = new Map<string, Letter>(letters.map((l) => [l.id, l]));
+  const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
+  const [adding, setAdding] = useState(false);
+
+  const addLinks = async () => {
+    if (pendingLinks.length === 0) return;
+    const links = pendingLinks;
+    setPendingLinks([]);
+    setAdding(true);
+    try {
+      await Promise.allSettled(
+        links.map((link) =>
+          m.link.mutateAsync({
+            toLetterId: link.toLetterId,
+            relation: link.relation,
+          }),
+        ),
+      );
+    } finally {
+      setAdding(false);
+      qc.invalidateQueries({ queryKey: ["letter", workspaceId, letter.id] });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {letter.links.length === 0 && (
+          <p className="text-muted-foreground text-sm">No linked letters.</p>
+        )}
+        {letter.links.map((l) => {
+          const outbound = l.outbound ?? true;
+          const counterpartId = outbound ? l.toLetterId : l.fromLetterId;
+          const counterpart = lettersById.get(counterpartId);
+          const ref = counterpart
+            ? letterReference(counterpart)
+            : counterpartId;
+          return (
+            <a
+              key={l.id}
+              href={`/dashboard/correspondence/${counterpartId}`}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0)
+                  return;
+                e.preventDefault();
+                navigate({ to: `/dashboard/correspondence/${counterpartId}` });
+              }}
+              className="block rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+            >
+              <div className="text-muted-foreground text-xs">
+                {linkLabel(l.relation, outbound, ref)}
+              </div>
+              {counterpart && (
+                <div className="truncate">{counterpart.subject}</div>
+              )}
+            </a>
+          );
+        })}
+      </div>
+      <div className="space-y-2 rounded-xl border border-border p-4">
+        <h4 className="font-medium text-sm">Link to another letter</h4>
+        <LetterLinkPicker
+          workspaceId={workspaceId}
+          value={pendingLinks}
+          onChange={setPendingLinks}
+          excludeId={letter.id}
+        />
+        <Button
+          size="sm"
+          disabled={pendingLinks.length === 0 || adding}
+          onClick={addLinks}
+        >
+          {adding && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Add
         </Button>
       </div>
     </div>
