@@ -1,7 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import db from "../../database";
-import { columnTable, projectTable, taskTable } from "../../database/schema";
+import {
+  columnTable,
+  projectTable,
+  taskAssignmentTable,
+  taskTable,
+} from "../../database/schema";
 import { publishEvent } from "../../events";
 import {
   coercePriority,
@@ -58,21 +63,43 @@ async function importTasks(
         ),
       });
 
-      const [createdTask] = await db
-        .insert(taskTable)
-        .values({
-          projectId,
-          userId: taskData.userId || null,
-          title: taskData.title,
-          status,
-          columnId: column?.id ?? null,
-          startDate: taskData.startDate ? new Date(taskData.startDate) : null,
-          dueDate: taskData.dueDate ? new Date(taskData.dueDate) : null,
-          description: taskData.description || "",
-          priority,
-          number: ++taskNumber,
-        })
-        .returning();
+      const importedAssigneeId = taskData.userId || null;
+
+      // Imported tasks are pre-existing work being brought in, not someone
+      // being asked to take something on: write task.userId directly and
+      // record an already-`accepted` assignment (fromUserId null, mirroring
+      // the grandfathering backfill in migration 0057). Never a `pending`
+      // offer here - that would fire one prompt per imported task for work
+      // already underway.
+      const createdTask = await db.transaction(async (tx) => {
+        const [inserted] = await tx
+          .insert(taskTable)
+          .values({
+            projectId,
+            userId: importedAssigneeId,
+            title: taskData.title,
+            status,
+            columnId: column?.id ?? null,
+            startDate: taskData.startDate ? new Date(taskData.startDate) : null,
+            dueDate: taskData.dueDate ? new Date(taskData.dueDate) : null,
+            description: taskData.description || "",
+            priority,
+            number: ++taskNumber,
+          })
+          .returning();
+
+        if (inserted && importedAssigneeId) {
+          await tx.insert(taskAssignmentTable).values({
+            taskId: inserted.id,
+            fromUserId: null,
+            toUserId: importedAssigneeId,
+            status: "accepted",
+            decidedAt: new Date(),
+          });
+        }
+
+        return inserted;
+      });
 
       if (createdTask) {
         await publishEvent("task.created", {
