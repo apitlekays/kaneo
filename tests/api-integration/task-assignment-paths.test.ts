@@ -326,7 +326,7 @@ describe("API integration: further task.userId assignment paths", () => {
   });
 
   describe("import tasks", () => {
-    it("sets task.userId immediately and creates accepted rows with from_user_id null, never a pending row", async () => {
+    it("leaves task.userId null and creates exactly one pending row when importing a task assigned to another member", async () => {
       const owner = await createWorkspaceMember({ role: "owner" });
       const member = await createWorkspaceMember({ role: "member" });
       await joinWorkspace(owner.workspace.id, member.user.id);
@@ -353,16 +353,139 @@ describe("API integration: further task.userId assignment paths", () => {
       const importedTaskId = body.results.tasks[0].task.id;
 
       const task = await getTaskRow(importedTaskId);
-      expect(task.userId).toBe(member.user.id);
+      expect(task.userId).toBeNull();
 
       const assignments = await getAssignments(importedTaskId);
       expect(assignments).toHaveLength(1);
       expect(assignments[0]).toMatchObject({
-        fromUserId: null,
+        fromUserId: owner.user.id,
         toUserId: member.user.id,
+        status: "pending",
+      });
+      expect(assignments[0].decidedAt).toBeNull();
+    });
+
+    it("sets task.userId immediately and creates an accepted row when importing a task assigned to the importer themselves", async () => {
+      const owner = await createWorkspaceMember({ role: "owner" });
+      const { project } = await createProjectFixture({
+        workspaceId: owner.workspace.id,
+      });
+
+      mockAuthenticatedSession(owner.user);
+      const { app } = createApp();
+
+      const response = await importTasksReq(app, project.id, [
+        {
+          title: "Work I already did",
+          status: "to-do",
+          userId: owner.user.id,
+        },
+      ]);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.results.successful).toBe(1);
+
+      const importedTaskId = body.results.tasks[0].task.id;
+
+      const task = await getTaskRow(importedTaskId);
+      expect(task.userId).toBe(owner.user.id);
+
+      const assignments = await getAssignments(importedTaskId);
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]).toMatchObject({
+        fromUserId: owner.user.id,
+        toUserId: owner.user.id,
         status: "accepted",
       });
       expect(assignments[0].decidedAt).not.toBeNull();
+    });
+
+    it("creates no assignment row for an imported task with no assignee", async () => {
+      const owner = await createWorkspaceMember({ role: "owner" });
+      const { project } = await createProjectFixture({
+        workspaceId: owner.workspace.id,
+      });
+
+      mockAuthenticatedSession(owner.user);
+      const { app } = createApp();
+
+      const response = await importTasksReq(app, project.id, [
+        {
+          title: "Unassigned import",
+          status: "to-do",
+        },
+      ]);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.results.successful).toBe(1);
+
+      const importedTaskId = body.results.tasks[0].task.id;
+
+      const task = await getTaskRow(importedTaskId);
+      expect(task.userId).toBeNull();
+
+      const assignments = await getAssignments(importedTaskId);
+      expect(assignments).toHaveLength(0);
+    });
+
+    it("surfaces an imported pending assignment in the assignee's pending-decision list, and accepting it sets task.userId", async () => {
+      const owner = await createWorkspaceMember({ role: "owner" });
+      const member = await createWorkspaceMember({ role: "member" });
+      await joinWorkspace(owner.workspace.id, member.user.id);
+
+      const { project } = await createProjectFixture({
+        workspaceId: owner.workspace.id,
+        memberUserId: member.user.id,
+      });
+
+      mockAuthenticatedSession(owner.user);
+      const { app } = createApp();
+
+      const importResponse = await importTasksReq(app, project.id, [
+        {
+          title: "Imported and offered",
+          status: "to-do",
+          userId: member.user.id,
+        },
+      ]);
+      expect(importResponse.status).toBe(200);
+      const importBody = await importResponse.json();
+      const importedTaskId = importBody.results.tasks[0].task.id;
+
+      mockAuthenticatedSession(member.user);
+      const { app: memberApp } = createApp();
+
+      const pendingResponse = await memberApp.request(
+        `/api/pending-decision?workspaceId=${owner.workspace.id}`,
+      );
+      expect(pendingResponse.status).toBe(200);
+      const pendingBody = await pendingResponse.json();
+      const pendingTaskEntry = pendingBody.items.find(
+        (item: { source: string; href: string }) =>
+          item.source === "task" && item.href.includes(importedTaskId),
+      );
+      expect(pendingTaskEntry).toBeDefined();
+
+      const assignments = await getAssignments(importedTaskId);
+      expect(assignments).toHaveLength(1);
+      const assignmentId = assignments[0].id;
+
+      const acceptResponse = await memberApp.request(
+        `/api/pending-decision/task/${assignmentId}/decide`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            workspaceId: owner.workspace.id,
+            decision: "accepted",
+            reason: null,
+          }),
+        },
+      );
+      expect(acceptResponse.status).toBe(200);
+
+      const task = await getTaskRow(importedTaskId);
+      expect(task.userId).toBe(member.user.id);
     });
   });
 
