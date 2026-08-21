@@ -1223,7 +1223,8 @@
 			},
 			"task_assignee_changed": {
 				"title": "Task assigned to you",
-				"content": "You have been assigned to task: {{taskTitle}}"
+				"content": "{{actorName}} assigned you to \"{{taskTitle}}\"",
+				"contentUnknown": "You were assigned to \"{{taskTitle}}\""
 			},
 			"time_entry_created": {
 				"title": "Time tracking started",

@@ -4220,9 +4220,12 @@
 								},
 								"content": {
 									"type": "string"
+								},
+								"contentUnknown": {
+									"type": "string"
 								}
 							},
-							"required": ["title", "content"]
+							"required": ["title", "content", "contentUnknown"]
 						},
 						"time_entry_created": {
 							"type": "object",

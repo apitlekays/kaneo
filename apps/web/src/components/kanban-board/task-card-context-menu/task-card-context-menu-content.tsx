@@ -12,6 +12,7 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
+import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import { useUpdateTask } from "@/hooks/mutations/task/use-update-task";
 import { useUpdateTaskAssignee } from "@/hooks/mutations/task/use-update-task-assignee";
 import { useUpdateTaskDescription } from "@/hooks/mutations/task/use-update-task-description";
@@ -268,21 +269,42 @@ export default function TaskCardContextMenuContent({
             <span>{t("tasks:assignee.label")}</span>
           </ContextMenuSubTrigger>
           <ContextMenuSubContent className="w-48">
-            <ContextMenuCheckboxItem
-              checked={!task.userId}
-              onCheckedChange={() => handleChange("userId", "")}
-              closeOnClick
-            >
-              <div
-                className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"
-                title={t("tasks:assignee.unassigned")}
+            {task.pendingAssigneeName ? (
+              // Awaiting acceptance: this task isn't unassigned — someone was
+              // asked and hasn't accepted yet — so it must not read (or
+              // check) as a real "Unassigned" selection. Selecting it clears
+              // the pending request, same as picking "Unassigned" would.
+              <ContextMenuCheckboxItem
+                checked={false}
+                onCheckedChange={() => handleChange("userId", "")}
+                closeOnClick
               >
-                <span className="text-[10px] font-medium text-muted-foreground">
-                  ?
-                </span>{" "}
-              </div>
-              {t("tasks:assignee.unassigned")}
-            </ContextMenuCheckboxItem>
+                <PendingAssigneeBadge
+                  name={task.pendingAssigneeName}
+                  className="h-6 w-6"
+                  iconClassName="h-3 w-3"
+                />
+                {t("tasks:assignee.awaiting", {
+                  name: task.pendingAssigneeName,
+                })}
+              </ContextMenuCheckboxItem>
+            ) : (
+              <ContextMenuCheckboxItem
+                checked={!task.userId}
+                onCheckedChange={() => handleChange("userId", "")}
+                closeOnClick
+              >
+                <div
+                  className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"
+                  title={t("tasks:assignee.unassigned")}
+                >
+                  <span className="text-[10px] font-medium text-muted-foreground">
+                    ?
+                  </span>{" "}
+                </div>
+                {t("tasks:assignee.unassigned")}
+              </ContextMenuCheckboxItem>
+            )}
             {usersOptions.map((user) => (
               <ContextMenuCheckboxItem
                 key={user.value}

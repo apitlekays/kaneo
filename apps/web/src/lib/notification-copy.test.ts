@@ -26,6 +26,22 @@ describe("notification copy", () => {
       'Ada commented on "Ship the thing"',
     ],
     [
+      "task_assignee_changed",
+      { actorName: "Ada", taskTitle: "Ship the thing" },
+      "Task assigned to you",
+      'Ada assigned you to "Ship the thing"',
+    ],
+    [
+      // getActorName (apps/api/src/notification/index.ts) resolves to the
+      // literal "Someone" for grandfathered task_assignment rows (migration
+      // 0057) with no recorded assigner. The copy must not name a
+      // nonexistent assigner or read as a bug ("Someone assigned...").
+      "task_assignee_changed",
+      { actorName: "Someone", taskTitle: "Ship the thing" },
+      "Task assigned to you",
+      'You were assigned to "Ship the thing"',
+    ],
+    [
       "due_date_reminder",
       { taskTitle: "Ship the thing", reminderType: "one_hour_before" },
       "Task due soon",

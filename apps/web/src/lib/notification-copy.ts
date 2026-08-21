@@ -122,11 +122,26 @@ export function getNotificationContent(
           newStatus: getStatusLabel(String(eventData.newStatus ?? "")),
           defaultValue: notification.content ?? "",
         });
-      case "task_assignee_changed":
-        return t("notifications:events.task_assignee_changed.content", {
-          ...eventData,
-          defaultValue: notification.content ?? "",
-        });
+      case "task_assignee_changed": {
+        // getActorName (apps/api/src/notification/index.ts) resolves to the
+        // literal "Someone" when the assigner is unknown (grandfathered
+        // rows from migration 0057 have a null fromUserId). Naming an
+        // unknown assigner as "Someone assigned you..." reads like a bug, so
+        // that case gets its own neutral phrasing instead of inventing or
+        // foregrounding a non-existent actor.
+        const isKnownActor =
+          typeof eventData.actorName === "string" &&
+          eventData.actorName !== "Someone";
+        return t(
+          isKnownActor
+            ? "notifications:events.task_assignee_changed.content"
+            : "notifications:events.task_assignee_changed.contentUnknown",
+          {
+            ...eventData,
+            defaultValue: notification.content ?? "",
+          },
+        );
+      }
       case "time_entry_created":
         return eventData.taskTitle
           ? t("notifications:events.time_entry_created.contentWithTask", {

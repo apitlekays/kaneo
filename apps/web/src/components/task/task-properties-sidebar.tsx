@@ -3,7 +3,6 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarX,
-  Clock,
   Copy,
   GitBranch,
   Plus,
@@ -13,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { KbdSequence } from "@/components/ui/kbd";
+import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import {
   Tooltip,
   TooltipContent,
@@ -241,17 +241,11 @@ export default function TaskPropertiesSidebar({
                         fallbackClassName="text-[9px]"
                       />
                     ) : task.pendingAssigneeName ? (
-                      // Awaiting acceptance: not a ColoredAvatar — the task
-                      // isn't theirs until they accept, so this must not
-                      // read as a real assignee.
-                      <div
-                        className="w-[16px] h-[16px] rounded-full bg-warning/10 border border-dashed border-warning-foreground/50 flex items-center justify-center flex-shrink-0"
-                        title={t("tasks:popover.assignee.awaiting", {
-                          name: task.pendingAssigneeName,
-                        })}
-                      >
-                        <Clock className="h-[9px] w-[9px] text-warning-foreground" />
-                      </div>
+                      <PendingAssigneeBadge
+                        name={task.pendingAssigneeName}
+                        className="w-[16px] h-[16px] flex-shrink-0"
+                        iconClassName="h-[9px] w-[9px]"
+                      />
                     ) : (
                       <div
                         className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center flex-shrink-0"
@@ -443,17 +437,11 @@ export default function TaskPropertiesSidebar({
                           fallbackClassName="text-[9px]"
                         />
                       ) : task.pendingAssigneeName ? (
-                        // Awaiting acceptance: not a ColoredAvatar — the task
-                        // isn't theirs until they accept, so this must not
-                        // read as a real assignee.
-                        <div
-                          className="w-[16px] h-[16px] rounded-full bg-warning/10 border border-dashed border-warning-foreground/50 flex items-center justify-center shrink-0"
-                          title={t("tasks:popover.assignee.awaiting", {
-                            name: task.pendingAssigneeName,
-                          })}
-                        >
-                          <Clock className="h-[9px] w-[9px] text-warning-foreground" />
-                        </div>
+                        <PendingAssigneeBadge
+                          name={task.pendingAssigneeName}
+                          className="w-[16px] h-[16px] shrink-0"
+                          iconClassName="h-[9px] w-[9px]"
+                        />
                       ) : (
                         <div
                           className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center shrink-0"
@@ -648,17 +636,11 @@ export default function TaskPropertiesSidebar({
                           fallbackClassName="text-[9px]"
                         />
                       ) : task.pendingAssigneeName ? (
-                        // Awaiting acceptance: not a ColoredAvatar — the task
-                        // isn't theirs until they accept, so this must not
-                        // read as a real assignee.
-                        <div
-                          className="w-[16px] h-[16px] rounded-full bg-warning/10 border border-dashed border-warning-foreground/50 flex items-center justify-center shrink-0"
-                          title={t("tasks:popover.assignee.awaiting", {
-                            name: task.pendingAssigneeName,
-                          })}
-                        >
-                          <Clock className="h-[9px] w-[9px] text-warning-foreground" />
-                        </div>
+                        <PendingAssigneeBadge
+                          name={task.pendingAssigneeName}
+                          className="w-[16px] h-[16px] shrink-0"
+                          iconClassName="h-[9px] w-[9px]"
+                        />
                       ) : (
                         <div
                           className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center shrink-0"

@@ -6,7 +6,6 @@ import {
   Calendar,
   CalendarClock,
   CalendarX,
-  Clock,
   GitMerge,
   GitPullRequest,
 } from "lucide-react";
@@ -22,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
+import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import {
   HoverCard,
   HoverCardContent,
@@ -214,19 +214,11 @@ function TaskCard({ task }: TaskCardProps) {
                     fallbackClassName="text-xs"
                   />
                 ) : task.pendingAssigneeName ? (
-                  // Awaiting acceptance: deliberately NOT a ColoredAvatar —
-                  // the task isn't theirs yet, so it must not look like a
-                  // real assignee. Dashed border + warning tint distinguish
-                  // it from both the accepted-assignee avatar and the plain
-                  // "?" unassigned state.
-                  <div
-                    className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-warning-foreground/50 bg-warning/10"
-                    title={t("tasks:assignee.awaiting", {
-                      name: task.pendingAssigneeName,
-                    })}
-                  >
-                    <Clock className="h-2.5 w-2.5 text-warning-foreground" />
-                  </div>
+                  <PendingAssigneeBadge
+                    name={task.pendingAssigneeName}
+                    className="h-5 w-5"
+                    iconClassName="h-2.5 w-2.5"
+                  />
                 ) : (
                   <div
                     className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-muted"

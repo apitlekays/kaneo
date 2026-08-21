@@ -4,6 +4,7 @@ import TaskCardContextMenuContent from "@/components/kanban-board/task-card-cont
 import { Checkbox } from "@/components/ui/checkbox";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import { getColumnIcon } from "@/lib/column";
 import type Task from "@/types/task";
 import SubtaskAssigneePopover from "./subtask-assignee-popover";
@@ -91,6 +92,12 @@ export default function SubtaskRow({
                     seed={task.userId}
                     className="h-5 w-5 border border-border/30"
                     fallbackClassName="text-[9px]"
+                  />
+                ) : task.pendingAssigneeName ? (
+                  <PendingAssigneeBadge
+                    name={task.pendingAssigneeName}
+                    className="h-5 w-5"
+                    iconClassName="h-2.5 w-2.5"
                   />
                 ) : (
                   <div

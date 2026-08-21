@@ -21,6 +21,7 @@ import TaskDetailsSheet from "@/components/task/task-details-sheet";
 import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { Input } from "@/components/ui/input";
+import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import { useGetTasks } from "@/hooks/queries/task/use-get-tasks";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/cn";
@@ -375,6 +376,22 @@ function RouteComponent() {
                                     </span>
                                   </span>
                                 )}
+                                {!task.assigneeName &&
+                                  task.pendingAssigneeName && (
+                                    <span className="flex min-w-0 items-center gap-1">
+                                      <span aria-hidden>•</span>
+                                      <PendingAssigneeBadge
+                                        name={task.pendingAssigneeName}
+                                        className="h-3.5 w-3.5 shrink-0"
+                                        iconClassName="h-2 w-2"
+                                      />
+                                      <span className="truncate">
+                                        {t("tasks:assignee.awaiting", {
+                                          name: task.pendingAssigneeName,
+                                        })}
+                                      </span>
+                                    </span>
+                                  )}
                               </span>
                             </button>
                           </div>
