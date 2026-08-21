@@ -722,9 +722,14 @@ export function MinutesSection({
           // show that.
           const isDeclined = minute.acceptance === "rejected";
           const done = minute.status === "done";
+          // The server rejects completion of a still-pending action with a
+          // 409 (letters.ts's completeMinute route) — offering the control
+          // before acceptance just invites that error, so it must not
+          // render until acceptance has actually happened.
           const canComplete =
             isAction &&
             !done &&
+            minute.acceptance === "accepted" &&
             (isAdmin || minute.assigneeId === currentUserId);
           return (
             <div

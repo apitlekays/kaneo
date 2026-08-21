@@ -1,5 +1,13 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   LetterAttachment,
@@ -21,6 +29,40 @@ vi.mock("@/hooks/queries/correspondence/use-letters", () => ({
     isPending: state.isPending,
   }),
 }));
+
+// The upload flow (presign → PUT → finalize) lives entirely inside
+// uploadLetterAttachment; the thread only needs to know it was called with
+// the right minuteUpdateId and that a rejection surfaces visibly. The real
+// contract for the fetcher itself (field names, presign/finalize sequence)
+// is exercised in the fetcher's own coverage, not here.
+const mockUploadLetterAttachment = vi.hoisted(() => vi.fn());
+vi.mock("@/fetchers/correspondence/letters", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/fetchers/correspondence/letters")>();
+  return {
+    ...actual,
+    uploadLetterAttachment: (
+      ...args: Parameters<typeof actual.uploadLetterAttachment>
+    ) => mockUploadLetterAttachment(...args),
+  };
+});
+
+const mockToastError = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/toast", () => ({
+  toast: { error: mockToastError, success: vi.fn() },
+}));
+
+// MinuteThread calls the real useQueryClient() to refresh the letter after
+// a minute-update attachment upload, so every render needs a real
+// QueryClient in context.
+function renderThread(ui: ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+  );
+}
 
 // Mirrors the mock used in correspondence.test.tsx for the same hook — the
 // thread resolves author display names independently of its parent.
@@ -80,6 +122,8 @@ afterEach(() => {
   cleanup();
   state.mutate.mockClear();
   state.isPending = false;
+  mockUploadLetterAttachment.mockReset();
+  mockToastError.mockClear();
 });
 
 describe("MinuteThread", () => {
@@ -105,7 +149,7 @@ describe("MinuteThread", () => {
       ],
     });
 
-    render(
+    renderThread(
       <MinuteThread
         workspaceId="ws-1"
         letterId="letter-1"
@@ -129,7 +173,7 @@ describe("MinuteThread", () => {
     const user = userEvent.setup();
     const minute = makeMinute({ updates: [] });
 
-    render(
+    renderThread(
       <MinuteThread
         workspaceId="ws-1"
         letterId="letter-1"
@@ -158,7 +202,7 @@ describe("MinuteThread", () => {
     const user = userEvent.setup();
     const minute = makeMinute({ updates: [] });
 
-    render(
+    renderThread(
       <MinuteThread
         workspaceId="ws-1"
         letterId="letter-1"
@@ -183,7 +227,7 @@ describe("MinuteThread", () => {
   it("renders the composer but no thread rows, and no empty-state error, for a minute with no updates", () => {
     const minute = makeMinute({ updates: [] });
 
-    render(
+    renderThread(
       <MinuteThread
         workspaceId="ws-1"
         letterId="letter-1"
@@ -205,7 +249,7 @@ describe("MinuteThread", () => {
   it("does not render a composer when canPost is false", () => {
     const minute = makeMinute({ updates: [] });
 
-    render(
+    renderThread(
       <MinuteThread
         workspaceId="ws-1"
         letterId="letter-1"
@@ -249,7 +293,7 @@ describe("MinuteThread", () => {
       filename: "other-report.pdf",
     });
 
-    render(
+    renderThread(
       <MinuteThread
         workspaceId="ws-1"
         letterId="letter-1"
@@ -277,5 +321,114 @@ describe("MinuteThread", () => {
     expect(
       within(updateTwoRow).queryByText("own-report.pdf"),
     ).not.toBeInTheDocument();
+  });
+
+  it("posting an update with a file attached uploads it carrying that update's minuteUpdateId", async () => {
+    const user = userEvent.setup();
+    const minute = makeMinute({ updates: [] });
+    const postedUpdate = {
+      id: "update-99",
+      minuteId: "minute-1",
+      authorId: "user-2",
+      body: "Progress report attached",
+      createdAt: "2025-01-05T00:00:00.000Z",
+    };
+    // Stand in for the real mutation: invoke the caller's onSuccess with the
+    // update the server would have returned, the same shape addMinuteUpdate
+    // resolves to.
+    state.mutate.mockImplementation((_vars, opts) => {
+      opts.onSuccess(postedUpdate);
+    });
+    mockUploadLetterAttachment.mockResolvedValue({
+      id: "attachment-new",
+      letterId: "letter-1",
+      minuteUpdateId: postedUpdate.id,
+      objectKey: "key-new",
+      filename: "report.pdf",
+      mimeType: "application/pdf",
+      size: 2048,
+      sha256: null,
+      kind: "original",
+      createdAt: "2025-01-05T00:00:00.000Z",
+    });
+
+    const { container } = renderThread(
+      <MinuteThread
+        workspaceId="ws-1"
+        letterId="letter-1"
+        minute={minute}
+        canPost
+      />,
+    );
+
+    const file = new File(["%PDF-1.4"], "report.pdf", {
+      type: "application/pdf",
+    });
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    await user.upload(fileInput, file);
+    expect(screen.getByText("report.pdf")).toBeVisible();
+
+    await user.type(
+      screen.getByPlaceholderText(/post an update/i),
+      "Progress report attached",
+    );
+    await user.click(screen.getByRole("button", { name: /post update/i }));
+
+    expect(mockUploadLetterAttachment).toHaveBeenCalledWith(
+      "ws-1",
+      "letter-1",
+      file,
+      "original",
+      "update-99",
+    );
+  });
+
+  it("surfaces a failed attachment upload via toast instead of failing silently", async () => {
+    const user = userEvent.setup();
+    const minute = makeMinute({ updates: [] });
+    const postedUpdate = {
+      id: "update-100",
+      minuteId: "minute-1",
+      authorId: "user-2",
+      body: "Report attached",
+      createdAt: "2025-01-06T00:00:00.000Z",
+    };
+    state.mutate.mockImplementation((_vars, opts) => {
+      opts.onSuccess(postedUpdate);
+    });
+    mockUploadLetterAttachment.mockRejectedValue(
+      new Error("Upload to storage failed"),
+    );
+
+    const { container } = renderThread(
+      <MinuteThread
+        workspaceId="ws-1"
+        letterId="letter-1"
+        minute={minute}
+        canPost
+      />,
+    );
+
+    const file = new File(["%PDF-1.4"], "report.pdf", {
+      type: "application/pdf",
+    });
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    await user.upload(fileInput, file);
+
+    await user.type(
+      screen.getByPlaceholderText(/post an update/i),
+      "Report attached",
+    );
+    await user.click(screen.getByRole("button", { name: /post update/i }));
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith(
+        expect.stringMatching(/upload failed/i),
+      );
+    });
   });
 });

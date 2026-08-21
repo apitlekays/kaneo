@@ -1,14 +1,20 @@
-import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Loader2, Paperclip } from "lucide-react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   attachmentDownloadUrl,
   type LetterAttachment,
   type LetterMinute,
+  type MinuteUpdate,
+  uploadLetterAttachment,
 } from "@/fetchers/correspondence/letters";
 import { useAddMinuteUpdate } from "@/hooks/queries/correspondence/use-letters";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { formatDateMedium } from "@/lib/format";
+import { isPdfUpload } from "@/lib/is-pdf-upload";
+import { toast } from "@/lib/toast";
 import { AttachmentRow } from "./attachment-row";
 
 type MinuteThreadProps = {
@@ -35,18 +41,57 @@ export function MinuteThread({
   const users = usersData?.members ?? [];
   const userName = (id: string | null) =>
     id ? (users.find((u) => u.userId === id)?.user?.name ?? id) : "—";
+  const qc = useQueryClient();
   const addUpdate = useAddMinuteUpdate(workspaceId, letterId);
   const [body, setBody] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const trimmed = body.trim();
 
   const attachmentsFor = (updateId: string) =>
     attachments.filter((att) => att.minuteUpdateId === updateId);
 
+  const resetFile = () => {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const submit = () => {
     if (!trimmed) return;
+    const toAttach = file;
     addUpdate.mutate(
       { minuteId: minute.id, body: trimmed },
-      { onSuccess: () => setBody("") },
+      {
+        onSuccess: async (update: MinuteUpdate) => {
+          setBody("");
+          resetFile();
+          if (!toAttach) return;
+          // The update itself is already saved at this point — a failed
+          // upload from here on must not read as "the update didn't go
+          // through"; it must read as "the file didn't attach".
+          setUploading(true);
+          try {
+            await uploadLetterAttachment(
+              workspaceId,
+              letterId,
+              toAttach,
+              "original",
+              update.id,
+            );
+            // Both the thread (filtered by minuteUpdateId) and the
+            // Attachments tab read off this same query, so one invalidation
+            // refreshes the file into both places without a manual reload.
+            qc.invalidateQueries({
+              queryKey: ["letter", workspaceId, letterId],
+            });
+          } catch {
+            toast.error("Update posted, but the attachment upload failed");
+          } finally {
+            setUploading(false);
+          }
+        },
+      },
     );
   };
 
@@ -80,13 +125,53 @@ export function MinuteThread({
             placeholder="Post an update…"
             className="min-h-20"
           />
-          <Button
-            size="sm"
-            disabled={!trimmed || addUpdate.isPending}
-            onClick={submit}
-          >
-            Post update
-          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="application/pdf,.pdf"
+            onChange={(e) => {
+              const picked = e.target.files?.[0] ?? null;
+              if (picked && !isPdfUpload(picked)) {
+                toast.error("Only PDF files can be attached to a letter");
+                e.target.value = "";
+                return;
+              }
+              setFile(picked);
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+              {file ? file.name : "Attach file"}
+            </Button>
+            {file && (
+              <button
+                type="button"
+                className="text-muted-foreground text-xs underline hover:text-foreground"
+                onClick={resetFile}
+              >
+                Remove
+              </button>
+            )}
+            <Button
+              size="sm"
+              disabled={!trimmed || addUpdate.isPending || uploading}
+              onClick={submit}
+              className="ml-auto"
+            >
+              {(addUpdate.isPending || uploading) && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
+              Post update
+            </Button>
+          </div>
         </div>
       )}
     </div>

@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   Letter,
@@ -6,6 +8,19 @@ import type {
   LetterMinute,
 } from "@/fetchers/correspondence/letters";
 import { MinutesSection, type Mutations } from "./letter-detail-dialog";
+
+// MinuteThread (rendered inside MinutesSection) calls the real
+// useQueryClient() to refresh the letter after a minute-update attachment
+// upload, so every render here needs a real QueryClient in context — the
+// mutation hook itself stays mocked above, this is unrelated to that.
+function renderWithClient(ui: ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+  );
+}
 
 // MinutesSection renders <MinuteThread>, which pulls in its own query
 // hooks — stub them the same way minute-thread.test.tsx does, since this
@@ -129,7 +144,7 @@ describe("MinutesSection", () => {
       status: "open",
     });
 
-    render(
+    renderWithClient(
       <MinutesSection
         workspaceId="ws-1"
         letter={makeLetter([minute])}
@@ -156,7 +171,7 @@ describe("MinutesSection", () => {
   it("shows a plain note with none of the action controls", () => {
     const minute = makeMinute({ assigneeId: null, acceptance: "accepted" });
 
-    render(
+    renderWithClient(
       <MinutesSection
         workspaceId="ws-1"
         letter={makeLetter([minute])}
@@ -188,7 +203,7 @@ describe("MinutesSection", () => {
       status: "open",
     });
 
-    render(
+    renderWithClient(
       <MinutesSection
         workspaceId="ws-1"
         letter={makeLetter([minute])}
@@ -223,7 +238,7 @@ describe("MinutesSection", () => {
       assigneeId: "assignee-1",
     });
 
-    const { unmount } = render(
+    const { unmount } = renderWithClient(
       <MinutesSection
         workspaceId="ws-1"
         letter={makeLetter([forOfficer])}
@@ -240,7 +255,7 @@ describe("MinutesSection", () => {
     expect(screen.getByPlaceholderText(/post an update/i)).toBeVisible();
     unmount();
 
-    render(
+    renderWithClient(
       <MinutesSection
         workspaceId="ws-1"
         letter={makeLetter([forOfficer])}
@@ -256,5 +271,57 @@ describe("MinutesSection", () => {
     expect(
       screen.queryByPlaceholderText(/post an update/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not offer Mark done for a pending action, but does for an accepted one", () => {
+    // The server's completeMinute route 409s while acceptance is "pending"
+    // (letters.ts), so the control must not be offered before that point —
+    // it would just walk the assignee into that error.
+    const pending = makeMinute({
+      id: "minute-pending",
+      assigneeId: "assignee-1",
+      acceptance: "pending",
+      status: "open",
+    });
+
+    const { unmount } = renderWithClient(
+      <MinutesSection
+        workspaceId="ws-1"
+        letter={makeLetter([pending])}
+        m={makeMutations()}
+        users={[]}
+        userName={userName}
+        currentUserId="assignee-1"
+        isAdmin={false}
+        hasGeneralManagementAccess={false}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: /mark done/i }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    const accepted = makeMinute({
+      id: "minute-accepted",
+      assigneeId: "assignee-1",
+      acceptance: "accepted",
+      status: "open",
+    });
+
+    renderWithClient(
+      <MinutesSection
+        workspaceId="ws-1"
+        letter={makeLetter([accepted])}
+        m={makeMutations()}
+        users={[]}
+        userName={userName}
+        currentUserId="assignee-1"
+        isAdmin={false}
+        hasGeneralManagementAccess={false}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /mark done/i }),
+    ).toBeInTheDocument();
   });
 });
