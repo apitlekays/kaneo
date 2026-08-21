@@ -4,6 +4,7 @@ import db from "../../database";
 import {
   columnTable,
   projectTable,
+  taskAssignmentTable,
   taskTable,
   userTable,
 } from "../../database/schema";
@@ -83,28 +84,48 @@ async function createTask({
 
   const nextPosition = (maxPositionResult?.maxPosition ?? 0) + 1;
 
-  const [createdTask] = await db
-    .insert(taskTable)
-    .values({
-      projectId,
-      userId: userId || null,
-      title: title || "",
-      status: resolvedStatus,
-      columnId: column?.id ?? null,
-      startDate: startDate || null,
-      dueDate: dueDate || null,
-      description: description || "",
-      priority: resolvedPriority,
-      number: nextTaskNumber + 1,
-      position: nextPosition,
-    })
-    .returning();
+  // Assigning someone other than the creator only offers the task to them;
+  // task.userId (the accepted assignee) stays empty until they accept.
+  // Self-assignment is auto-accepted, so it takes effect immediately.
+  const isSelfAssignment = !!userId && userId === currentUserId;
+  const isOffer = !!userId && !isSelfAssignment;
 
-  if (!createdTask) {
-    throw new HTTPException(500, {
-      message: "Failed to create task",
-    });
-  }
+  const createdTask = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(taskTable)
+      .values({
+        projectId,
+        userId: isOffer ? null : userId || null,
+        title: title || "",
+        status: resolvedStatus,
+        columnId: column?.id ?? null,
+        startDate: startDate || null,
+        dueDate: dueDate || null,
+        description: description || "",
+        priority: resolvedPriority,
+        number: nextTaskNumber + 1,
+        position: nextPosition,
+      })
+      .returning();
+
+    if (!inserted) {
+      throw new HTTPException(500, {
+        message: "Failed to create task",
+      });
+    }
+
+    if (userId) {
+      await tx.insert(taskAssignmentTable).values({
+        taskId: inserted.id,
+        fromUserId: currentUserId,
+        toUserId: userId,
+        status: isSelfAssignment ? "accepted" : "pending",
+        decidedAt: isSelfAssignment ? new Date() : null,
+      });
+    }
+
+    return inserted;
+  });
 
   await publishEvent("task.created", {
     ...createdTask,

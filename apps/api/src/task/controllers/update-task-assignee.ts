@@ -1,7 +1,12 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import db from "../../database";
-import { projectTable, taskTable, userTable } from "../../database/schema";
+import {
+  projectTable,
+  taskAssignmentTable,
+  taskTable,
+  userTable,
+} from "../../database/schema";
 import { publishEvent } from "../../events";
 import { canAccessProject } from "../../utils/project-access";
 
@@ -25,7 +30,11 @@ async function updateTaskAssignee({
   }
 
   const nextAssigneeId = userId || null;
-  if (existingTask.userId === nextAssigneeId) {
+  // A no-op only when there is an accepted assignee already and nothing
+  // would change. Clearing (nextAssigneeId === null) always runs through,
+  // even if task.userId is already null, because a pending offer for this
+  // task may still need to be superseded.
+  if (nextAssigneeId !== null && existingTask.userId === nextAssigneeId) {
     return existingTask;
   }
 
@@ -50,17 +59,62 @@ async function updateTaskAssignee({
     }
   }
 
-  const [updatedTask] = await db
-    .update(taskTable)
-    .set({ userId: nextAssigneeId || null })
-    .where(eq(taskTable.id, id))
-    .returning();
+  // Assigning to someone other than the caller only offers the task to
+  // them; task.userId (the accepted assignee) is untouched until they
+  // accept. Self-assignment and clearing keep today's behaviour and take
+  // effect immediately.
+  const isSelfAssignment = nextAssigneeId === currentUserId;
+  const isOffer = nextAssigneeId !== null && !isSelfAssignment;
 
-  if (!updatedTask) {
-    throw new HTTPException(500, {
-      message: "Failed to update task assignee",
-    });
-  }
+  const resultTask = await db.transaction(async (tx) => {
+    // Exactly one live prompt per task: retire any assignment still
+    // awaiting a decision before this change takes effect.
+    await tx
+      .update(taskAssignmentTable)
+      .set({ status: "superseded", decidedAt: new Date() })
+      .where(
+        and(
+          eq(taskAssignmentTable.taskId, id),
+          eq(taskAssignmentTable.status, "pending"),
+        ),
+      );
+
+    if (isOffer) {
+      await tx.insert(taskAssignmentTable).values({
+        taskId: id,
+        fromUserId: currentUserId,
+        toUserId: nextAssigneeId,
+        status: "pending",
+      });
+
+      // The task is not theirs yet - that is the whole feature.
+      return existingTask;
+    }
+
+    const [updatedTask] = await tx
+      .update(taskTable)
+      .set({ userId: nextAssigneeId })
+      .where(eq(taskTable.id, id))
+      .returning();
+
+    if (!updatedTask) {
+      throw new HTTPException(500, {
+        message: "Failed to update task assignee",
+      });
+    }
+
+    if (isSelfAssignment) {
+      await tx.insert(taskAssignmentTable).values({
+        taskId: id,
+        fromUserId: currentUserId,
+        toUserId: nextAssigneeId,
+        status: "accepted",
+        decidedAt: new Date(),
+      });
+    }
+
+    return updatedTask;
+  });
 
   const newAssigneeName = userId
     ? (
@@ -74,28 +128,28 @@ async function updateTaskAssignee({
 
   if (!userId) {
     await publishEvent("task.unassigned", {
-      taskId: updatedTask.id,
-      projectId: updatedTask.projectId,
+      taskId: resultTask.id,
+      projectId: resultTask.projectId,
       userId: currentUserId,
-      title: updatedTask.title,
+      title: resultTask.title,
       type: "unassigned",
     });
 
-    return updatedTask;
+    return resultTask;
   }
 
   await publishEvent("task.assignee_changed", {
-    taskId: updatedTask.id,
-    projectId: updatedTask.projectId,
+    taskId: resultTask.id,
+    projectId: resultTask.projectId,
     userId: currentUserId,
     oldAssignee: existingTask.userId,
     newAssignee: newAssigneeName,
     newAssigneeId: userId,
-    title: updatedTask.title,
+    title: resultTask.title,
     type: "assignee_changed",
   });
 
-  return updatedTask;
+  return resultTask;
 }
 
 export default updateTaskAssignee;
