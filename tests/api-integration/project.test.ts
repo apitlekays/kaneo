@@ -1,10 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import db, { schema } from "../../apps/api/src/database";
 import { createApp } from "../../apps/api/src/index";
 import { mockAnonymousSession, mockAuthenticatedSession } from "./helpers/auth";
 import { resetTestDatabase } from "./helpers/database";
-import { createWorkspaceMember } from "./helpers/fixtures";
+import {
+  createProjectFixture,
+  createWorkspaceMember,
+} from "./helpers/fixtures";
 
 describe("API integration: project creation", () => {
   beforeEach(async () => {
@@ -127,5 +131,74 @@ describe("API integration: project creation", () => {
     await expect(response.text()).resolves.toBe(
       "You don't have access to this workspace",
     );
+  });
+});
+
+describe("API integration: project visibility", () => {
+  beforeEach(async () => {
+    await resetTestDatabase();
+  });
+
+  it("hides projects the caller is not a member of", async () => {
+    // A plain workspace member, not an owner: owners are global admins and
+    // legitimately see everything, so an owner would prove nothing here.
+    const owner = await createWorkspaceMember({ role: "owner" });
+    const [outsider] = await db
+      .insert(schema.userTable)
+      .values({
+        name: "Outside Member",
+        email: `outsider-${randomUUID()}@example.com`,
+        emailVerified: true,
+      })
+      .returning();
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: owner.workspace.id,
+      userId: outsider.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+
+    const mine = await createProjectFixture({
+      workspaceId: owner.workspace.id,
+      name: "Project I Belong To",
+      memberUserId: outsider.id,
+    });
+    await createProjectFixture({
+      workspaceId: owner.workspace.id,
+      name: "Project I Am Not On",
+    });
+
+    mockAuthenticatedSession(outsider);
+    const { app } = createApp();
+
+    const response = await app.request(
+      `/api/project?workspaceId=${owner.workspace.id}`,
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.map((p: { id: string }) => p.id)).toEqual([mine.project.id]);
+    // The name alone is disclosure: "Project I Am Not On" must not appear at
+    // all, not merely arrive flagged as inaccessible.
+    expect(JSON.stringify(body)).not.toContain("Project I Am Not On");
+  });
+
+  it("still shows every project to a workspace owner", async () => {
+    const owner = await createWorkspaceMember({ role: "owner" });
+    await createProjectFixture({
+      workspaceId: owner.workspace.id,
+      name: "Owner Sees This",
+    });
+
+    mockAuthenticatedSession(owner.user);
+    const { app } = createApp();
+
+    const response = await app.request(
+      `/api/project?workspaceId=${owner.workspace.id}`,
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toHaveLength(1);
   });
 });
