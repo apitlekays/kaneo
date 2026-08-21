@@ -118,6 +118,10 @@ export const taskProvider: PendingDecisionProvider = {
         status: taskAssignmentTable.status,
         taskTitle: taskTable.title,
         projectId: taskTable.projectId,
+        // task.userId as it stood immediately before this decision. An
+        // offer never writes task.userId (see assignment-write.ts), so this
+        // is the incumbent (if any) that a reject must leave untouched.
+        currentAssigneeId: taskTable.userId,
       })
       .from(taskAssignmentTable)
       .innerJoin(taskTable, eq(taskAssignmentTable.taskId, taskTable.id))
@@ -136,6 +140,7 @@ export const taskProvider: PendingDecisionProvider = {
     const nextAssigneeId = taskAssigneeAfterDecision(
       decision,
       assignment.toUserId,
+      assignment.currentAssigneeId,
     );
 
     await db.transaction(async (tx) => {
@@ -171,10 +176,19 @@ export const taskProvider: PendingDecisionProvider = {
     if (decision === "accepted") {
       // The offer path no longer announces "assigned to you" — the task
       // isn't the offeree's until they accept. This is where it becomes
-      // true, so this is where the event fires. Same payload shape as
-      // update-task-assignee.ts's assignee_changed event: the task was
-      // unassigned (userId null) while the offer was pending, and the
-      // acting user here is the person who just accepted their own task.
+      // true, so this is where the event fires.
+      //
+      // The activity feed's "userId" is the *actor* the change is
+      // attributed to, and downstream (activity/index.ts) it is compared
+      // against newAssigneeId to decide whether to render this as a
+      // self-assignment. The actor here is the assigner (fromUserId), not
+      // the accepter — an offer someone else made and this user accepted
+      // is not a self-assignment, and reporting it as `userId` (the
+      // accepter, who always equals newAssigneeId on this path) would
+      // always read that way. fromUserId is null on grandfathered rows
+      // (migration 0057) where no assigner was ever recorded; passing null
+      // through renders as an unattributed "assigned to <name>" rather than
+      // inventing an assigner or lying about self-assignment.
       const [assignee] = await db
         .select({ name: userTable.name })
         .from(userTable)
@@ -183,7 +197,7 @@ export const taskProvider: PendingDecisionProvider = {
       await publishEvent("task.assignee_changed", {
         taskId: assignment.taskId,
         projectId: assignment.projectId,
-        userId,
+        userId: assignment.fromUserId,
         oldAssignee: null,
         newAssignee: assignee?.name,
         newAssigneeId: userId,
@@ -192,19 +206,59 @@ export const taskProvider: PendingDecisionProvider = {
       });
     }
 
-    // A lead routing twenty tasks must not have the declined ones collect on
-    // their own board — the task simply becomes unassigned. Only the
-    // assigner is told, and only when there is one to tell: grandfathered
-    // rows with no recorded assigner notify nobody rather than inventing one.
-    if (decision === "rejected" && assignment.fromUserId) {
-      await createNotification({
-        userId: assignment.fromUserId,
-        type: "task_rejected",
-        title: `Assignment declined — ${assignment.taskTitle}`,
-        content: reason,
-        resourceId: assignment.taskId,
-        resourceType: "task",
-      }).catch(() => {});
+    if (decision === "rejected") {
+      // A lead routing twenty tasks must not have the declined ones collect
+      // on their own board — the task simply becomes unassigned. Only the
+      // assigner is told, and only when there is one to tell: grandfathered
+      // rows with no recorded assigner notify nobody rather than inventing
+      // one.
+      if (assignment.fromUserId) {
+        await createNotification({
+          userId: assignment.fromUserId,
+          type: "task_rejected",
+          title: `Assignment declined — ${assignment.taskTitle}`,
+          content: reason,
+          resourceId: assignment.taskId,
+          resourceType: "task",
+        }).catch(() => {});
+      }
+
+      // Tell WS/calendar consumers only if task.userId actually moved. An
+      // incumbent who kept their task, or a task that was and remains
+      // unassigned, is not a change worth broadcasting — and under
+      // writeTaskAssignment's invariant (an offer never writes
+      // task.userId), nextAssigneeId here is always exactly
+      // assignment.currentAssigneeId, so this stays silent for every
+      // reject today. It is kept as a real check, not assumed away, so a
+      // future change to that invariant is still reported correctly
+      // instead of silently drifting.
+      if (nextAssigneeId !== assignment.currentAssigneeId) {
+        if (nextAssigneeId) {
+          const [assignee] = await db
+            .select({ name: userTable.name })
+            .from(userTable)
+            .where(eq(userTable.id, nextAssigneeId))
+            .limit(1);
+          await publishEvent("task.assignee_changed", {
+            taskId: assignment.taskId,
+            projectId: assignment.projectId,
+            userId,
+            oldAssignee: null,
+            newAssignee: assignee?.name,
+            newAssigneeId: nextAssigneeId,
+            title: assignment.taskTitle,
+            type: "assignee_changed",
+          });
+        } else {
+          await publishEvent("task.unassigned", {
+            taskId: assignment.taskId,
+            projectId: assignment.projectId,
+            userId,
+            title: assignment.taskTitle,
+            type: "unassigned",
+          });
+        }
+      }
     }
   },
 };

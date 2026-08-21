@@ -27,13 +27,22 @@ describe("assertCanDecideTask", () => {
 });
 
 describe("taskAssigneeAfterDecision", () => {
-  it("makes the recipient the assignee on accept", () => {
-    expect(taskAssigneeAfterDecision("accepted", "u1")).toBe("u1");
+  it("makes the recipient the assignee on accept, regardless of any prior incumbent", () => {
+    expect(taskAssigneeAfterDecision("accepted", "u1", null)).toBe("u1");
+    expect(taskAssigneeAfterDecision("accepted", "u1", "incumbent")).toBe("u1");
   });
 
-  it("leaves the task unassigned on reject", () => {
+  it("leaves an incumbent's assignment in place on reject", () => {
+    // The incumbent declined nothing -- rejecting an offer made to someone
+    // else must not clear the task out from under them.
+    expect(taskAssigneeAfterDecision("rejected", "u1", "incumbent")).toBe(
+      "incumbent",
+    );
+  });
+
+  it("leaves an unassigned task unassigned on reject", () => {
     // Deliberately NOT the assigner: a lead routing twenty tasks should not
     // collect the declined ones on their own board.
-    expect(taskAssigneeAfterDecision("rejected", "u1")).toBeNull();
+    expect(taskAssigneeAfterDecision("rejected", "u1", null)).toBeNull();
   });
 });

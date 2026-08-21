@@ -93,6 +93,25 @@ async function getNotificationsFor(userId: string) {
     .where(eq(schema.notificationTable.userId, userId));
 }
 
+async function getActivitiesFor(taskId: string) {
+  return db
+    .select()
+    .from(schema.activityTable)
+    .where(eq(schema.activityTable.taskId, taskId));
+}
+
+// The activity event is published fire-and-forget from an EventEmitter
+// listener, so give its handler a turn to run before asserting on it.
+async function waitForActivity(taskId: string, type: string) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const activities = await getActivitiesFor(taskId);
+    const match = activities.find((a) => a.type === type);
+    if (match) return match;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`No "${type}" activity recorded for task ${taskId}`);
+}
+
 async function getMyTasks(
   app: ReturnType<typeof createApp>["app"],
   workspaceId: string,
@@ -518,5 +537,191 @@ describe("API integration: task assignment acceptance", () => {
       (p: { tasks: Array<{ id: string }> }) => p.tasks.map((t) => t.id),
     );
     expect(afterTaskIds).toContain(created.id);
+  });
+
+  it("rejecting a re-offer leaves an incumbent accepted assignee in place", async () => {
+    const owner = await createWorkspaceMember({ role: "owner" });
+    const incumbent = await createWorkspaceMember({ role: "member" });
+    const offeree = await createWorkspaceMember({ role: "member" });
+    await joinWorkspace(owner.workspace.id, incumbent.user.id);
+    await joinWorkspace(owner.workspace.id, offeree.user.id);
+
+    const { project } = await createProjectFixture({
+      workspaceId: owner.workspace.id,
+    });
+    await db.insert(schema.projectMemberTable).values([
+      { projectId: project.id, userId: incumbent.user.id, role: "member" },
+      { projectId: project.id, userId: offeree.user.id, role: "member" },
+    ]);
+
+    mockAuthenticatedSession(owner.user);
+    const { app } = createApp();
+
+    const created = await (await createTask(app, project.id)).json();
+
+    // The incumbent is offered the task and accepts it — they now own it.
+    await assignTask(app, created.id, incumbent.user.id);
+    const [firstOffer] = (await getAssignments(created.id)).filter(
+      (a) => a.status === "pending",
+    );
+    mockAuthenticatedSession(incumbent.user);
+    const accepted = await decidePendingTask(
+      app,
+      firstOffer.id,
+      owner.workspace.id,
+      "accepted",
+    );
+    expect(accepted.status).toBe(200);
+    expect((await getTaskRow(created.id)).userId).toBe(incumbent.user.id);
+
+    // The owner re-offers the same task to someone else while the incumbent
+    // still holds it. Per assignment-write.ts, the offer leaves task.userId
+    // untouched.
+    mockAuthenticatedSession(owner.user);
+    const reoffer = await assignTask(app, created.id, offeree.user.id);
+    expect(reoffer.status).toBe(200);
+    expect((await getTaskRow(created.id)).userId).toBe(incumbent.user.id);
+
+    const [secondOffer] = (await getAssignments(created.id)).filter(
+      (a) => a.status === "pending",
+    );
+    expect(secondOffer.toUserId).toBe(offeree.user.id);
+
+    // The offeree declines. The incumbent, who declined nothing, must keep
+    // the task.
+    mockAuthenticatedSession(offeree.user);
+    const rejected = await decidePendingTask(
+      app,
+      secondOffer.id,
+      owner.workspace.id,
+      "rejected",
+      "Not my area",
+    );
+    expect(rejected.status).toBe(200);
+
+    const task = await getTaskRow(created.id);
+    expect(task.userId).toBe(incumbent.user.id);
+
+    const rejectedAssignment = (await getAssignments(created.id)).find(
+      (a) => a.id === secondOffer.id,
+    );
+    expect(rejectedAssignment?.status).toBe("rejected");
+  });
+
+  it("rejecting an offer on a task that was unassigned leaves it unassigned", async () => {
+    const owner = await createWorkspaceMember({ role: "owner" });
+    const member = await createWorkspaceMember({ role: "member" });
+    await joinWorkspace(owner.workspace.id, member.user.id);
+
+    const { project } = await createProjectFixture({
+      workspaceId: owner.workspace.id,
+      memberUserId: member.user.id,
+    });
+
+    mockAuthenticatedSession(owner.user);
+    const { app } = createApp();
+
+    const created = await (await createTask(app, project.id)).json();
+    expect((await getTaskRow(created.id)).userId).toBeNull();
+
+    await assignTask(app, created.id, member.user.id);
+    const [pending] = await getAssignments(created.id);
+
+    mockAuthenticatedSession(member.user);
+    const response = await decidePendingTask(
+      app,
+      pending.id,
+      owner.workspace.id,
+      "rejected",
+      "Not this sprint",
+    );
+    expect(response.status).toBe(200);
+
+    const task = await getTaskRow(created.id);
+    expect(task.userId).toBeNull();
+  });
+
+  it("accepting attributes the activity to the assigner, not to the accepter as a self-assignment", async () => {
+    const owner = await createWorkspaceMember({ role: "owner" });
+    const member = await createWorkspaceMember({ role: "member" });
+    await joinWorkspace(owner.workspace.id, member.user.id);
+
+    const { project } = await createProjectFixture({
+      workspaceId: owner.workspace.id,
+      memberUserId: member.user.id,
+    });
+
+    mockAuthenticatedSession(owner.user);
+    const { app } = createApp();
+
+    const created = await (await createTask(app, project.id)).json();
+    await assignTask(app, created.id, member.user.id);
+    const [pending] = await getAssignments(created.id);
+
+    mockAuthenticatedSession(member.user);
+    const response = await decidePendingTask(
+      app,
+      pending.id,
+      owner.workspace.id,
+      "accepted",
+    );
+    expect(response.status).toBe(200);
+
+    const activity = await waitForActivity(created.id, "assignee_changed");
+    expect(activity.userId).toBe(owner.user.id);
+    const eventData = activity.eventData as {
+      isSelfAssigned: boolean;
+      newAssigneeId: string;
+    };
+    expect(eventData.isSelfAssigned).toBe(false);
+    expect(eventData.newAssigneeId).toBe(member.user.id);
+  });
+
+  it("accepting an assignment with no recorded assigner does not crash and does not invent one", async () => {
+    const owner = await createWorkspaceMember({ role: "owner" });
+    const member = await createWorkspaceMember({ role: "member" });
+    await joinWorkspace(owner.workspace.id, member.user.id);
+
+    const { project } = await createProjectFixture({
+      workspaceId: owner.workspace.id,
+      memberUserId: member.user.id,
+    });
+
+    mockAuthenticatedSession(owner.user);
+    const { app } = createApp();
+
+    const created = await (await createTask(app, project.id)).json();
+
+    // Simulate a grandfathered row: nobody recorded who assigned this work.
+    const [grandfathered] = await db
+      .insert(schema.taskAssignmentTable)
+      .values({
+        taskId: created.id,
+        fromUserId: null,
+        toUserId: member.user.id,
+        status: "pending",
+      })
+      .returning();
+
+    mockAuthenticatedSession(member.user);
+    const response = await decidePendingTask(
+      app,
+      grandfathered.id,
+      owner.workspace.id,
+      "accepted",
+    );
+    expect(response.status).toBe(200);
+
+    const task = await getTaskRow(created.id);
+    expect(task.userId).toBe(member.user.id);
+
+    const activity = await waitForActivity(created.id, "assignee_changed");
+    expect(activity.userId).toBeNull();
+    const eventData = activity.eventData as {
+      isSelfAssigned: boolean;
+      newAssigneeId: string;
+    };
+    expect(eventData.isSelfAssigned).toBe(false);
+    expect(eventData.newAssigneeId).toBe(member.user.id);
   });
 });
