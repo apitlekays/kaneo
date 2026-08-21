@@ -977,6 +977,9 @@ export const taskAssignmentTable = pgTable(
   (table) => [
     index("task_assignment_taskId_idx").on(table.taskId),
     index("task_assignment_toUserId_idx").on(table.toUserId),
+    uniqueIndex("task_assignment_one_pending_idx")
+      .on(table.taskId)
+      .where(sql`${table.status} = 'pending'`),
   ],
 );
 
@@ -2315,9 +2318,7 @@ export const letterMinuteUpdateTable = pgTable(
     body: text("body").notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
-  (table) => [
-    index("letter_minute_update_minuteId_idx").on(table.minuteId),
-  ],
+  (table) => [index("letter_minute_update_minuteId_idx").on(table.minuteId)],
 );
 
 export const letterAssignmentTable = pgTable(
