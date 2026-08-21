@@ -950,6 +950,36 @@ export const taskTable = pgTable(
   ],
 );
 
+export const taskAssignmentTable = pgTable(
+  "task_assignment",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => taskTable.id, { onDelete: "cascade" }),
+    // Null on rows created by the grandfathering backfill: nobody recorded
+    // who assigned that work, and inventing an assigner in a system that
+    // notifies them would be worse than admitting we do not know.
+    fromUserId: text("from_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    toUserId: text("to_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    // pending | accepted | rejected | superseded
+    status: text("status").notNull().default("pending"),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    decidedAt: timestamp("decided_at", { mode: "date" }),
+  },
+  (table) => [
+    index("task_assignment_taskId_idx").on(table.taskId),
+    index("task_assignment_toUserId_idx").on(table.toUserId),
+  ],
+);
+
 export const taskReminderSentTable = pgTable(
   "task_reminder_sent",
   {
