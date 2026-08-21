@@ -1,7 +1,14 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { HTTPException } from "hono/http-exception";
 import db from "../../database";
-import { taskTable, userTable } from "../../database/schema";
+import {
+  taskAssignmentTable,
+  taskTable,
+  userTable,
+} from "../../database/schema";
+
+const pendingAssigneeUserTable = alias(userTable, "pendingAssigneeUserTable");
 
 async function getTask(taskId: string) {
   const task = await db
@@ -20,9 +27,21 @@ async function getTask(taskId: string) {
       assigneeName: userTable.name,
       assigneeId: userTable.id,
       projectId: taskTable.projectId,
+      pendingAssigneeName: pendingAssigneeUserTable.name,
     })
     .from(taskTable)
     .leftJoin(userTable, eq(taskTable.userId, userTable.id))
+    .leftJoin(
+      taskAssignmentTable,
+      and(
+        eq(taskAssignmentTable.taskId, taskTable.id),
+        eq(taskAssignmentTable.status, "pending"),
+      ),
+    )
+    .leftJoin(
+      pendingAssigneeUserTable,
+      eq(taskAssignmentTable.toUserId, pendingAssigneeUserTable.id),
+    )
     .where(eq(taskTable.id, taskId))
     .limit(1);
 

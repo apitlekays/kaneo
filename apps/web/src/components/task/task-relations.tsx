@@ -39,6 +39,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import useCreateTaskRelation from "@/hooks/mutations/task-relation/use-create-task-relation";
 import useDeleteTaskRelation from "@/hooks/mutations/task-relation/use-delete-task-relation";
 import useGetProject from "@/hooks/queries/project/use-get-project";
@@ -258,6 +259,7 @@ export default function TaskRelations({
     assigneeId: item.task.userId,
     assigneeName: item.task.assigneeName,
     assigneeImage: "",
+    pendingAssigneeName: item.task.pendingAssigneeName ?? null,
     projectId: item.task.projectId,
   });
 
@@ -357,6 +359,12 @@ export default function TaskRelations({
                                   seed={item.task.userId}
                                   className="h-5 w-5 border border-border/30"
                                   fallbackClassName="text-[9px]"
+                                />
+                              ) : taskObj.pendingAssigneeName ? (
+                                <PendingAssigneeBadge
+                                  name={taskObj.pendingAssigneeName}
+                                  className="h-5 w-5"
+                                  iconClassName="h-2.5 w-2.5"
                                 />
                               ) : (
                                 <div

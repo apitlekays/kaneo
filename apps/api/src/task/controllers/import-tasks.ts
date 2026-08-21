@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import db from "../../database";
 import { columnTable, projectTable, taskTable } from "../../database/schema";
 import { publishEvent } from "../../events";
+import { writeTaskAssignment } from "../assignment-write";
 import {
   coercePriority,
   coerceStatus,
@@ -58,21 +59,54 @@ async function importTasks(
         ),
       });
 
-      const [createdTask] = await db
-        .insert(taskTable)
-        .values({
-          projectId,
-          userId: taskData.userId || null,
-          title: taskData.title,
-          status,
-          columnId: column?.id ?? null,
-          startDate: taskData.startDate ? new Date(taskData.startDate) : null,
-          dueDate: taskData.dueDate ? new Date(taskData.dueDate) : null,
-          description: taskData.description || "",
-          priority,
-          number: ++taskNumber,
-        })
-        .returning();
+      const importedAssigneeId = taskData.userId || null;
+
+      // Imported tasks go through the same assignment lifecycle as any other
+      // task: assigning them to someone other than the importer only offers
+      // the task (a `pending` row via writeTaskAssignment, task.userId left
+      // null) rather than granting it outright - the same "offer, don't
+      // grant" rule every other assignment path follows, even though it
+      // means a large import can fire one prompt per assigned task. The one
+      // exception is importing a task onto yourself: that auto-accepts, same
+      // as every other self-assignment, since nobody should be prompted to
+      // accept work they just imported onto themselves. A task imported with
+      // no assignee is unaffected either way.
+      const createdTask = await db.transaction(async (tx) => {
+        const [inserted] = await tx
+          .insert(taskTable)
+          .values({
+            projectId,
+            userId: null,
+            title: taskData.title,
+            status,
+            columnId: column?.id ?? null,
+            startDate: taskData.startDate ? new Date(taskData.startDate) : null,
+            dueDate: taskData.dueDate ? new Date(taskData.dueDate) : null,
+            description: taskData.description || "",
+            priority,
+            number: ++taskNumber,
+          })
+          .returning();
+
+        if (!inserted) {
+          return inserted;
+        }
+
+        if (importedAssigneeId) {
+          const assignmentResult = await writeTaskAssignment(tx, {
+            taskId: inserted.id,
+            existingAssigneeId: null,
+            nextAssigneeId: importedAssigneeId,
+            currentUserId: currentUserId ?? "",
+          });
+
+          if (assignmentResult.status === "applied" && assignmentResult.task) {
+            return assignmentResult.task;
+          }
+        }
+
+        return inserted;
+      });
 
       if (createdTask) {
         await publishEvent("task.created", {

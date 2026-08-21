@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "task_assignment_one_pending_idx" ON "task_assignment" USING btree ("task_id") WHERE "task_assignment"."status" = 'pending';

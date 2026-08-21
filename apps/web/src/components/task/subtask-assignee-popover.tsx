@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
+import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import {
   Popover,
   PopoverContent,
@@ -62,6 +63,12 @@ export default function SubtaskAssigneePopover({
   const allSameAssignee =
     tasks.length > 0 && tasks.every((t) => t.userId === tasks[0].userId);
   const currentAssignee = allSameAssignee ? tasks[0].userId : null;
+
+  const allSamePending =
+    tasks.length > 0 &&
+    tasks.every((t) => t.pendingAssigneeName === tasks[0].pendingAssigneeName);
+  const currentPendingName =
+    !currentAssignee && allSamePending ? tasks[0].pendingAssigneeName : null;
 
   const handleAssigneeChange = useCallback(
     async (newUserId: string) => {
@@ -139,18 +146,28 @@ export default function SubtaskAssigneePopover({
             className="w-full justify-start gap-2 h-8 px-2"
             onClick={() => handleAssigneeChange("")}
           >
-            <div
-              className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"
-              title={t("tasks:popover.assignee.unassigned")}
-            >
-              <span className="text-[10px] font-medium text-muted-foreground">
-                ?
-              </span>
-            </div>
+            {currentPendingName ? (
+              <PendingAssigneeBadge
+                name={currentPendingName}
+                className="w-6 h-6"
+                iconClassName="h-3 w-3"
+              />
+            ) : (
+              <div
+                className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"
+                title={t("tasks:popover.assignee.unassigned")}
+              >
+                <span className="text-[10px] font-medium text-muted-foreground">
+                  ?
+                </span>
+              </div>
+            )}
             <span className="text-sm">
-              {t("tasks:popover.assignee.unassigned")}
+              {currentPendingName
+                ? t("tasks:assignee.awaiting", { name: currentPendingName })
+                : t("tasks:popover.assignee.unassigned")}
             </span>
-            {allSameAssignee && !currentAssignee ? (
+            {allSameAssignee && !currentAssignee && !currentPendingName ? (
               <Check className="ml-auto h-4 w-4" />
             ) : (
               <ShortcutNumber number={1} />

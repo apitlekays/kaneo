@@ -4,6 +4,7 @@ import db from "../../database";
 import { projectTable, taskTable, userTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { canAccessProject } from "../../utils/project-access";
+import { writeTaskAssignment } from "../assignment-write";
 
 async function updateTaskAssignee({
   id,
@@ -25,9 +26,6 @@ async function updateTaskAssignee({
   }
 
   const nextAssigneeId = userId || null;
-  if (existingTask.userId === nextAssigneeId) {
-    return existingTask;
-  }
 
   // A user can only be assigned a task in a project they belong to.
   if (nextAssigneeId) {
@@ -50,17 +48,21 @@ async function updateTaskAssignee({
     }
   }
 
-  const [updatedTask] = await db
-    .update(taskTable)
-    .set({ userId: nextAssigneeId || null })
-    .where(eq(taskTable.id, id))
-    .returning();
+  const { status, task: writtenTask } = await db.transaction((tx) =>
+    writeTaskAssignment(tx, {
+      taskId: id,
+      existingAssigneeId: existingTask.userId,
+      nextAssigneeId,
+      currentUserId,
+    }),
+  );
 
-  if (!updatedTask) {
-    throw new HTTPException(500, {
-      message: "Failed to update task assignee",
-    });
+  if (status === "no-op") {
+    return existingTask;
   }
+
+  const resultTask =
+    status === "applied" && writtenTask ? writtenTask : existingTask;
 
   const newAssigneeName = userId
     ? (
@@ -74,28 +76,34 @@ async function updateTaskAssignee({
 
   if (!userId) {
     await publishEvent("task.unassigned", {
-      taskId: updatedTask.id,
-      projectId: updatedTask.projectId,
+      taskId: resultTask.id,
+      projectId: resultTask.projectId,
       userId: currentUserId,
-      title: updatedTask.title,
+      title: resultTask.title,
       type: "unassigned",
     });
 
-    return updatedTask;
+    return resultTask;
   }
 
-  await publishEvent("task.assignee_changed", {
-    taskId: updatedTask.id,
-    projectId: updatedTask.projectId,
-    userId: currentUserId,
-    oldAssignee: existingTask.userId,
-    newAssignee: newAssigneeName,
-    newAssigneeId: userId,
-    title: updatedTask.title,
-    type: "assignee_changed",
-  });
+  // The offer path does not announce "assigned to you" - the task is not
+  // the offeree's until they accept. That is where task.assignee_changed
+  // now fires instead (see pending-decision/providers/task.ts). Only the
+  // paths that take effect immediately (self-assignment) publish here.
+  if (status === "applied") {
+    await publishEvent("task.assignee_changed", {
+      taskId: resultTask.id,
+      projectId: resultTask.projectId,
+      userId: currentUserId,
+      oldAssignee: existingTask.userId,
+      newAssignee: newAssigneeName,
+      newAssigneeId: userId,
+      title: resultTask.title,
+      type: "assignee_changed",
+    });
+  }
 
-  return updatedTask;
+  return resultTask;
 }
 
 export default updateTaskAssignee;

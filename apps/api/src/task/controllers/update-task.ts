@@ -4,6 +4,7 @@ import db from "../../database";
 import { columnTable, taskTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { deleteOrphanedAssets } from "../../storage/cleanup-assets";
+import { writeTaskAssignment } from "../assignment-write";
 import { assertValidTaskStatus } from "../validate-task-fields";
 
 async function updateTask(
@@ -38,28 +39,73 @@ async function updateTask(
     ),
   });
 
-  const [updatedTask] = await db
-    .update(taskTable)
-    .set({
-      title,
-      status,
-      columnId: column?.id ?? null,
-      startDate: startDate || null,
-      dueDate: dueDate || null,
-      projectId,
-      description,
-      priority,
-      position,
-      userId: userId || null,
-    })
-    .where(eq(taskTable.id, id))
-    .returning();
+  const nextAssigneeId = userId || null;
 
-  if (!updatedTask) {
-    throw new HTTPException(500, {
-      message: "Failed to update task",
-    });
-  }
+  const updatedTask = await db.transaction(async (tx) => {
+    // The assignee is handled separately below: a full-object PUT that
+    // happens to change the assignee is still an assignment (offer vs.
+    // apply-immediately), and one that doesn't touch the assignee must not
+    // disturb a live pending offer or write a spurious assignment row.
+    const [updated] = await tx
+      .update(taskTable)
+      .set({
+        title,
+        status,
+        columnId: column?.id ?? null,
+        startDate: startDate || null,
+        dueDate: dueDate || null,
+        projectId,
+        description,
+        priority,
+        position,
+      })
+      .where(eq(taskTable.id, id))
+      .returning();
+
+    if (!updated) {
+      throw new HTTPException(500, {
+        message: "Failed to update task",
+      });
+    }
+
+    // A full-object PUT has no way to say "leave the assignee alone" - the
+    // client always echoes its last-known task.userId in this field, even
+    // when only editing e.g. the title. So unlike the dedicated assignee
+    // endpoint (where the same value is a deliberate reassignment worth
+    // re-checking against a live pending offer), here a same-value payload
+    // is only ever "untouched" and must be a hard no-op: it must not
+    // supersede a live pending offer, whose target this field cannot even
+    // represent (task.userId stays null while an offer is outstanding).
+    //
+    // Known residual gap (accepted trade-off, reviewed): a direct API caller
+    // that explicitly clears an already-null assignee (userId omitted/empty)
+    // on a task that currently has a live pending offer will also hit this
+    // same-value branch and silently leave that offer live. The bypass can't
+    // tell "field absent" (leave assignee alone) apart from "field explicitly
+    // null" (clear it) - both look identical here - so it can't distinguish
+    // that caller's explicit clear from the web client's routine echo of an
+    // untouched, already-unset assignee. Closing it would require the
+    // payload to carry that absent-vs-null distinction, which the web client
+    // has no way to express, so the gap is accepted and documented here
+    // rather than fixed in code.
+    if (nextAssigneeId === existingTask.userId) {
+      return updated;
+    }
+
+    const { status: assignmentStatus, task: assignedTask } =
+      await writeTaskAssignment(tx, {
+        taskId: id,
+        existingAssigneeId: existingTask.userId,
+        nextAssigneeId,
+        currentUserId: currentUserId ?? "",
+      });
+
+    if (assignmentStatus === "applied" && assignedTask) {
+      return { ...updated, userId: assignedTask.userId };
+    }
+
+    return updated;
+  });
 
   if (existingTask.status !== status) {
     await publishEvent("task.status_changed", {

@@ -9,6 +9,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { HTTPException } from "hono/http-exception";
 import db from "../../database";
 import {
@@ -16,9 +17,12 @@ import {
   externalLinkTable,
   labelTable,
   projectTable,
+  taskAssignmentTable,
   taskTable,
   userTable,
 } from "../../database/schema";
+
+const pendingAssigneeUserTable = alias(userTable, "pendingAssigneeUserTable");
 
 type GetTasksOptions = {
   assigneeId?: string;
@@ -136,6 +140,7 @@ async function getTasks(projectId: string, options: GetTasksOptions = {}) {
     assigneeId: userTable.id,
     assigneeImage: userTable.image,
     projectId: taskTable.projectId,
+    pendingAssigneeName: pendingAssigneeUserTable.name,
   };
 
   const query = db
@@ -143,6 +148,17 @@ async function getTasks(projectId: string, options: GetTasksOptions = {}) {
     .from(taskTable)
     .leftJoin(userTable, eq(taskTable.userId, userTable.id))
     .leftJoin(projectTable, eq(taskTable.projectId, projectTable.id))
+    .leftJoin(
+      taskAssignmentTable,
+      and(
+        eq(taskAssignmentTable.taskId, taskTable.id),
+        eq(taskAssignmentTable.status, "pending"),
+      ),
+    )
+    .leftJoin(
+      pendingAssigneeUserTable,
+      eq(taskAssignmentTable.toUserId, pendingAssigneeUserTable.id),
+    )
     .where(whereClause)
     .orderBy(orderByClause);
 

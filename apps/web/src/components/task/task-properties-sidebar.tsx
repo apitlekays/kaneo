@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { KbdSequence } from "@/components/ui/kbd";
+import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import {
   Tooltip,
   TooltipContent,
@@ -239,6 +240,12 @@ export default function TaskPropertiesSidebar({
                         className="h-[16px] w-[16px] flex-shrink-0 border border-border/30"
                         fallbackClassName="text-[9px]"
                       />
+                    ) : task.pendingAssigneeName ? (
+                      <PendingAssigneeBadge
+                        name={task.pendingAssigneeName}
+                        className="w-[16px] h-[16px] flex-shrink-0"
+                        iconClassName="h-[9px] w-[9px]"
+                      />
                     ) : (
                       <div
                         className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center flex-shrink-0"
@@ -250,7 +257,11 @@ export default function TaskPropertiesSidebar({
                     <span className="text-xs font-semibold truncate max-w-[100px]">
                       {assignee?.user?.name ||
                         task.assigneeName ||
-                        t("tasks:popover.assignee.unassigned")}
+                        (task.pendingAssigneeName
+                          ? t("tasks:popover.assignee.awaiting", {
+                              name: task.pendingAssigneeName,
+                            })
+                          : t("tasks:popover.assignee.unassigned"))}
                     </span>
                   </Button>
                 </TaskAssigneePopover>
@@ -425,6 +436,12 @@ export default function TaskPropertiesSidebar({
                           className="h-[16px] w-[16px] shrink-0 border border-border/30"
                           fallbackClassName="text-[9px]"
                         />
+                      ) : task.pendingAssigneeName ? (
+                        <PendingAssigneeBadge
+                          name={task.pendingAssigneeName}
+                          className="w-[16px] h-[16px] shrink-0"
+                          iconClassName="h-[9px] w-[9px]"
+                        />
                       ) : (
                         <div
                           className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center shrink-0"
@@ -436,7 +453,11 @@ export default function TaskPropertiesSidebar({
                       <span className="text-xs font-semibold truncate max-w-[100px]">
                         {assignee?.user?.name ||
                           task.assigneeName ||
-                          t("tasks:popover.assignee.unassigned")}
+                          (task.pendingAssigneeName
+                            ? t("tasks:popover.assignee.awaiting", {
+                                name: task.pendingAssigneeName,
+                              })
+                            : t("tasks:popover.assignee.unassigned"))}
                       </span>
                     </Button>
                   </TaskAssigneePopover>
@@ -614,6 +635,12 @@ export default function TaskPropertiesSidebar({
                           className="h-[16px] w-[16px] shrink-0 border border-border/30"
                           fallbackClassName="text-[9px]"
                         />
+                      ) : task.pendingAssigneeName ? (
+                        <PendingAssigneeBadge
+                          name={task.pendingAssigneeName}
+                          className="w-[16px] h-[16px] shrink-0"
+                          iconClassName="h-[9px] w-[9px]"
+                        />
                       ) : (
                         <div
                           className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center shrink-0"
@@ -625,7 +652,11 @@ export default function TaskPropertiesSidebar({
                       <span className="text-xs font-semibold truncate max-w-[100px]">
                         {assignee?.user?.name ||
                           task.assigneeName ||
-                          t("tasks:popover.assignee.unassigned")}
+                          (task.pendingAssigneeName
+                            ? t("tasks:popover.assignee.awaiting", {
+                                name: task.pendingAssigneeName,
+                              })
+                            : t("tasks:popover.assignee.unassigned"))}
                       </span>
                     </Button>
                   </TaskAssigneePopover>

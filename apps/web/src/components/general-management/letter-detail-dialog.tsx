@@ -8,7 +8,6 @@ import {
   ChevronUp,
   ClipboardList,
   Download,
-  FileText,
   Info,
   Link2,
   Loader2,
@@ -71,11 +70,13 @@ import { isPdfUpload } from "@/lib/is-pdf-upload";
 import { letterReference } from "@/lib/letter-reference";
 import { toast } from "@/lib/toast";
 import { urgencyBadge } from "@/lib/urgency";
+import { AttachmentRow } from "./attachment-row";
 import {
   type ExistingLink,
   LetterLinkPicker,
   type PendingLink,
 } from "./letter-link-picker";
+import { MinuteThread } from "./minute-thread";
 
 const STATUSES = [
   "captured",
@@ -171,6 +172,13 @@ function Body({
     enabled: !!workspaceId,
   });
   const isAdmin = access?.isAdmin ?? false;
+  // Mirrors the server's canPostMinuteUpdate gate (minute-access.ts): an
+  // officer with general-management page access, or the minute's own
+  // assignee, may post to a minute's update thread. `access.pages` already
+  // includes every slug when the caller is an admin, so this alone covers
+  // both the admin and the explicitly-granted-page cases.
+  const hasGeneralManagementAccess =
+    access?.pages?.includes("general-management") ?? false;
 
   return (
     <>
@@ -308,12 +316,14 @@ function Body({
         )}
         <DialogSidebarPanel value="minutes">
           <MinutesSection
+            workspaceId={workspaceId}
             letter={letter}
             m={m}
             users={users}
             userName={userName}
             currentUserId={currentUserId}
             isAdmin={isAdmin}
+            hasGeneralManagementAccess={hasGeneralManagementAccess}
           />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="routing">
@@ -344,7 +354,7 @@ function Body({
   );
 }
 
-type Mutations = ReturnType<typeof useLetterMutations>;
+export type Mutations = ReturnType<typeof useLetterMutations>;
 
 // Handling statuses the Main User may set; registry statuses stay GM-only.
 const ASSIGNEE_STATUS_OPTIONS = ["in-action", "awaiting-response"];
@@ -670,20 +680,24 @@ function OverviewSection({
   );
 }
 
-function MinutesSection({
+export function MinutesSection({
+  workspaceId,
   letter,
   m,
   users,
   userName,
   currentUserId,
   isAdmin,
+  hasGeneralManagementAccess,
 }: {
+  workspaceId: string;
   letter: LetterDetail;
   m: Mutations;
   users: { userId: string; user?: { name?: string } }[];
   userName: (id: string | null) => string;
   currentUserId: string;
   isAdmin: boolean;
+  hasGeneralManagementAccess: boolean;
 }) {
   const [body, setBody] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
@@ -699,10 +713,23 @@ function MinutesSection({
         )}
         {letter.minutes.map((minute) => {
           const isAction = Boolean(minute.assigneeId);
+          // Rejecting an action clears its assigneeId (so it stops showing
+          // up as an open action for anyone), which means `isAction` is
+          // always false for a declined minute. Track that case separately
+          // so its history — that it was delegated and declined, with the
+          // reason — still renders; who declined it is not recoverable once
+          // the assignee is cleared, so this deliberately doesn't try to
+          // show that.
+          const isDeclined = minute.acceptance === "rejected";
           const done = minute.status === "done";
+          // The server rejects completion of a still-pending action with a
+          // 409 (letters.ts's completeMinute route) — offering the control
+          // before acceptance just invites that error, so it must not
+          // render until acceptance has actually happened.
           const canComplete =
             isAction &&
             !done &&
+            minute.acceptance === "accepted" &&
             (isAdmin || minute.assigneeId === currentUserId);
           return (
             <div
@@ -714,24 +741,41 @@ function MinutesSection({
                 <span>{formatDateMedium(minute.createdAt)}</span>
               </div>
               <p className="whitespace-pre-wrap text-sm">{minute.body}</p>
-              {isAction && (
+              {(isAction || isDeclined) && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Badge className="flex items-center gap-1 border text-xs">
-                    <UserCheck className="h-3 w-3" />
-                    {userName(minute.assigneeId)}
-                  </Badge>
-                  <Badge
-                    variant={done ? "success" : "outline"}
-                    className="text-xs"
-                  >
-                    {done ? "Done" : "Open"}
-                  </Badge>
-                  {minute.dueAt && !done && (
+                  {isAction && (
+                    <Badge className="flex items-center gap-1 border text-xs">
+                      <UserCheck className="h-3 w-3" />
+                      {userName(minute.assigneeId)}
+                    </Badge>
+                  )}
+                  {isAction && minute.acceptance === "pending" && (
+                    <Badge variant="outline" className="text-xs">
+                      Awaiting acceptance
+                    </Badge>
+                  )}
+                  {isDeclined && (
+                    <Badge variant="destructive" className="text-xs">
+                      Delegated, then declined
+                      {minute.rejectionReason
+                        ? ` — ${minute.rejectionReason}`
+                        : ""}
+                    </Badge>
+                  )}
+                  {isAction && (
+                    <Badge
+                      variant={done ? "success" : "outline"}
+                      className="text-xs"
+                    >
+                      {done ? "Done" : "Open"}
+                    </Badge>
+                  )}
+                  {isAction && minute.dueAt && !done && (
                     <span className="text-muted-foreground text-xs">
                       Due {formatDateMedium(minute.dueAt)}
                     </span>
                   )}
-                  {done && minute.completedAt && (
+                  {isAction && done && minute.completedAt && (
                     <span className="text-muted-foreground text-xs">
                       Completed {formatDateMedium(minute.completedAt)}
                     </span>
@@ -750,6 +794,16 @@ function MinutesSection({
                   )}
                 </div>
               )}
+              <MinuteThread
+                workspaceId={workspaceId}
+                letterId={letter.id}
+                minute={minute}
+                canPost={
+                  hasGeneralManagementAccess ||
+                  minute.assigneeId === currentUserId
+                }
+                attachments={letter.attachments}
+              />
             </div>
           );
         })}
@@ -1089,43 +1143,36 @@ function AttachmentsSection({
           const isPdf = att.mimeType === "application/pdf";
           const open = previewing === att.id;
           return (
-            <div
+            <AttachmentRow
               key={att.id}
-              className="rounded-md border border-border text-sm"
-            >
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  {att.filename}
-                  {att.id === letter.primaryAttachmentId && (
-                    <Badge className="border text-xs">primary</Badge>
-                  )}
-                </span>
-                <span className="flex items-center gap-3">
-                  {isPdf && (
-                    <button
-                      type="button"
-                      onClick={() => setPreviewing(open ? null : att.id)}
-                      className="text-muted-foreground hover:text-foreground"
-                      title={open ? "Hide preview" : "Preview"}
-                    >
-                      {open ? (
-                        <ChevronUp className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
-                    </button>
-                  )}
-                  <a
-                    href={attachmentDownloadUrl(workspaceId, letter.id, att.id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+              attachment={att}
+              downloadHref={attachmentDownloadUrl(
+                workspaceId,
+                letter.id,
+                att.id,
+              )}
+              badge={
+                att.id === letter.primaryAttachmentId ? (
+                  <Badge className="border text-xs">primary</Badge>
+                ) : undefined
+              }
+              trailing={
+                isPdf ? (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewing(open ? null : att.id)}
                     className="text-muted-foreground hover:text-foreground"
+                    title={open ? "Hide preview" : "Preview"}
                   >
-                    <Download className="h-4 w-4" />
-                  </a>
-                </span>
-              </div>
+                    {open ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </button>
+                ) : undefined
+              }
+            >
               {isPdf && open && (
                 <iframe
                   title={att.filename}
@@ -1133,7 +1180,7 @@ function AttachmentsSection({
                   className="h-[60vh] w-full border-border border-t"
                 />
               )}
-            </div>
+            </AttachmentRow>
           );
         })}
       </div>

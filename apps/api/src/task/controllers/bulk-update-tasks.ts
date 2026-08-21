@@ -9,6 +9,7 @@ import {
   workspaceUserTable,
 } from "../../database/schema";
 import { publishEvent } from "../../events";
+import { writeTaskAssignment } from "../assignment-write";
 import {
   assertValidPriority,
   assertValidTaskStatus,
@@ -39,6 +40,7 @@ async function bulkUpdateTasks({
       id: taskTable.id,
       projectId: taskTable.projectId,
       workspaceId: projectTable.workspaceId,
+      userId: taskTable.userId,
     })
     .from(taskTable)
     .innerJoin(projectTable, eq(taskTable.projectId, projectTable.id))
@@ -158,14 +160,41 @@ async function bulkUpdateTasks({
     }
 
     case "updateAssignee": {
-      const result = await db
-        .update(taskTable)
-        .set({ userId: value || null })
-        .where(inArray(taskTable.id, foundIds));
+      const nextAssigneeId = value || null;
 
-      updatedCount = result.rowCount ?? foundIds.length;
+      const statuses = await db.transaction(async (tx) => {
+        const perTaskStatus = new Map<
+          string,
+          "no-op" | "offered" | "applied"
+        >();
+        for (const task of tasks) {
+          const { status } = await writeTaskAssignment(tx, {
+            taskId: task.id,
+            existingAssigneeId: task.userId,
+            nextAssigneeId,
+            currentUserId: userId,
+          });
+          perTaskStatus.set(task.id, status);
+        }
+        return perTaskStatus;
+      });
+
+      updatedCount = [...statuses.values()].filter((s) => s !== "no-op").length;
 
       for (const task of tasks) {
+        const status = statuses.get(task.id);
+        if (status === "no-op") {
+          continue;
+        }
+
+        // The offer path does not announce "assigned to you" - the task is
+        // not the offeree's until they accept (see assignment-write.ts and
+        // pending-decision/providers/task.ts, which fires this event on
+        // acceptance instead).
+        if (status === "offered") {
+          continue;
+        }
+
         const eventType = value ? "task.assignee_changed" : "task.unassigned";
         await publishEvent(eventType, {
           taskId: task.id,

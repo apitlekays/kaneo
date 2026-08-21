@@ -56,12 +56,20 @@ export type Letter = {
 export type LetterAttachment = {
   id: string;
   letterId: string;
+  minuteUpdateId: string | null;
   objectKey: string;
   filename: string;
   mimeType: string;
   size: number;
   sha256: string | null;
   kind: string;
+  createdAt: string;
+};
+export type MinuteUpdate = {
+  id: string;
+  minuteId: string;
+  authorId: string | null;
+  body: string;
   createdAt: string;
 };
 export type LetterMinute = {
@@ -73,9 +81,12 @@ export type LetterMinute = {
   assigneeId: string | null;
   dueAt: string | null;
   status: string;
+  acceptance: string;
+  rejectionReason: string | null;
   completedAt: string | null;
   completedBy: string | null;
   createdAt: string;
+  updates: MinuteUpdate[];
 };
 export type LetterAssignment = {
   id: string;
@@ -301,6 +312,18 @@ export const addMinute = (workspaceId: string, id: string, body: object) =>
 
 export const completeMinute = (workspaceId: string, id: string, mid: string) =>
   post<LetterMinute>(`letters/${id}/minutes/${mid}/complete`, workspaceId, {});
+
+export const addMinuteUpdate = (
+  workspaceId: string,
+  letterId: string,
+  minuteId: string,
+  body: string,
+) =>
+  post<MinuteUpdate>(
+    `letters/${letterId}/minutes/${minuteId}/updates`,
+    workspaceId,
+    { body },
+  );
 
 export type PendingAssignment = {
   id: string;
@@ -535,7 +558,15 @@ export type PresignResult = {
 export const presignAttachment = (
   workspaceId: string,
   id: string,
-  body: { filename: string; contentType: string; kind?: string },
+  body: {
+    filename: string;
+    contentType: string;
+    kind?: string;
+    /** Set when the file is attached while posting a minute update — the
+     * server records it on the attachment row so it appears both inline in
+     * the minute thread and in the letter's Attachments tab. */
+    minuteUpdateId?: string;
+  },
 ) =>
   post<PresignResult>(`letters/${id}/attachments/presign`, workspaceId, body);
 
@@ -548,6 +579,7 @@ export const finalizeAttachment = (
     mimeType: string;
     size: number;
     kind?: string;
+    minuteUpdateId?: string;
   },
 ) =>
   post<LetterAttachment>(
@@ -573,12 +605,21 @@ export const attachmentPreviewUrl = (
     `letters/${id}/attachments/${aid}/download?workspaceId=${workspaceId}&preview=true`,
   );
 
-/** Presign → direct PUT to storage → finalize. */
+/**
+ * Presign → direct PUT to storage → finalize.
+ *
+ * `minuteUpdateId` is optional and only relevant when the file is attached
+ * while posting a minute update — it must be threaded through both the
+ * presign and finalize calls (the server's `assertCanAttach` gate and the
+ * attachment row both key off it). Omitted, this is an ordinary
+ * general-attachment upload, unchanged.
+ */
 export async function uploadLetterAttachment(
   workspaceId: string,
   letterId: string,
   file: File,
   kind = "original",
+  minuteUpdateId?: string,
 ): Promise<LetterAttachment> {
   if (!isPdfUpload(file)) {
     throw new Error("Only PDF files can be attached to a letter");
@@ -588,6 +629,7 @@ export async function uploadLetterAttachment(
     filename: file.name,
     contentType,
     kind,
+    minuteUpdateId,
   });
   const put = await fetch(presign.uploadUrl, {
     method: "PUT",
@@ -601,5 +643,6 @@ export async function uploadLetterAttachment(
     mimeType: contentType,
     size: file.size,
     kind,
+    minuteUpdateId,
   });
 }

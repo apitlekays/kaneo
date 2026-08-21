@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
+import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import { useDeleteTask } from "@/hooks/mutations/task/use-delete-task";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
@@ -204,6 +205,12 @@ export default function BacklogTaskRow({ task }: BacklogTaskRowProps) {
                     seed={task.userId}
                     className="h-6 w-6 border border-border/30"
                     fallbackClassName="text-xs"
+                  />
+                ) : task.pendingAssigneeName ? (
+                  <PendingAssigneeBadge
+                    name={task.pendingAssigneeName}
+                    className="h-6 w-6"
+                    iconClassName="h-3 w-3"
                   />
                 ) : (
                   <div

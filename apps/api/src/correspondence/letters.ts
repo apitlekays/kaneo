@@ -29,6 +29,7 @@ import {
   letterAttachmentTable,
   letterLinkTable,
   letterMinuteTable,
+  letterMinuteUpdateTable,
   letterTable,
   workspaceUserTable,
 } from "../database/schema";
@@ -58,6 +59,7 @@ import {
   SEALED_LETTER_STATUSES,
 } from "./letter-list-filter";
 import { walkThread } from "./letter-thread";
+import { canPostMinuteUpdate } from "./minute-access";
 import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
 import { letterUrgencySchema } from "./register-fields";
@@ -196,6 +198,56 @@ async function resolveLetterAccess(
     participant = Boolean(mn);
   }
   return { hasPage: false, canView: participant, canMinute: isAssignee };
+}
+
+/**
+ * Attachment gate shared by presign and finalize. With no `minuteUpdateId`,
+ * this is the ONLY branch that grants access, and it grants it on
+ * `hasPage` alone — exactly today's behaviour for an ordinary attachment,
+ * unchanged. With a `minuteUpdateId`, the update must belong to a minute on
+ * this letter (404 otherwise), and only that minute's assignee or a GM
+ * officer may attach to it.
+ */
+async function assertCanAttach(
+  userId: string,
+  workspaceId: string,
+  letter: { id: string; currentAssigneeId: string | null },
+  minuteUpdateId: string | undefined,
+): Promise<void> {
+  if (!minuteUpdateId) {
+    if (!(await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG)))
+      throw new HTTPException(403, {
+        message: "You don't have access to this page",
+      });
+    return;
+  }
+  const [row] = await db
+    .select({ minuteAssigneeId: letterMinuteTable.assigneeId })
+    .from(letterMinuteUpdateTable)
+    .innerJoin(
+      letterMinuteTable,
+      eq(letterMinuteTable.id, letterMinuteUpdateTable.minuteId),
+    )
+    .where(
+      and(
+        eq(letterMinuteUpdateTable.id, minuteUpdateId),
+        eq(letterMinuteTable.letterId, letter.id),
+      ),
+    )
+    .limit(1);
+  if (!row) throw new HTTPException(404, { message: "Not found" });
+  const access = await resolveLetterAccess(userId, workspaceId, letter);
+  if (
+    !canPostMinuteUpdate({
+      userId,
+      hasPageAccess: access.hasPage,
+      minuteAssigneeId: row.minuteAssigneeId,
+    })
+  )
+    throw new HTTPException(403, {
+      message:
+        "Only the action's assignee or a GM officer can attach files here",
+    });
 }
 
 /** Notify a user that a letter is awaiting their inspection (Main User). */
@@ -405,7 +457,9 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             ),
           )
           .orderBy(desc(letterTable.createdAt));
-        // Open actions delegated to me via a minute.
+        // Open actions delegated to me via a minute. A pending action isn't
+        // mine to work on until I accept it — it belongs in the pending-
+        // decision queue, not here.
         const actions = await db
           .select({
             id: letterMinuteTable.id,
@@ -427,6 +481,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               eq(letterTable.workspaceId, ws),
               eq(letterMinuteTable.assigneeId, userId),
               eq(letterMinuteTable.status, "open"),
+              eq(letterMinuteTable.acceptance, "accepted"),
             ),
           )
           .orderBy(
@@ -511,6 +566,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             )
           : rows;
         // Delegated-action progress per letter (minutes with an assignee).
+        // A pending action isn't yet anyone's work — it must not count
+        // toward either total until its assignee accepts it.
         const counts = await db
           .select({
             letterId: letterMinuteTable.letterId,
@@ -526,6 +583,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             and(
               eq(letterTable.workspaceId, ws),
               isNotNull(letterMinuteTable.assigneeId),
+              eq(letterMinuteTable.acceptance, "accepted"),
             ),
           )
           .groupBy(letterMinuteTable.letterId);
@@ -833,12 +891,32 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           ...outboundLinks.map((l) => ({ ...l, outbound: true })),
           ...inboundLinks.map((l) => ({ ...l, outbound: false })),
         ];
+        // Every update for this letter's minutes, one query — merged in JS
+        // rather than a per-minute subquery.
+        const minuteIds = minutes.map((m) => m.id);
+        const updates = minuteIds.length
+          ? await db
+              .select()
+              .from(letterMinuteUpdateTable)
+              .where(inArray(letterMinuteUpdateTable.minuteId, minuteIds))
+              .orderBy(asc(letterMinuteUpdateTable.createdAt))
+          : [];
+        const updatesByMinuteId = new Map<string, Row[]>();
+        for (const u of updates) {
+          const list = updatesByMinuteId.get(u.minuteId) ?? [];
+          list.push(u);
+          updatesByMinuteId.set(u.minuteId, list);
+        }
+        const minutesWithUpdates = minutes.map((m) => ({
+          ...m,
+          updates: updatesByMinuteId.get(m.id) ?? [],
+        }));
         const outgoing = await loadOutgoingDetail(id);
         const lifecycle = await loadLifecycleDetail(id);
         return c.json({
           ...letter,
           attachments,
-          minutes,
+          minutes: minutesWithUpdates,
           assignments,
           links,
           ...outgoing,
@@ -1348,6 +1426,10 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               assigneeId,
               dueAt: assigneeId ? toDate(b.dueAt) : null,
               status: "open",
+              // Self-delegation is auto-accepted — asking someone to accept
+              // work they just gave themselves is ceremony with no reader.
+              acceptance:
+                assigneeId && assigneeId !== userId ? "pending" : "accepted",
             })
             .returning();
           await recordAuditEvent(tx, {
@@ -1405,6 +1487,13 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           });
         if (minute.status === "done")
           throw new HTTPException(409, { message: "Action already completed" });
+        // A pending action isn't accepted work yet — it must be decided
+        // before it can be marked done, or the assignee could skip the
+        // accept/reject step entirely.
+        if (minute.acceptance === "pending")
+          throw new HTTPException(409, {
+            message: "This action must be accepted before it can be completed",
+          });
         const now = new Date();
         const updated = await db.transaction(async (tx) => {
           const [row] = await tx
@@ -1452,6 +1541,75 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           }).catch(() => {});
         }
         return c.json(updated);
+      },
+    )
+    // ── Minute update thread (append-only work log on a delegated action) ─────
+    .post(
+      "/letters/:id/minutes/:mid/updates",
+      describeRoute({
+        operationId: "addMinuteUpdate",
+        tags: ["Correspondence"],
+        description: "Append an update to a delegated action's thread",
+      }),
+      validator("param", v.object({ id: v.string(), mid: v.string() })),
+      validator(
+        "json",
+        v.object({ workspaceId: v.string(), body: v.string() }),
+      ),
+      workspaceAccess.fromBody("workspaceId"),
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
+        const { id, mid } = c.req.valid("param");
+        const b = c.req.valid("json");
+        const body = b.body.trim();
+        if (!body)
+          throw new HTTPException(400, { message: "Update body required" });
+        const letter = await loadLetter(ws, id);
+        if (!letter) throw new HTTPException(404, { message: "Not found" });
+        const [minute] = await db
+          .select({
+            id: letterMinuteTable.id,
+            assigneeId: letterMinuteTable.assigneeId,
+          })
+          .from(letterMinuteTable)
+          .where(
+            and(
+              eq(letterMinuteTable.id, mid),
+              eq(letterMinuteTable.letterId, id),
+            ),
+          )
+          .limit(1);
+        if (!minute) throw new HTTPException(404, { message: "Not found" });
+        const access = await resolveLetterAccess(userId, ws, letter);
+        if (
+          !canPostMinuteUpdate({
+            userId,
+            hasPageAccess: access.hasPage,
+            minuteAssigneeId: minute.assigneeId,
+          })
+        )
+          throw new HTTPException(403, {
+            message: "Only the action's assignee or a GM officer can post here",
+          });
+        const created = await db.transaction(async (tx) => {
+          const [row] = await tx
+            .insert(letterMinuteUpdateTable)
+            .values({ minuteId: mid, authorId: userId, body })
+            .returning();
+          const inserted = row as Row;
+          await recordAuditEvent(tx, {
+            workspaceId: ws,
+            entityType: "letter",
+            entityId: id,
+            action: "minute-update",
+            actorId: userId,
+            after: { minuteId: mid, updateId: inserted.id, body },
+            ip: getIp(c),
+          });
+          return inserted;
+        });
+        return c.json(created, 201);
       },
     )
     // ── Status transition ─────────────────────────────────────────────────────
@@ -1585,16 +1743,18 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           filename: v.string(),
           contentType: v.string(),
           kind: v.optional(v.string()),
+          minuteUpdateId: optStr,
         }),
       ),
       workspaceAccess.fromBody("workspaceId"),
-      pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
         const { id } = c.req.valid("param");
         const b = c.req.valid("json");
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
+        await assertCanAttach(userId, ws, letter, b.minuteUpdateId);
         const presigned = await createLetterFileUploadUrl({
           workspaceId: ws,
           letterId: id,
@@ -1618,10 +1778,10 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           mimeType: v.string(),
           size: v.number(),
           kind: v.optional(v.string()),
+          minuteUpdateId: optStr,
         }),
       ),
       workspaceAccess.fromBody("workspaceId"),
-      pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
         const userId = c.get("userId") as string;
@@ -1629,6 +1789,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const b = c.req.valid("json");
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
+        await assertCanAttach(userId, ws, letter, b.minuteUpdateId);
         if (
           b.objectKey.includes("..") ||
           !b.objectKey.includes(letterFileKeyOwnerSegment(ws, id))
@@ -1645,6 +1806,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               mimeType: b.mimeType,
               size: b.size,
               kind: b.kind ?? "original",
+              minuteUpdateId: b.minuteUpdateId ?? null,
               createdBy: userId,
             })
             .returning();

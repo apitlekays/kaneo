@@ -950,6 +950,39 @@ export const taskTable = pgTable(
   ],
 );
 
+export const taskAssignmentTable = pgTable(
+  "task_assignment",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => taskTable.id, { onDelete: "cascade" }),
+    // Null on rows created by the grandfathering backfill: nobody recorded
+    // who assigned that work, and inventing an assigner in a system that
+    // notifies them would be worse than admitting we do not know.
+    fromUserId: text("from_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    toUserId: text("to_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    // pending | accepted | rejected | superseded
+    status: text("status").notNull().default("pending"),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    decidedAt: timestamp("decided_at", { mode: "date" }),
+  },
+  (table) => [
+    index("task_assignment_taskId_idx").on(table.taskId),
+    index("task_assignment_toUserId_idx").on(table.toUserId),
+    uniqueIndex("task_assignment_one_pending_idx")
+      .on(table.taskId)
+      .where(sql`${table.status} = 'pending'`),
+  ],
+);
+
 export const taskReminderSentTable = pgTable(
   "task_reminder_sent",
   {
@@ -2209,6 +2242,9 @@ export const letterAttachmentTable = pgTable(
     letterId: text("letter_id")
       .notNull()
       .references(() => letterTable.id, { onDelete: "cascade" }),
+    // Set when this file was uploaded as part of a minute update. The file is
+    // still the letter's attachment — this only records where it came from.
+    minuteUpdateId: text("minute_update_id"),
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaceTable.id, { onDelete: "cascade" }),
@@ -2250,6 +2286,11 @@ export const letterMinuteTable = pgTable(
     dueAt: timestamp("due_at", { mode: "date" }),
     // open | done | cancelled — only meaningful when assigneeId is set.
     status: text("status").notNull().default("open"),
+    // pending | accepted | rejected. Only meaningful when assigneeId is set.
+    // Defaults to accepted so every action delegated before this column
+    // existed is grandfathered without a backfill statement to get wrong.
+    acceptance: text("acceptance").notNull().default("accepted"),
+    rejectionReason: text("rejection_reason"),
     completedAt: timestamp("completed_at", { mode: "date" }),
     completedBy: text("completed_by").references(() => userTable.id, {
       onDelete: "set null",
@@ -2260,6 +2301,24 @@ export const letterMinuteTable = pgTable(
     index("letter_minute_letterId_idx").on(table.letterId),
     index("letter_minute_assigneeId_idx").on(table.assigneeId),
   ],
+);
+
+export const letterMinuteUpdateTable = pgTable(
+  "letter_minute_update",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    minuteId: text("minute_id")
+      .notNull()
+      .references(() => letterMinuteTable.id, { onDelete: "cascade" }),
+    authorId: text("author_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("letter_minute_update_minuteId_idx").on(table.minuteId)],
 );
 
 export const letterAssignmentTable = pgTable(
