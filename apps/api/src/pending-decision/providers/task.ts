@@ -21,6 +21,7 @@ import type { PendingDecisionItem, PendingDecisionProvider } from "../types";
 type TaskAssignmentRow = {
   id: string;
   taskId: string;
+  projectId: string;
   title: string;
   taskNumber: number | null;
   projectName: string;
@@ -28,8 +29,16 @@ type TaskAssignmentRow = {
   createdAt: Date;
 };
 
-/** Pure row-to-item mapper, extracted so it can be tested without a database. */
-export function toPendingItem(row: TaskAssignmentRow): PendingDecisionItem {
+/**
+ * Pure row-to-item mapper, extracted so it can be tested without a database.
+ * `workspaceId` isn't a column on the assignment/task/project join — it's
+ * the caller's context — so it's threaded through as a second argument
+ * rather than folded into the row.
+ */
+export function toPendingItem(
+  row: TaskAssignmentRow,
+  workspaceId: string,
+): PendingDecisionItem {
   return {
     source: "task",
     id: row.id,
@@ -39,7 +48,9 @@ export function toPendingItem(row: TaskAssignmentRow): PendingDecisionItem {
         : row.title,
     subtitle: row.title,
     context: [`Project: ${row.projectName}`],
-    href: `/dashboard/tasks/${row.projectSlug}/${row.taskId}`,
+    // Must match the real route file:
+    // apps/web/src/routes/.../dashboard/workspace/$workspaceId/project/$projectId/task/$taskId_.tsx
+    href: `/dashboard/workspace/${workspaceId}/project/${row.projectId}/task/${row.taskId}`,
     createdAt: row.createdAt,
     requiresReason: true,
   };
@@ -62,6 +73,7 @@ export const taskProvider: PendingDecisionProvider = {
       .select({
         id: taskAssignmentTable.id,
         taskId: taskAssignmentTable.taskId,
+        projectId: taskTable.projectId,
         title: taskTable.title,
         taskNumber: taskTable.number,
         projectName: projectTable.name,
@@ -83,7 +95,7 @@ export const taskProvider: PendingDecisionProvider = {
       )
       .orderBy(desc(taskAssignmentTable.createdAt));
 
-    return rows.map(toPendingItem);
+    return rows.map((row) => toPendingItem(row, workspaceId));
   },
 
   async decide({ userId, workspaceId, id, decision, reason }) {
