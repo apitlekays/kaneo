@@ -1535,6 +1535,7 @@
 		"popover": {
 			"assignee": {
 				"unassigned": "Unassigned",
+				"awaiting": "Awaiting {{name}}",
 				"updateError": "Failed to update task assignee"
 			},
 			"status": {
@@ -1681,7 +1682,8 @@
 		},
 		"assignee": {
 			"label": "Assignee",
-			"unassigned": "Unassigned"
+			"unassigned": "Unassigned",
+			"awaiting": "Awaiting {{name}}"
 		},
 		"dueDate": {
 			"label": "Due date",

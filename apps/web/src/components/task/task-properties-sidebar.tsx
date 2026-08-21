@@ -3,6 +3,7 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarX,
+  Clock,
   Copy,
   GitBranch,
   Plus,
@@ -239,6 +240,18 @@ export default function TaskPropertiesSidebar({
                         className="h-[16px] w-[16px] flex-shrink-0 border border-border/30"
                         fallbackClassName="text-[9px]"
                       />
+                    ) : task.pendingAssigneeName ? (
+                      // Awaiting acceptance: not a ColoredAvatar — the task
+                      // isn't theirs until they accept, so this must not
+                      // read as a real assignee.
+                      <div
+                        className="w-[16px] h-[16px] rounded-full bg-warning/10 border border-dashed border-warning-foreground/50 flex items-center justify-center flex-shrink-0"
+                        title={t("tasks:popover.assignee.awaiting", {
+                          name: task.pendingAssigneeName,
+                        })}
+                      >
+                        <Clock className="h-[9px] w-[9px] text-warning-foreground" />
+                      </div>
                     ) : (
                       <div
                         className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center flex-shrink-0"
@@ -250,7 +263,11 @@ export default function TaskPropertiesSidebar({
                     <span className="text-xs font-semibold truncate max-w-[100px]">
                       {assignee?.user?.name ||
                         task.assigneeName ||
-                        t("tasks:popover.assignee.unassigned")}
+                        (task.pendingAssigneeName
+                          ? t("tasks:popover.assignee.awaiting", {
+                              name: task.pendingAssigneeName,
+                            })
+                          : t("tasks:popover.assignee.unassigned"))}
                     </span>
                   </Button>
                 </TaskAssigneePopover>
@@ -425,6 +442,18 @@ export default function TaskPropertiesSidebar({
                           className="h-[16px] w-[16px] shrink-0 border border-border/30"
                           fallbackClassName="text-[9px]"
                         />
+                      ) : task.pendingAssigneeName ? (
+                        // Awaiting acceptance: not a ColoredAvatar — the task
+                        // isn't theirs until they accept, so this must not
+                        // read as a real assignee.
+                        <div
+                          className="w-[16px] h-[16px] rounded-full bg-warning/10 border border-dashed border-warning-foreground/50 flex items-center justify-center shrink-0"
+                          title={t("tasks:popover.assignee.awaiting", {
+                            name: task.pendingAssigneeName,
+                          })}
+                        >
+                          <Clock className="h-[9px] w-[9px] text-warning-foreground" />
+                        </div>
                       ) : (
                         <div
                           className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center shrink-0"
@@ -436,7 +465,11 @@ export default function TaskPropertiesSidebar({
                       <span className="text-xs font-semibold truncate max-w-[100px]">
                         {assignee?.user?.name ||
                           task.assigneeName ||
-                          t("tasks:popover.assignee.unassigned")}
+                          (task.pendingAssigneeName
+                            ? t("tasks:popover.assignee.awaiting", {
+                                name: task.pendingAssigneeName,
+                              })
+                            : t("tasks:popover.assignee.unassigned"))}
                       </span>
                     </Button>
                   </TaskAssigneePopover>
@@ -614,6 +647,18 @@ export default function TaskPropertiesSidebar({
                           className="h-[16px] w-[16px] shrink-0 border border-border/30"
                           fallbackClassName="text-[9px]"
                         />
+                      ) : task.pendingAssigneeName ? (
+                        // Awaiting acceptance: not a ColoredAvatar — the task
+                        // isn't theirs until they accept, so this must not
+                        // read as a real assignee.
+                        <div
+                          className="w-[16px] h-[16px] rounded-full bg-warning/10 border border-dashed border-warning-foreground/50 flex items-center justify-center shrink-0"
+                          title={t("tasks:popover.assignee.awaiting", {
+                            name: task.pendingAssigneeName,
+                          })}
+                        >
+                          <Clock className="h-[9px] w-[9px] text-warning-foreground" />
+                        </div>
                       ) : (
                         <div
                           className="w-[16px] h-[16px] rounded-full bg-muted border border-border flex items-center justify-center shrink-0"
@@ -625,7 +670,11 @@ export default function TaskPropertiesSidebar({
                       <span className="text-xs font-semibold truncate max-w-[100px]">
                         {assignee?.user?.name ||
                           task.assigneeName ||
-                          t("tasks:popover.assignee.unassigned")}
+                          (task.pendingAssigneeName
+                            ? t("tasks:popover.assignee.awaiting", {
+                                name: task.pendingAssigneeName,
+                              })
+                            : t("tasks:popover.assignee.unassigned"))}
                       </span>
                     </Button>
                   </TaskAssigneePopover>
