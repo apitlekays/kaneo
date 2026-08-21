@@ -70,12 +70,13 @@ import { isPdfUpload } from "@/lib/is-pdf-upload";
 import { letterReference } from "@/lib/letter-reference";
 import { toast } from "@/lib/toast";
 import { urgencyBadge } from "@/lib/urgency";
+import { AttachmentRow } from "./attachment-row";
 import {
   type ExistingLink,
   LetterLinkPicker,
   type PendingLink,
 } from "./letter-link-picker";
-import { AttachmentRow, MinuteThread } from "./minute-thread";
+import { MinuteThread } from "./minute-thread";
 
 const STATUSES = [
   "captured",
@@ -171,6 +172,13 @@ function Body({
     enabled: !!workspaceId,
   });
   const isAdmin = access?.isAdmin ?? false;
+  // Mirrors the server's canPostMinuteUpdate gate (minute-access.ts): an
+  // officer with general-management page access, or the minute's own
+  // assignee, may post to a minute's update thread. `access.pages` already
+  // includes every slug when the caller is an admin, so this alone covers
+  // both the admin and the explicitly-granted-page cases.
+  const hasGeneralManagementAccess =
+    access?.pages?.includes("general-management") ?? false;
 
   return (
     <>
@@ -315,6 +323,7 @@ function Body({
             userName={userName}
             currentUserId={currentUserId}
             isAdmin={isAdmin}
+            hasGeneralManagementAccess={hasGeneralManagementAccess}
           />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="routing">
@@ -345,7 +354,7 @@ function Body({
   );
 }
 
-type Mutations = ReturnType<typeof useLetterMutations>;
+export type Mutations = ReturnType<typeof useLetterMutations>;
 
 // Handling statuses the Main User may set; registry statuses stay GM-only.
 const ASSIGNEE_STATUS_OPTIONS = ["in-action", "awaiting-response"];
@@ -671,7 +680,7 @@ function OverviewSection({
   );
 }
 
-function MinutesSection({
+export function MinutesSection({
   workspaceId,
   letter,
   m,
@@ -679,6 +688,7 @@ function MinutesSection({
   userName,
   currentUserId,
   isAdmin,
+  hasGeneralManagementAccess,
 }: {
   workspaceId: string;
   letter: LetterDetail;
@@ -687,6 +697,7 @@ function MinutesSection({
   userName: (id: string | null) => string;
   currentUserId: string;
   isAdmin: boolean;
+  hasGeneralManagementAccess: boolean;
 }) {
   const [body, setBody] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
@@ -702,6 +713,14 @@ function MinutesSection({
         )}
         {letter.minutes.map((minute) => {
           const isAction = Boolean(minute.assigneeId);
+          // Rejecting an action clears its assigneeId (so it stops showing
+          // up as an open action for anyone), which means `isAction` is
+          // always false for a declined minute. Track that case separately
+          // so its history — that it was delegated and declined, with the
+          // reason — still renders; who declined it is not recoverable once
+          // the assignee is cleared, so this deliberately doesn't try to
+          // show that.
+          const isDeclined = minute.acceptance === "rejected";
           const done = minute.status === "done";
           const canComplete =
             isAction &&
@@ -717,37 +736,41 @@ function MinutesSection({
                 <span>{formatDateMedium(minute.createdAt)}</span>
               </div>
               <p className="whitespace-pre-wrap text-sm">{minute.body}</p>
-              {isAction && (
+              {(isAction || isDeclined) && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Badge className="flex items-center gap-1 border text-xs">
-                    <UserCheck className="h-3 w-3" />
-                    {userName(minute.assigneeId)}
-                  </Badge>
-                  {minute.acceptance === "pending" && (
+                  {isAction && (
+                    <Badge className="flex items-center gap-1 border text-xs">
+                      <UserCheck className="h-3 w-3" />
+                      {userName(minute.assigneeId)}
+                    </Badge>
+                  )}
+                  {isAction && minute.acceptance === "pending" && (
                     <Badge variant="outline" className="text-xs">
                       Awaiting acceptance
                     </Badge>
                   )}
-                  {minute.acceptance === "rejected" && (
+                  {isDeclined && (
                     <Badge variant="destructive" className="text-xs">
-                      Declined
+                      Delegated, then declined
                       {minute.rejectionReason
                         ? ` — ${minute.rejectionReason}`
                         : ""}
                     </Badge>
                   )}
-                  <Badge
-                    variant={done ? "success" : "outline"}
-                    className="text-xs"
-                  >
-                    {done ? "Done" : "Open"}
-                  </Badge>
-                  {minute.dueAt && !done && (
+                  {isAction && (
+                    <Badge
+                      variant={done ? "success" : "outline"}
+                      className="text-xs"
+                    >
+                      {done ? "Done" : "Open"}
+                    </Badge>
+                  )}
+                  {isAction && minute.dueAt && !done && (
                     <span className="text-muted-foreground text-xs">
                       Due {formatDateMedium(minute.dueAt)}
                     </span>
                   )}
-                  {done && minute.completedAt && (
+                  {isAction && done && minute.completedAt && (
                     <span className="text-muted-foreground text-xs">
                       Completed {formatDateMedium(minute.completedAt)}
                     </span>
@@ -770,7 +793,10 @@ function MinutesSection({
                 workspaceId={workspaceId}
                 letterId={letter.id}
                 minute={minute}
-                canPost={isAdmin || minute.assigneeId === currentUserId}
+                canPost={
+                  hasGeneralManagementAccess ||
+                  minute.assigneeId === currentUserId
+                }
                 attachments={letter.attachments}
               />
             </div>
