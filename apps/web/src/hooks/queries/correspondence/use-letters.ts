@@ -50,6 +50,17 @@ export function useAwaitingAcceptance(workspaceId: string) {
   });
 }
 
+export function useAddMinuteUpdate(workspaceId: string, letterId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { minuteId: string; body: string }) =>
+      api.addMinuteUpdate(workspaceId, letterId, vars.minuteId, vars.body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["letter", workspaceId, letterId] });
+    },
+  });
+}
+
 export function useLetterMutations(workspaceId: string, letterId?: string) {
   const qc = useQueryClient();
   const invalidate = () => {

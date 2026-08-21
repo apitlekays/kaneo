@@ -64,6 +64,13 @@ export type LetterAttachment = {
   kind: string;
   createdAt: string;
 };
+export type MinuteUpdate = {
+  id: string;
+  minuteId: string;
+  authorId: string | null;
+  body: string;
+  createdAt: string;
+};
 export type LetterMinute = {
   id: string;
   letterId: string;
@@ -76,6 +83,7 @@ export type LetterMinute = {
   completedAt: string | null;
   completedBy: string | null;
   createdAt: string;
+  updates: MinuteUpdate[];
 };
 export type LetterAssignment = {
   id: string;
@@ -301,6 +309,18 @@ export const addMinute = (workspaceId: string, id: string, body: object) =>
 
 export const completeMinute = (workspaceId: string, id: string, mid: string) =>
   post<LetterMinute>(`letters/${id}/minutes/${mid}/complete`, workspaceId, {});
+
+export const addMinuteUpdate = (
+  workspaceId: string,
+  letterId: string,
+  minuteId: string,
+  body: string,
+) =>
+  post<MinuteUpdate>(
+    `letters/${letterId}/minutes/${minuteId}/updates`,
+    workspaceId,
+    { body },
+  );
 
 export type PendingAssignment = {
   id: string;
