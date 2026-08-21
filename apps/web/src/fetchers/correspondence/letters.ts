@@ -56,6 +56,7 @@ export type Letter = {
 export type LetterAttachment = {
   id: string;
   letterId: string;
+  minuteUpdateId: string | null;
   objectKey: string;
   filename: string;
   mimeType: string;
@@ -80,6 +81,8 @@ export type LetterMinute = {
   assigneeId: string | null;
   dueAt: string | null;
   status: string;
+  acceptance: string;
+  rejectionReason: string | null;
   completedAt: string | null;
   completedBy: string | null;
   createdAt: string;

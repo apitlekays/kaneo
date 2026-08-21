@@ -1,4 +1,5 @@
 import { Download, FileText } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,14 +12,48 @@ import { useAddMinuteUpdate } from "@/hooks/queries/correspondence/use-letters";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { formatDateMedium } from "@/lib/format";
 
-// `LetterAttachment` does not (yet) carry `minuteUpdateId` in its web type —
-// the API returns it on every row (see `letterAttachmentTable` in the schema
-// and `assertCanAttach` in apps/api/src/correspondence/letters.ts), but the
-// field was never added to the frontend type. Read it defensively here
-// rather than widening the shared fetcher type for this one caller.
-type AttachmentWithMinuteUpdateId = LetterAttachment & {
-  minuteUpdateId?: string | null;
-};
+/** Shared row shell for a letter attachment: the thread and the Attachments
+ * tab both need "filename + download", so this is the one place that owns
+ * that markup. `badge` and `trailing` are extra slots the Attachments tab
+ * uses for the primary marker and the PDF preview toggle; `children` renders
+ * below the row (e.g. an inline preview iframe). */
+export function AttachmentRow({
+  attachment,
+  downloadHref,
+  badge,
+  trailing,
+  children,
+}: {
+  attachment: LetterAttachment;
+  downloadHref: string;
+  badge?: ReactNode;
+  trailing?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-border text-sm">
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          {attachment.filename}
+          {badge}
+        </span>
+        <span className="flex items-center gap-3">
+          {trailing}
+          <a
+            href={downloadHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Download className="h-4 w-4" />
+          </a>
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 type MinuteThreadProps = {
   workspaceId: string;
@@ -49,9 +84,7 @@ export function MinuteThread({
   const trimmed = body.trim();
 
   const attachmentsFor = (updateId: string) =>
-    (attachments as AttachmentWithMinuteUpdateId[]).filter(
-      (att) => att.minuteUpdateId === updateId,
-    );
+    attachments.filter((att) => att.minuteUpdateId === updateId);
 
   const submit = () => {
     if (!trimmed) return;
@@ -71,25 +104,15 @@ export function MinuteThread({
           </div>
           <p className="whitespace-pre-wrap">{update.body}</p>
           {attachmentsFor(update.id).map((att) => (
-            <div
+            <AttachmentRow
               key={att.id}
-              className="rounded-md border border-border text-sm"
-            >
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  {att.filename}
-                </span>
-                <a
-                  href={attachmentDownloadUrl(workspaceId, letterId, att.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <Download className="h-4 w-4" />
-                </a>
-              </div>
-            </div>
+              attachment={att}
+              downloadHref={attachmentDownloadUrl(
+                workspaceId,
+                letterId,
+                att.id,
+              )}
+            />
           ))}
         </div>
       ))}

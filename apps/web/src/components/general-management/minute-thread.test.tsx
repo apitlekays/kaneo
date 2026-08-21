@@ -1,7 +1,10 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LetterMinute } from "@/fetchers/correspondence/letters";
+import type {
+  LetterAttachment,
+  LetterMinute,
+} from "@/fetchers/correspondence/letters";
 import { MinuteThread } from "./minute-thread";
 
 // Mock the mutation hook — this suite is about the thread's rendering and
@@ -45,10 +48,30 @@ function makeMinute(overrides: Partial<LetterMinute> = {}): LetterMinute {
     assigneeId: "user-2",
     dueAt: null,
     status: "open",
+    acceptance: "accepted",
+    rejectionReason: null,
     completedAt: null,
     completedBy: null,
     createdAt: "2025-01-01T00:00:00.000Z",
     updates: [],
+    ...overrides,
+  };
+}
+
+function makeAttachment(
+  overrides: Partial<LetterAttachment> = {},
+): LetterAttachment {
+  return {
+    id: "attachment-1",
+    letterId: "letter-1",
+    minuteUpdateId: null,
+    objectKey: "key-1",
+    filename: "report.pdf",
+    mimeType: "application/pdf",
+    size: 1024,
+    sha256: null,
+    kind: "original",
+    createdAt: "2025-01-02T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -193,6 +216,66 @@ describe("MinuteThread", () => {
 
     expect(
       screen.queryByPlaceholderText(/post an update/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders an update's own attachment but not one belonging to a different update", () => {
+    const minute = makeMinute({
+      updates: [
+        {
+          id: "update-1",
+          minuteId: "minute-1",
+          authorId: "user-2",
+          body: "Progress report attached",
+          createdAt: "2025-01-02T00:00:00.000Z",
+        },
+        {
+          id: "update-2",
+          minuteId: "minute-1",
+          authorId: "user-1",
+          body: "Second update",
+          createdAt: "2025-01-03T00:00:00.000Z",
+        },
+      ],
+    });
+    const ownAttachment = makeAttachment({
+      id: "attachment-own",
+      minuteUpdateId: "update-1",
+      filename: "own-report.pdf",
+    });
+    const otherAttachment = makeAttachment({
+      id: "attachment-other",
+      minuteUpdateId: "update-2",
+      filename: "other-report.pdf",
+    });
+
+    render(
+      <MinuteThread
+        workspaceId="ws-1"
+        letterId="letter-1"
+        minute={minute}
+        canPost
+        attachments={[ownAttachment, otherAttachment]}
+      />,
+    );
+
+    // Each update's row is `body` + its own attachments in one wrapper —
+    // walk up from the body text to scope assertions to that row.
+    const updateOneRow = screen.getByText("Progress report attached")
+      .parentElement as HTMLElement;
+    const updateTwoRow = screen.getByText("Second update")
+      .parentElement as HTMLElement;
+
+    // The attachment belonging to update-1 renders under it...
+    expect(within(updateOneRow).getByText("own-report.pdf")).toBeVisible();
+    // ...but the attachment belonging to update-2 does not appear under update-1.
+    expect(
+      within(updateOneRow).queryByText("other-report.pdf"),
+    ).not.toBeInTheDocument();
+    // And update-2's attachment renders under update-2, not update-1's.
+    expect(within(updateTwoRow).getByText("other-report.pdf")).toBeVisible();
+    expect(
+      within(updateTwoRow).queryByText("own-report.pdf"),
     ).not.toBeInTheDocument();
   });
 });

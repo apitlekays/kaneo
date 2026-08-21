@@ -8,7 +8,6 @@ import {
   ChevronUp,
   ClipboardList,
   Download,
-  FileText,
   Info,
   Link2,
   Loader2,
@@ -76,7 +75,7 @@ import {
   LetterLinkPicker,
   type PendingLink,
 } from "./letter-link-picker";
-import { MinuteThread } from "./minute-thread";
+import { AttachmentRow, MinuteThread } from "./minute-thread";
 
 const STATUSES = [
   "captured",
@@ -724,6 +723,19 @@ function MinutesSection({
                     <UserCheck className="h-3 w-3" />
                     {userName(minute.assigneeId)}
                   </Badge>
+                  {minute.acceptance === "pending" && (
+                    <Badge variant="outline" className="text-xs">
+                      Awaiting acceptance
+                    </Badge>
+                  )}
+                  {minute.acceptance === "rejected" && (
+                    <Badge variant="destructive" className="text-xs">
+                      Declined
+                      {minute.rejectionReason
+                        ? ` — ${minute.rejectionReason}`
+                        : ""}
+                    </Badge>
+                  )}
                   <Badge
                     variant={done ? "success" : "outline"}
                     className="text-xs"
@@ -1100,43 +1112,36 @@ function AttachmentsSection({
           const isPdf = att.mimeType === "application/pdf";
           const open = previewing === att.id;
           return (
-            <div
+            <AttachmentRow
               key={att.id}
-              className="rounded-md border border-border text-sm"
-            >
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  {att.filename}
-                  {att.id === letter.primaryAttachmentId && (
-                    <Badge className="border text-xs">primary</Badge>
-                  )}
-                </span>
-                <span className="flex items-center gap-3">
-                  {isPdf && (
-                    <button
-                      type="button"
-                      onClick={() => setPreviewing(open ? null : att.id)}
-                      className="text-muted-foreground hover:text-foreground"
-                      title={open ? "Hide preview" : "Preview"}
-                    >
-                      {open ? (
-                        <ChevronUp className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
-                    </button>
-                  )}
-                  <a
-                    href={attachmentDownloadUrl(workspaceId, letter.id, att.id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+              attachment={att}
+              downloadHref={attachmentDownloadUrl(
+                workspaceId,
+                letter.id,
+                att.id,
+              )}
+              badge={
+                att.id === letter.primaryAttachmentId ? (
+                  <Badge className="border text-xs">primary</Badge>
+                ) : undefined
+              }
+              trailing={
+                isPdf ? (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewing(open ? null : att.id)}
                     className="text-muted-foreground hover:text-foreground"
+                    title={open ? "Hide preview" : "Preview"}
                   >
-                    <Download className="h-4 w-4" />
-                  </a>
-                </span>
-              </div>
+                    {open ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </button>
+                ) : undefined
+              }
+            >
               {isPdf && open && (
                 <iframe
                   title={att.filename}
@@ -1144,7 +1149,7 @@ function AttachmentsSection({
                   className="h-[60vh] w-full border-border border-t"
                 />
               )}
-            </div>
+            </AttachmentRow>
           );
         })}
       </div>
