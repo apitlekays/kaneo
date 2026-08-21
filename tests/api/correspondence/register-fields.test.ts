@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import * as v from "valibot";
+import { describe, expect, it } from "vitest";
 import { letterUrgencySchema } from "../../../apps/api/src/correspondence/register-fields";
 
 describe("letterUrgencySchema", () => {

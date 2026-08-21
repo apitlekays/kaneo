@@ -299,7 +299,7 @@ export function registerOutgoingRoutes(app: Hono<GmEnv>) {
         const selected = await selectChain(ws, letter.type);
         const row = await db.transaction(async (tx) => {
           let status = "approved";
-          if (selected && selected.steps.length) {
+          if (selected?.steps.length) {
             await startApproval(tx, id, selected.chain, selected.steps);
             status = "approving";
           }

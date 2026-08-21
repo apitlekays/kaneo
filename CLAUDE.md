@@ -233,6 +233,63 @@ See `ENVIRONMENT_SETUP.md` for detailed configuration and troubleshooting.
 - **Testing**: Run `pnpm test` at the repo root (Turbo runs `test` in packages that define it: API unit tests, web unit/component tests, shared packages). API integration tests: `pnpm test:integration` (requires PostgreSQL; env is set in `tests/api-integration/setup.ts`; CI uses `.github/workflows/ci.yml`). Vitest configs: `apps/api/vitest.config.ts` (unit), `apps/api/vitest.integration.config.ts` (integration), `apps/web/vitest.config.ts` (web). Integration tests live under `tests/api-integration/`; API unit tests under `tests/api/`.
 - **Security**: Never commit secrets, always validate inputs, sanitize outputs
 
+## Pushing and Deploying
+
+Established by inspecting the repo, its Actions history and the account's
+hosting on 2026-08-21. Read this before asking how to ship anything.
+
+### The repository
+
+`origin` is <https://github.com/apitlekays/kaneo> — a **public fork** of
+`usekaneo/kaneo`. Pushing publishes the code publicly; there is no private
+remote. There is no `upstream` remote configured locally.
+
+### How work lands
+
+Commits go **directly to `main`**. Every run in Actions history is a `push`
+on `main` — this repo does not use a PR flow, and `auto-merge.yml` /
+`auto-assign.yml` are inherited from upstream and unused here. Branch for a
+feature if it helps, but merge it locally (`--no-ff`) and push `main`.
+
+`git push origin main` is the whole deploy-adjacent step that actually
+exists today. It triggers `ci.yml` (lint + typecheck + unit + integration
+against a service Postgres). `deploy-site.yml` only fires when
+`apps/site/**`, `packages/**` or the lockfile change, and publishes the
+docs site to GitHub Pages — it is not the app.
+
+### Commit hooks
+
+The pre-commit hook runs `biome ci .` **and a full monorepo build**, so
+commits are slow. `--no-verify` is normal for incremental work, but then
+**`biome ci .` must be run manually before pushing** — CI's lint job runs it
+over all files and fails the run otherwise. Note `biome ci .` over the whole
+repo catches things `biome check <files>` on a subset does not.
+
+Generated drizzle snapshots under `apps/api/drizzle/meta/` are excluded from
+Biome in `biome.json`. They are machine-generated and must never be
+hand-edited, so linting them only ever produced failures.
+
+### Releases and images — manual, and unused in this fork
+
+`docker.yml` (build + publish to GHCR) and `release.yml` (cut a GitHub
+release) are **`workflow_dispatch` only** — they never run automatically.
+Neither has been dispatched in this fork: `gh release list` is empty, and
+the `v2.x` tags are inherited from upstream. Trigger with
+`gh workflow run docker.yml -f version=X.Y.Z -f latest=true`.
+
+### There is no deployment target (as of 2026-08-21)
+
+Nothing in this repo deploys the app to a server, and **no running Kaneo
+instance was found**. The three Hostinger VPSs on the account run other
+things: `srv1651323` (openclaw + traefik), `hackedu.tech` (the hackedu Astro
+app + its own Postgres), and `srv1137184` (no Docker manager). `compose.yml`
+pulls `ghcr.io/usekaneo/kaneo:latest` — **upstream's** image, not this
+fork's, so running it would not ship this fork's code.
+
+**If a deployment target is set up later, document it here.** Until then,
+"deploy" means: push `main`, and optionally dispatch `docker.yml` to publish
+an image that nothing currently consumes.
+
 ## Common Patterns
 
 ### Backend Route Example

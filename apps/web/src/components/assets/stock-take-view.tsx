@@ -160,7 +160,6 @@ function ActiveSession({
           className="flex gap-2"
         >
           {/* Handheld scanners type the serial then Enter. */}
-          {/* biome-ignore lint/a11y/noAutofocus: scan box should grab focus */}
           <Input
             autoFocus
             placeholder="Scan or type serial, then Enter…"

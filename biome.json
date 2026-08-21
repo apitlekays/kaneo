@@ -23,7 +23,8 @@
 			"!**/.cache",
 			"!**/coverage",
 			"!**/.claude",
-			"!**/openapi.json"
+			"!**/openapi.json",
+			"!**/drizzle/meta"
 		]
 	},
 	"formatter": {
