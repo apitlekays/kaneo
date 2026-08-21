@@ -1,4 +1,5 @@
 import { correspondenceProvider } from "./providers/correspondence";
+import { minuteActionProvider } from "./providers/minute-action";
 import { taskProvider } from "./providers/task";
 import type { PendingDecisionProvider } from "./types";
 
@@ -6,4 +7,5 @@ import type { PendingDecisionProvider } from "./types";
 export const providers: PendingDecisionProvider[] = [
   correspondenceProvider,
   taskProvider,
+  minuteActionProvider,
 ];

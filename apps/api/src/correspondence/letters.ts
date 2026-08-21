@@ -1420,6 +1420,10 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               assigneeId,
               dueAt: assigneeId ? toDate(b.dueAt) : null,
               status: "open",
+              // Self-delegation is auto-accepted — asking someone to accept
+              // work they just gave themselves is ceremony with no reader.
+              acceptance:
+                assigneeId && assigneeId !== userId ? "pending" : "accepted",
             })
             .returning();
           await recordAuditEvent(tx, {
