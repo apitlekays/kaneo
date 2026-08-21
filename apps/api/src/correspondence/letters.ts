@@ -29,6 +29,7 @@ import {
   letterAttachmentTable,
   letterLinkTable,
   letterMinuteTable,
+  letterMinuteUpdateTable,
   letterTable,
   workspaceUserTable,
 } from "../database/schema";
@@ -58,6 +59,7 @@ import {
   SEALED_LETTER_STATUSES,
 } from "./letter-list-filter";
 import { walkThread } from "./letter-thread";
+import { canPostMinuteUpdate } from "./minute-access";
 import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
 import { letterUrgencySchema } from "./register-fields";
@@ -833,12 +835,32 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           ...outboundLinks.map((l) => ({ ...l, outbound: true })),
           ...inboundLinks.map((l) => ({ ...l, outbound: false })),
         ];
+        // Every update for this letter's minutes, one query — merged in JS
+        // rather than a per-minute subquery.
+        const minuteIds = minutes.map((m) => m.id);
+        const updates = minuteIds.length
+          ? await db
+              .select()
+              .from(letterMinuteUpdateTable)
+              .where(inArray(letterMinuteUpdateTable.minuteId, minuteIds))
+              .orderBy(asc(letterMinuteUpdateTable.createdAt))
+          : [];
+        const updatesByMinuteId = new Map<string, Row[]>();
+        for (const u of updates) {
+          const list = updatesByMinuteId.get(u.minuteId) ?? [];
+          list.push(u);
+          updatesByMinuteId.set(u.minuteId, list);
+        }
+        const minutesWithUpdates = minutes.map((m) => ({
+          ...m,
+          updates: updatesByMinuteId.get(m.id) ?? [],
+        }));
         const outgoing = await loadOutgoingDetail(id);
         const lifecycle = await loadLifecycleDetail(id);
         return c.json({
           ...letter,
           attachments,
-          minutes,
+          minutes: minutesWithUpdates,
           assignments,
           links,
           ...outgoing,
@@ -1452,6 +1474,75 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           }).catch(() => {});
         }
         return c.json(updated);
+      },
+    )
+    // ── Minute update thread (append-only work log on a delegated action) ─────
+    .post(
+      "/letters/:id/minutes/:mid/updates",
+      describeRoute({
+        operationId: "addMinuteUpdate",
+        tags: ["Correspondence"],
+        description: "Append an update to a delegated action's thread",
+      }),
+      validator("param", v.object({ id: v.string(), mid: v.string() })),
+      validator(
+        "json",
+        v.object({ workspaceId: v.string(), body: v.string() }),
+      ),
+      workspaceAccess.fromBody("workspaceId"),
+      async (c) => {
+        const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
+        const { id, mid } = c.req.valid("param");
+        const b = c.req.valid("json");
+        const body = b.body.trim();
+        if (!body)
+          throw new HTTPException(400, { message: "Update body required" });
+        const letter = await loadLetter(ws, id);
+        if (!letter) throw new HTTPException(404, { message: "Not found" });
+        const [minute] = await db
+          .select({
+            id: letterMinuteTable.id,
+            assigneeId: letterMinuteTable.assigneeId,
+          })
+          .from(letterMinuteTable)
+          .where(
+            and(
+              eq(letterMinuteTable.id, mid),
+              eq(letterMinuteTable.letterId, id),
+            ),
+          )
+          .limit(1);
+        if (!minute) throw new HTTPException(404, { message: "Not found" });
+        const access = await resolveLetterAccess(userId, ws, letter);
+        if (
+          !canPostMinuteUpdate({
+            userId,
+            hasPageAccess: access.hasPage,
+            minuteAssigneeId: minute.assigneeId,
+          })
+        )
+          throw new HTTPException(403, {
+            message: "Only the action's assignee or a GM officer can post here",
+          });
+        const created = await db.transaction(async (tx) => {
+          const [row] = await tx
+            .insert(letterMinuteUpdateTable)
+            .values({ minuteId: mid, authorId: userId, body })
+            .returning();
+          const inserted = row as Row;
+          await recordAuditEvent(tx, {
+            workspaceId: ws,
+            entityType: "letter",
+            entityId: id,
+            action: "minute-update",
+            actorId: userId,
+            after: { minuteId: mid, updateId: inserted.id, body },
+            ip: getIp(c),
+          });
+          return inserted;
+        });
+        return c.json(created, 201);
       },
     )
     // ── Status transition ─────────────────────────────────────────────────────
