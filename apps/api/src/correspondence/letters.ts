@@ -457,7 +457,9 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             ),
           )
           .orderBy(desc(letterTable.createdAt));
-        // Open actions delegated to me via a minute.
+        // Open actions delegated to me via a minute. A pending action isn't
+        // mine to work on until I accept it — it belongs in the pending-
+        // decision queue, not here.
         const actions = await db
           .select({
             id: letterMinuteTable.id,
@@ -479,6 +481,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               eq(letterTable.workspaceId, ws),
               eq(letterMinuteTable.assigneeId, userId),
               eq(letterMinuteTable.status, "open"),
+              eq(letterMinuteTable.acceptance, "accepted"),
             ),
           )
           .orderBy(
@@ -563,6 +566,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             )
           : rows;
         // Delegated-action progress per letter (minutes with an assignee).
+        // A pending action isn't yet anyone's work — it must not count
+        // toward either total until its assignee accepts it.
         const counts = await db
           .select({
             letterId: letterMinuteTable.letterId,
@@ -578,6 +583,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             and(
               eq(letterTable.workspaceId, ws),
               isNotNull(letterMinuteTable.assigneeId),
+              eq(letterMinuteTable.acceptance, "accepted"),
             ),
           )
           .groupBy(letterMinuteTable.letterId);
@@ -1481,6 +1487,13 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           });
         if (minute.status === "done")
           throw new HTTPException(409, { message: "Action already completed" });
+        // A pending action isn't accepted work yet — it must be decided
+        // before it can be marked done, or the assignee could skip the
+        // accept/reject step entirely.
+        if (minute.acceptance === "pending")
+          throw new HTTPException(409, {
+            message: "This action must be accepted before it can be completed",
+          });
         const now = new Date();
         const updated = await db.transaction(async (tx) => {
           const [row] = await tx
