@@ -271,6 +271,10 @@ hand-edited, so linting them only ever produced failures.
 
 ### Releases and images — manual, and unused in this fork
 
+CI's `docker-build` job already builds `Dockerfile.kaneo` on every push as a
+smoke test, with `push: false` — so a green CI proves the image builds; it
+just does not publish it.
+
 `docker.yml` (build + publish to GHCR) and `release.yml` (cut a GitHub
 release) are **`workflow_dispatch` only** — they never run automatically.
 Neither has been dispatched in this fork: `gh release list` is empty, and
