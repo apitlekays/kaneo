@@ -2209,6 +2209,9 @@ export const letterAttachmentTable = pgTable(
     letterId: text("letter_id")
       .notNull()
       .references(() => letterTable.id, { onDelete: "cascade" }),
+    // Set when this file was uploaded as part of a minute update. The file is
+    // still the letter's attachment — this only records where it came from.
+    minuteUpdateId: text("minute_update_id"),
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaceTable.id, { onDelete: "cascade" }),
@@ -2259,6 +2262,26 @@ export const letterMinuteTable = pgTable(
   (table) => [
     index("letter_minute_letterId_idx").on(table.letterId),
     index("letter_minute_assigneeId_idx").on(table.assigneeId),
+  ],
+);
+
+export const letterMinuteUpdateTable = pgTable(
+  "letter_minute_update",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    minuteId: text("minute_id")
+      .notNull()
+      .references(() => letterMinuteTable.id, { onDelete: "cascade" }),
+    authorId: text("author_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("letter_minute_update_minuteId_idx").on(table.minuteId),
   ],
 );
 
