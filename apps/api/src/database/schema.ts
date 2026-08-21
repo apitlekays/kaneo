@@ -2253,6 +2253,11 @@ export const letterMinuteTable = pgTable(
     dueAt: timestamp("due_at", { mode: "date" }),
     // open | done | cancelled — only meaningful when assigneeId is set.
     status: text("status").notNull().default("open"),
+    // pending | accepted | rejected. Only meaningful when assigneeId is set.
+    // Defaults to accepted so every action delegated before this column
+    // existed is grandfathered without a backfill statement to get wrong.
+    acceptance: text("acceptance").notNull().default("accepted"),
+    rejectionReason: text("rejection_reason"),
     completedAt: timestamp("completed_at", { mode: "date" }),
     completedBy: text("completed_by").references(() => userTable.id, {
       onDelete: "set null",

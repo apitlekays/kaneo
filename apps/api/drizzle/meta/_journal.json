@@ -393,6 +393,13 @@
       "when": 1787282740429,
       "tag": "0055_rare_nomad",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1787282854431,
+      "tag": "0056_curious_madame_masque",
+      "breakpoints": true
     }
   ]
 }
