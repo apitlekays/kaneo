@@ -76,6 +76,18 @@ async function updateTask(
     // is only ever "untouched" and must be a hard no-op: it must not
     // supersede a live pending offer, whose target this field cannot even
     // represent (task.userId stays null while an offer is outstanding).
+    //
+    // Known residual gap (accepted trade-off, reviewed): a direct API caller
+    // that explicitly clears an already-null assignee (userId omitted/empty)
+    // on a task that currently has a live pending offer will also hit this
+    // same-value branch and silently leave that offer live. The bypass can't
+    // tell "field absent" (leave assignee alone) apart from "field explicitly
+    // null" (clear it) - both look identical here - so it can't distinguish
+    // that caller's explicit clear from the web client's routine echo of an
+    // untouched, already-unset assignee. Closing it would require the
+    // payload to carry that absent-vs-null distinction, which the web client
+    // has no way to express, so the gap is accepted and documented here
+    // rather than fixed in code.
     if (nextAssigneeId === existingTask.userId) {
       return updated;
     }

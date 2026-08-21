@@ -93,6 +93,15 @@ async function getNotificationsFor(userId: string) {
     .where(eq(schema.notificationTable.userId, userId));
 }
 
+async function getMyTasks(
+  app: ReturnType<typeof createApp>["app"],
+  workspaceId: string,
+) {
+  return app.request(
+    `/api/task/my-tasks?workspaceId=${encodeURIComponent(workspaceId)}`,
+  );
+}
+
 describe("API integration: task assignment acceptance", () => {
   beforeEach(async () => {
     await resetTestDatabase();
@@ -462,5 +471,52 @@ describe("API integration: task assignment acceptance", () => {
       (item: { source: string }) => item.source === "task",
     );
     expect(taskItems).toHaveLength(0);
+  });
+
+  it("excludes a pending assignment from my-tasks and includes it once accepted", async () => {
+    const owner = await createWorkspaceMember({ role: "owner" });
+    const member = await createWorkspaceMember({ role: "member" });
+    await joinWorkspace(owner.workspace.id, member.user.id);
+
+    const { project } = await createProjectFixture({
+      workspaceId: owner.workspace.id,
+      memberUserId: member.user.id,
+    });
+
+    mockAuthenticatedSession(owner.user);
+    const { app } = createApp();
+
+    const created = await (await createTask(app, project.id)).json();
+    await assignTask(app, created.id, member.user.id);
+    const [pending] = await getAssignments(created.id);
+
+    // Before acceptance: the task must not show up in the assignee's queue.
+    mockAuthenticatedSession(member.user);
+    const beforeResponse = await getMyTasks(app, owner.workspace.id);
+    expect(beforeResponse.status).toBe(200);
+    const beforeBody = await beforeResponse.json();
+    expect(beforeBody.data.total).toBe(0);
+    const beforeTaskIds = beforeBody.data.projects.flatMap(
+      (p: { tasks: Array<{ id: string }> }) => p.tasks.map((t) => t.id),
+    );
+    expect(beforeTaskIds).not.toContain(created.id);
+
+    // After acceptance: the task must appear in the assignee's queue.
+    const decision = await decidePendingTask(
+      app,
+      pending.id,
+      owner.workspace.id,
+      "accepted",
+    );
+    expect(decision.status).toBe(200);
+
+    const afterResponse = await getMyTasks(app, owner.workspace.id);
+    expect(afterResponse.status).toBe(200);
+    const afterBody = await afterResponse.json();
+    expect(afterBody.data.total).toBe(1);
+    const afterTaskIds = afterBody.data.projects.flatMap(
+      (p: { tasks: Array<{ id: string }> }) => p.tasks.map((t) => t.id),
+    );
+    expect(afterTaskIds).toContain(created.id);
   });
 });
