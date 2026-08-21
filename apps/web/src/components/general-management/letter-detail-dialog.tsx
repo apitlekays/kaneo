@@ -76,6 +76,7 @@ import {
   LetterLinkPicker,
   type PendingLink,
 } from "./letter-link-picker";
+import { MinuteThread } from "./minute-thread";
 
 const STATUSES = [
   "captured",
@@ -308,6 +309,7 @@ function Body({
         )}
         <DialogSidebarPanel value="minutes">
           <MinutesSection
+            workspaceId={workspaceId}
             letter={letter}
             m={m}
             users={users}
@@ -671,6 +673,7 @@ function OverviewSection({
 }
 
 function MinutesSection({
+  workspaceId,
   letter,
   m,
   users,
@@ -678,6 +681,7 @@ function MinutesSection({
   currentUserId,
   isAdmin,
 }: {
+  workspaceId: string;
   letter: LetterDetail;
   m: Mutations;
   users: { userId: string; user?: { name?: string } }[];
@@ -750,6 +754,13 @@ function MinutesSection({
                   )}
                 </div>
               )}
+              <MinuteThread
+                workspaceId={workspaceId}
+                letterId={letter.id}
+                minute={minute}
+                canPost={isAdmin || minute.assigneeId === currentUserId}
+                attachments={letter.attachments}
+              />
             </div>
           );
         })}
