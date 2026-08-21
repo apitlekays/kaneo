@@ -9,6 +9,15 @@ import {
   grantGeneralManagement,
 } from "./helpers/fixtures";
 
+// The presign route calls into the S3 presigner, which only computes a
+// signature locally — it never contacts the endpoint. Fake, stable
+// credentials are enough for it to run in the integration environment,
+// which otherwise leaves S3 unconfigured.
+process.env.S3_ENDPOINT ||= "http://localhost:9000";
+process.env.S3_BUCKET ||= "kaneo-test-bucket";
+process.env.S3_ACCESS_KEY_ID ||= "test-access-key";
+process.env.S3_SECRET_ACCESS_KEY ||= "test-secret-key";
+
 async function captureLetter(
   app: ReturnType<typeof createApp>["app"],
   workspaceId: string,
@@ -75,6 +84,51 @@ function postUpdate(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ workspaceId, body }),
+    },
+  );
+}
+
+function presignAttachment(
+  app: ReturnType<typeof createApp>["app"],
+  letterId: string,
+  workspaceId: string,
+  minuteUpdateId?: string,
+) {
+  return app.request(
+    `/api/correspondence/letters/${letterId}/attachments/presign`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId,
+        filename: "laporan.pdf",
+        contentType: "application/pdf",
+        ...(minuteUpdateId ? { minuteUpdateId } : {}),
+      }),
+    },
+  );
+}
+
+function finalizeAttachment(
+  app: ReturnType<typeof createApp>["app"],
+  letterId: string,
+  workspaceId: string,
+  objectKey: string,
+  minuteUpdateId?: string,
+) {
+  return app.request(
+    `/api/correspondence/letters/${letterId}/attachments/finalize`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId,
+        objectKey,
+        filename: "laporan.pdf",
+        mimeType: "application/pdf",
+        size: 1024,
+        ...(minuteUpdateId ? { minuteUpdateId } : {}),
+      }),
     },
   );
 }
@@ -231,5 +285,106 @@ describe("API integration: minute update thread", () => {
     expect(detailMinute.updates).toHaveLength(2);
     expect(detailMinute.updates[0].body).toBe("Kemas kini pertama");
     expect(detailMinute.updates[1].body).toBe("Kemas kini kedua");
+  });
+
+  it("lets a minute assignee with no page access presign and finalize an attachment on their own update", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const assignee = await createWorkspaceMember({ role: "member" });
+    const { letter, minute } = await seedDelegatedAction(officer, assignee);
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const updateResponse = await postUpdate(
+      assigneeApp,
+      letter.id,
+      minute.id,
+      officer.workspace.id,
+      "Dokumen sokongan telah disediakan",
+    );
+    expect(updateResponse.status).toBe(201);
+    const update = await updateResponse.json();
+
+    const presignResponse = await presignAttachment(
+      assigneeApp,
+      letter.id,
+      officer.workspace.id,
+      update.id,
+    );
+    expect(presignResponse.status).toBe(200);
+    const presigned = await presignResponse.json();
+    expect(typeof presigned.key).toBe("string");
+
+    const finalizeResponse = await finalizeAttachment(
+      assigneeApp,
+      letter.id,
+      officer.workspace.id,
+      presigned.key,
+      update.id,
+    );
+    expect(finalizeResponse.status).toBe(201);
+    const attachment = await finalizeResponse.json();
+    expect(attachment.letterId).toBe(letter.id);
+    expect(attachment.minuteUpdateId).toBe(update.id);
+  });
+
+  it("refuses that same assignee on the ordinary (no minuteUpdateId) path on both routes", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const assignee = await createWorkspaceMember({ role: "member" });
+    const { letter } = await seedDelegatedAction(officer, assignee);
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+
+    const presignResponse = await presignAttachment(
+      assigneeApp,
+      letter.id,
+      officer.workspace.id,
+    );
+    expect(presignResponse.status).toBe(403);
+
+    const finalizeResponse = await finalizeAttachment(
+      assigneeApp,
+      letter.id,
+      officer.workspace.id,
+      `workspace/${officer.workspace.id}/letter/${letter.id}/laporan.pdf`,
+    );
+    expect(finalizeResponse.status).toBe(403);
+
+    const rows = await db
+      .select()
+      .from(schema.letterAttachmentTable)
+      .where(eq(schema.letterAttachmentTable.letterId, letter.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("404s finalizing with a minuteUpdateId that belongs to a different letter", async () => {
+    const officer = await createWorkspaceMember({ role: "owner" });
+    const assignee = await createWorkspaceMember({ role: "member" });
+    const { letter: letterA } = await seedDelegatedAction(officer, assignee);
+    const { letter: letterB, minute: minuteB } = await seedDelegatedAction(
+      officer,
+      assignee,
+    );
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const updateBResponse = await postUpdate(
+      assigneeApp,
+      letterB.id,
+      minuteB.id,
+      officer.workspace.id,
+      "Kemas kini pada surat yang lain",
+    );
+    expect(updateBResponse.status).toBe(201);
+    const updateB = await updateBResponse.json();
+
+    const finalizeResponse = await finalizeAttachment(
+      assigneeApp,
+      letterA.id,
+      officer.workspace.id,
+      `workspace/${officer.workspace.id}/letter/${letterA.id}/laporan.pdf`,
+      updateB.id,
+    );
+    expect(finalizeResponse.status).toBe(404);
   });
 });

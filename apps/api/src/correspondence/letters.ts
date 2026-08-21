@@ -200,6 +200,56 @@ async function resolveLetterAccess(
   return { hasPage: false, canView: participant, canMinute: isAssignee };
 }
 
+/**
+ * Attachment gate shared by presign and finalize. With no `minuteUpdateId`,
+ * this is the ONLY branch that grants access, and it grants it on
+ * `hasPage` alone — exactly today's behaviour for an ordinary attachment,
+ * unchanged. With a `minuteUpdateId`, the update must belong to a minute on
+ * this letter (404 otherwise), and only that minute's assignee or a GM
+ * officer may attach to it.
+ */
+async function assertCanAttach(
+  userId: string,
+  workspaceId: string,
+  letter: { id: string; currentAssigneeId: string | null },
+  minuteUpdateId: string | undefined,
+): Promise<void> {
+  if (!minuteUpdateId) {
+    if (!(await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG)))
+      throw new HTTPException(403, {
+        message: "You don't have access to this page",
+      });
+    return;
+  }
+  const [row] = await db
+    .select({ minuteAssigneeId: letterMinuteTable.assigneeId })
+    .from(letterMinuteUpdateTable)
+    .innerJoin(
+      letterMinuteTable,
+      eq(letterMinuteTable.id, letterMinuteUpdateTable.minuteId),
+    )
+    .where(
+      and(
+        eq(letterMinuteUpdateTable.id, minuteUpdateId),
+        eq(letterMinuteTable.letterId, letter.id),
+      ),
+    )
+    .limit(1);
+  if (!row) throw new HTTPException(404, { message: "Not found" });
+  const access = await resolveLetterAccess(userId, workspaceId, letter);
+  if (
+    !canPostMinuteUpdate({
+      userId,
+      hasPageAccess: access.hasPage,
+      minuteAssigneeId: row.minuteAssigneeId,
+    })
+  )
+    throw new HTTPException(403, {
+      message:
+        "Only the action's assignee or a GM officer can attach files here",
+    });
+}
+
 /** Notify a user that a letter is awaiting their inspection (Main User). */
 async function notifyAssigned(
   toUserId: string,
@@ -1676,16 +1726,18 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           filename: v.string(),
           contentType: v.string(),
           kind: v.optional(v.string()),
+          minuteUpdateId: optStr,
         }),
       ),
       workspaceAccess.fromBody("workspaceId"),
-      pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
         const { id } = c.req.valid("param");
         const b = c.req.valid("json");
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
+        await assertCanAttach(userId, ws, letter, b.minuteUpdateId);
         const presigned = await createLetterFileUploadUrl({
           workspaceId: ws,
           letterId: id,
@@ -1709,10 +1761,10 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           mimeType: v.string(),
           size: v.number(),
           kind: v.optional(v.string()),
+          minuteUpdateId: optStr,
         }),
       ),
       workspaceAccess.fromBody("workspaceId"),
-      pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
         const userId = c.get("userId") as string;
@@ -1720,6 +1772,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const b = c.req.valid("json");
         const letter = await loadLetter(ws, id);
         if (!letter) throw new HTTPException(404, { message: "Not found" });
+        await assertCanAttach(userId, ws, letter, b.minuteUpdateId);
         if (
           b.objectKey.includes("..") ||
           !b.objectKey.includes(letterFileKeyOwnerSegment(ws, id))
@@ -1736,6 +1789,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
               mimeType: b.mimeType,
               size: b.size,
               kind: b.kind ?? "original",
+              minuteUpdateId: b.minuteUpdateId ?? null,
               createdBy: userId,
             })
             .returning();
