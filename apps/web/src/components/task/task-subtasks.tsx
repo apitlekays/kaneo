@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence } from "framer-motion";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertDialog,
@@ -23,7 +23,6 @@ import { Input } from "@/components/ui/input";
 import useCreateTask from "@/hooks/mutations/task/use-create-task";
 import { useDeleteTask } from "@/hooks/mutations/task/use-delete-task";
 import useCreateTaskRelation from "@/hooks/mutations/task-relation/use-create-task-relation";
-import { useGetTasks } from "@/hooks/queries/task/use-get-tasks";
 import useGetTaskRelations from "@/hooks/queries/task-relation/use-get-task-relations";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
@@ -59,24 +58,6 @@ export default function TaskSubtasks({
   const { data: workspaceUsers } = useGetActiveWorkspaceUsers(
     workspace?.id ?? "",
   );
-  // The task-relation read path doesn't carry `pendingAssigneeName` (it isn't
-  // joined against task_assignment there), but subtasks are always created in
-  // the parent's project, so the project's own task list — which does join
-  // it — can fill the gap for same-project subtasks.
-  const { data: projectTasksData } = useGetTasks(projectId);
-  const pendingAssigneeByTaskId = useMemo(() => {
-    const map = new Map<string, string | null | undefined>();
-    if (projectTasksData && "columns" in projectTasksData) {
-      const allProjectTasks = [
-        ...(projectTasksData.columns?.flatMap((column) => column.tasks) ?? []),
-        ...(projectTasksData.plannedTasks ?? []),
-      ];
-      for (const projectTask of allProjectTasks) {
-        map.set(projectTask.id, projectTask.pendingAssigneeName);
-      }
-    }
-    return map;
-  }, [projectTasksData]);
   const createTask = useCreateTask();
   const createRelation = useCreateTaskRelation();
   const { mutateAsync: deleteTask } = useDeleteTask();
@@ -130,7 +111,7 @@ export default function TaskSubtasks({
     userId: subtask.task.userId,
     assigneeId: subtask.task.userId,
     assigneeName: subtask.task.assigneeName,
-    pendingAssigneeName: pendingAssigneeByTaskId.get(subtask.task.id) ?? null,
+    pendingAssigneeName: subtask.task.pendingAssigneeName ?? null,
     projectId: subtask.task.projectId,
   });
 

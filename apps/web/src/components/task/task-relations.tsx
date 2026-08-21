@@ -189,36 +189,6 @@ export default function TaskRelations({
     return icons;
   }, [projectData]);
 
-  // The task-relation read path doesn't carry `pendingAssigneeName` (it isn't
-  // joined against task_assignment there). Fill it in for related tasks that
-  // live in this same project, using the project's own task list, which does
-  // join it.
-  const pendingAssigneeByTaskId = useMemo(() => {
-    const map = new Map<string, string | null | undefined>();
-    if (!projectData) return map;
-    if ("columns" in projectData && Array.isArray(projectData.columns)) {
-      for (const col of projectData.columns as Array<{
-        tasks: Array<{ id: string; pendingAssigneeName?: string | null }>;
-      }>) {
-        for (const t of col.tasks ?? []) {
-          map.set(t.id, t.pendingAssigneeName);
-        }
-      }
-    }
-    if (
-      "plannedTasks" in projectData &&
-      Array.isArray(projectData.plannedTasks)
-    ) {
-      for (const t of projectData.plannedTasks as Array<{
-        id: string;
-        pendingAssigneeName?: string | null;
-      }>) {
-        map.set(t.id, t.pendingAssigneeName);
-      }
-    }
-    return map;
-  }, [projectData]);
-
   const filteredTasks = allTasks.filter(
     (t) => !existingRelatedTaskIds.has(t.id),
   );
@@ -289,7 +259,7 @@ export default function TaskRelations({
     assigneeId: item.task.userId,
     assigneeName: item.task.assigneeName,
     assigneeImage: "",
-    pendingAssigneeName: pendingAssigneeByTaskId.get(item.task.id) ?? null,
+    pendingAssigneeName: item.task.pendingAssigneeName ?? null,
     projectId: item.task.projectId,
   });
 

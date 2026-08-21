@@ -114,11 +114,25 @@ function buildDeliveryContent(notification: {
     }
     case "task_assignee_changed": {
       const taskTitle = getStringValue(notification.eventData, "taskTitle");
+      const actorName = getStringValue(notification.eventData, "actorName");
+      // Mirrors apps/web/src/lib/notification-copy.ts: name the assigner
+      // when known, and fall back to the neutral, unattributed phrasing
+      // when they aren't (actorName resolves to the literal "Someone" for
+      // grandfathered task_assignment rows from migration 0057 that never
+      // recorded an assigner — inventing one here would be worse than
+      // saying nothing).
+      const isKnownActor = actorName !== null && actorName !== "Someone";
+      if (!taskTitle) {
+        return {
+          title: "Task assigned to you",
+          body: "A task was assigned to you in Kaneo.",
+        };
+      }
       return {
         title: "Task assigned to you",
-        body: taskTitle
-          ? `You were assigned to ${taskTitle}.`
-          : "A task was assigned to you in Kaneo.",
+        body: isKnownActor
+          ? `${actorName} assigned you to "${taskTitle}".`
+          : `You were assigned to "${taskTitle}".`,
       };
     }
     case "time_entry_created": {
