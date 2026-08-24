@@ -1,5 +1,15 @@
+import { cleanup } from "@testing-library/react";
 import { JSDOM } from "jsdom";
+import { afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
+
+// Testing Library unmounts rendered trees automatically only when `afterEach`
+// is a global, and this project deliberately does not set `globals: true`.
+// Without this, every `render()` leaks its DOM into the next test in the file:
+// queries then match stale nodes, and `getBy*` starts throwing "found multiple
+// elements" in tests that are individually correct. Registering it here means
+// no test file has to remember, and none can forget.
+afterEach(cleanup);
 
 // Node 24+ ships its own `localStorage`/`sessionStorage` globals that stay
 // undefined unless the process is started with `--localstorage-file`. Because
