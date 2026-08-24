@@ -334,6 +334,13 @@ printing logs and the rollback command if not — then (5) runs `kaneo-prune`.
 **It deploys `origin/main`, not your working copy — push first**, or you
 will ship the previous commit and think you shipped yours.
 
+**The version in the UI is not the deploy tag.** The `v2.x.y` shown bottom
+left comes from the **root** `package.json` `version`, injected by
+`apps/web/vite.config.ts` as `__APP_VERSION__` and rendered by
+`components/version-display.tsx`. `apps/web/package.json` is `0.0.0` and is
+not the source. Bumping the displayed version means editing root
+`package.json`, then rebuilding — the deploy tag alone changes nothing.
+
 `<tag>` is a short feature name, not a version. Past tags: `central-alerts`,
 `pending-decision`, `register-fields`, `letter-linking`,
 `project-visibility`, `assignment-acceptance`. Allowed chars `A-Za-z0-9._-`.
