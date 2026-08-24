@@ -311,13 +311,69 @@ is plain Ubuntu 24.04 rather than the Docker+Traefik template, so
 Manager`. That is an API limitation, **not** evidence that nothing is
 running there. Probe the URL instead.
 
-**Still undocumented: how code actually gets onto the box.** Whether that is
-a git pull plus build, a compose stack, an rsync of `dist`, or something
-triggered by hand is not recorded anywhere in this repo, and no credentials
-for the box exist in this working copy. Ask, then write the answer here.
+### How to deploy — the whole procedure
 
-Remember migrations run on API startup, so any deploy that restarts the API
-applies pending drizzle migrations to production data.
+SSH in with the key made for this purpose:
+
+```bash
+ssh -i ~/.ssh/hostinger_vps1_ed25519 root@72.61.120.91
+```
+
+(`hostinger_vps1_ed25519.pub` carries the comment `claude-vps1-20260624`.
+The other keys in `~/.ssh` are for unrelated hosts — `hackedu_deploy_*`
+belongs to `hackedu.tech`.)
+
+**Deploying is one command on the box.** `/usr/local/bin/kaneo-deploy <tag>`
+does everything, so never hand-roll the steps:
+
+```bash
+ssh -i ~/.ssh/hostinger_vps1_ed25519 root@72.61.120.91 'kaneo-deploy <tag>'
+```
+
+It (1) hard-resets `/opt/build/kaneo` to `origin/main`, (2) builds
+`kaneo:<tag>` from `Dockerfile.kaneo`, (3) backs up the compose file to
+`docker-compose.yml.bak.<timestamp>` and repoints the `kaneo` service's
+image, (4) `docker compose up -d kaneo` and blocks until the container is
+healthy — up to 180s, printing logs and the rollback command if not — then
+(5) runs `kaneo-prune`, which keeps the 5 newest `kaneo:*` tags plus the
+running one.
+
+**It deploys `origin/main`, not your working copy — push first**, or you
+will ship the previous commit and think you shipped yours.
+
+`<tag>` is a short feature name, not a version: past tags are
+`central-alerts`, `pending-decision`, `register-fields`, `letter-linking`,
+`project-visibility`. Allowed chars `A-Za-z0-9._-`.
+
+**Rollback** is printed on failure and is just the previous compose backup:
+
+```bash
+cp -a /opt/stacks/kaneo/docker-compose.yml.bak.<timestamp> \
+      /opt/stacks/kaneo/docker-compose.yml
+cd /opt/stacks/kaneo && docker compose up -d kaneo
+```
+
+Migrations run on API startup, so a deploy applies pending drizzle
+migrations to production data. Rolling the *image* back does **not** roll
+migrations back — this is safe only because migrations here are additive
+(new tables, new nullable/defaulted columns), which older images ignore. A
+destructive migration would break that assumption, so think before writing
+one.
+
+### What runs on the box
+
+Docker Compose stacks under `/opt/stacks/`, managed via Portainer:
+
+- **`kaneo`** — `kaneo:<tag>` (built locally, never pulled) + `kaneo-postgres`
+  (`postgres:16-alpine`, named volume `postgres_data`). Config in
+  `/opt/stacks/kaneo/.env` (root-only, with `.bak.*` copies). The app listens
+  on 5173 internally; healthcheck hits `/api/health`.
+- **`minio`** — object storage backing letter attachments.
+- **`proxy`** — `nginx-proxy-manager` (the openresty seen in response
+  headers) plus a `landing` nginx and `portainer`. Kaneo joins the external
+  `proxy_default` network; it publishes no host ports of its own.
+
+Hostinger's Docker Manager API cannot see any of this (see above) — use SSH.
 
 ## Common Patterns
 
