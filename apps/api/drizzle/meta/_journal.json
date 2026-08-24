@@ -414,6 +414,13 @@
       "when": 1787285055031,
       "tag": "0058_big_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1787539578554,
+      "tag": "0059_curved_mongoose",
+      "breakpoints": true
     }
   ]
 }

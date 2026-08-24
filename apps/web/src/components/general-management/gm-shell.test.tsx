@@ -1,0 +1,85 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { GeneralManagementShell, type SectionKey } from "./gm-shell";
+
+// Overview (rendered for admins) calls useQuery directly, so every render
+// needs a real QueryClient in context.
+function renderShell(props: {
+  workspaceId: string;
+  initialSection?: SectionKey;
+}) {
+  const queryClient = new QueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <GeneralManagementShell {...props} />
+    </QueryClientProvider>,
+  );
+}
+
+// This suite only exercises gm-shell's own section-visibility logic, so the
+// heavier sub-panels are stubbed out rather than exercised end-to-end —
+// their own behaviour is covered by correspondence.test.tsx and friends.
+
+const state = vi.hoisted(() => ({
+  isAdmin: true,
+}));
+
+vi.mock("@/hooks/use-workspace-permission", () => ({
+  useWorkspacePermission: () => ({ isAdmin: state.isAdmin }),
+}));
+
+vi.mock("@/hooks/queries/correspondence/use-letters", () => ({
+  useCorrespondenceSummary: () => ({ data: undefined }),
+}));
+
+vi.mock("@/fetchers/correspondence", () => ({
+  verifyAuditChain: () =>
+    Promise.resolve({ ok: true, count: 0, brokenAtSeq: null }),
+}));
+
+vi.mock("./correspondence", () => ({
+  Correspondence: () => <div data-testid="correspondence-panel" />,
+}));
+
+vi.mock("./settings", () => ({
+  GeneralManagementSettings: () => <div data-testid="settings-panel" />,
+}));
+
+afterEach(cleanup);
+
+describe("GeneralManagementShell section visibility", () => {
+  it("shows all three sections to an admin", () => {
+    state.isAdmin = true;
+    renderShell({ workspaceId: "ws-1" });
+
+    expect(screen.getByRole("button", { name: "Overview" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Correspondence" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeVisible();
+  });
+
+  it("hides Overview and Settings from a non-admin, leaving only Correspondence", () => {
+    state.isAdmin = false;
+    renderShell({ workspaceId: "ws-1" });
+
+    expect(
+      screen.queryByRole("button", { name: "Overview" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Correspondence" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to Correspondence for a non-admin landing on a stale 'settings' link, instead of an empty shell", () => {
+    state.isAdmin = false;
+    renderShell({ workspaceId: "ws-1", initialSection: "settings" });
+
+    expect(screen.getByTestId("correspondence-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("settings-panel")).not.toBeInTheDocument();
+  });
+});

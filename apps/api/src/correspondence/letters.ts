@@ -64,6 +64,7 @@ import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
 import { letterUrgencySchema } from "./register-fields";
 import { loadLifecycleDetail, retentionDueDate } from "./retention";
+import { assertGmAdmin } from "./roles";
 import {
   assertNoOpenActions,
   assertStatusChangeAllowed,
@@ -636,6 +637,8 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
       pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
+        await assertGmAdmin(userId, ws);
         const rows = await db
           .select({
             id: letterTable.id,

@@ -53,6 +53,25 @@ export async function setPageAccess(
   return response.json();
 }
 
+/** Promote or demote a member to/from global-admin (owner/global-admin only). */
+export async function setGlobalAdmin(
+  workspaceId: string,
+  userId: string,
+  enabled: boolean,
+): Promise<{ success: boolean }> {
+  const response = await fetch(
+    getApiUrl(`workspace-access/${workspaceId}/global-admin`),
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, enabled }),
+    },
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
 /** All members of a workspace (id, name, email, image, role). */
 export async function getWorkspaceMembersList(
   workspaceId: string,

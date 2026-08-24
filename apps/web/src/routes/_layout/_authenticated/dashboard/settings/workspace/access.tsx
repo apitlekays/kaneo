@@ -4,6 +4,7 @@ import PageTitle from "@/components/page-title";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { usePageAccessMatrix } from "@/hooks/queries/workspace-access/use-page-access-matrix";
+import { useSetGlobalAdmin } from "@/hooks/queries/workspace-access/use-set-global-admin";
 import { useSetPageAccess } from "@/hooks/queries/workspace-access/use-set-page-access";
 import { useWorkspaceMembersList } from "@/hooks/queries/workspace-access/use-workspace-members-list";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
@@ -30,6 +31,7 @@ function RouteComponent() {
   );
   const { data: matrix } = usePageAccessMatrix(workspaceId, Boolean(isAdmin));
   const setAccess = useSetPageAccess(workspaceId);
+  const setGlobalAdmin = useSetGlobalAdmin(workspaceId);
 
   if (!isAdmin) {
     return (
@@ -76,6 +78,12 @@ function RouteComponent() {
                   className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left font-medium align-bottom min-w-56"
                 >
                   {t("settings:workspaceAccess.member")}
+                </th>
+                <th
+                  rowSpan={2}
+                  className="border-l border-border bg-muted/40 px-3 py-2 text-center font-medium align-bottom min-w-24"
+                >
+                  {t("settings:workspaceAccess.globalAdmin")}
                 </th>
                 {SIDEBAR_CATEGORIES.map((category) => (
                   <th
@@ -131,6 +139,25 @@ function RouteComponent() {
                           </span>
                         </div>
                       </div>
+                    </td>
+                    <td className="border-l border-border px-2 py-2 text-center">
+                      <Checkbox
+                        checked={isAdminRow}
+                        disabled={
+                          member.role === "owner" ||
+                          member.role === "admin" ||
+                          setGlobalAdmin.isPending
+                        }
+                        onCheckedChange={(value) =>
+                          setGlobalAdmin.mutate({
+                            userId: member.id,
+                            enabled: value === true,
+                          })
+                        }
+                        aria-label={`${member.name} – ${t(
+                          "settings:workspaceAccess.globalAdmin",
+                        )}`}
+                      />
                     </td>
                     {SIDEBAR_CATEGORIES.flatMap((category) =>
                       category.items.map((item, index) => {
