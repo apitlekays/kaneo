@@ -10,6 +10,7 @@ import {
 } from "../database/schema";
 import { isGlobalAdmin } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
+import { nextRoleForGlobalAdmin } from "./global-admin-rules";
 
 /**
  * Canonical list of gateable "page" slugs (the business-domain sub-categories
@@ -152,6 +153,68 @@ const workspaceAccessApi = new Hono<{
               eq(workspacePageAccessTable.pageSlug, pageSlug),
             ),
           );
+      }
+
+      return c.json({ success: true });
+    },
+  )
+  // Promote or demote a member to/from global-admin. Owner/global-admins
+  // only. The role itself is the grant — global admins bypass the page
+  // matrix entirely, which is what makes "all future pages" free.
+  .put(
+    "/:workspaceId/global-admin",
+    validator("param", v.object({ workspaceId: v.string() })),
+    validator("json", v.object({ userId: v.string(), enabled: v.boolean() })),
+    workspaceAccess.fromParam("workspaceId"),
+    async (c) => {
+      const workspaceId = c.get("workspaceId");
+      const actorId = c.get("userId");
+      if (!workspaceId) {
+        throw new HTTPException(400, { message: "workspaceId required" });
+      }
+      if (!(await isGlobalAdmin(actorId, workspaceId))) {
+        throw new HTTPException(403, {
+          message: "Only workspace admins can edit access",
+        });
+      }
+
+      const { userId: targetUserId, enabled } = c.req.valid("json");
+
+      const [member] = await db
+        .select({
+          id: workspaceUserTable.id,
+          role: workspaceUserTable.role,
+          previousRole: workspaceUserTable.previousRole,
+        })
+        .from(workspaceUserTable)
+        .where(
+          and(
+            eq(workspaceUserTable.workspaceId, workspaceId),
+            eq(workspaceUserTable.userId, targetUserId),
+          ),
+        )
+        .limit(1);
+      if (!member) {
+        throw new HTTPException(404, {
+          message: "User is not a member of this workspace",
+        });
+      }
+      if (member.role === "owner") {
+        throw new HTTPException(403, {
+          message: "The workspace owner's role cannot be changed",
+        });
+      }
+
+      const next = nextRoleForGlobalAdmin({
+        currentRole: member.role,
+        previousRole: member.previousRole,
+        enabled,
+      });
+      if (next) {
+        await db
+          .update(workspaceUserTable)
+          .set({ role: next.role, previousRole: next.previousRole })
+          .where(eq(workspaceUserTable.id, member.id));
       }
 
       return c.json({ success: true });
