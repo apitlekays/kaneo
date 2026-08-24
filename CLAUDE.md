@@ -223,6 +223,32 @@ See `ENVIRONMENT_SETUP.md` for detailed configuration and troubleshooting.
 4. Handle loading/error states properly
 5. Use toast notifications (sonner) for user feedback
 
+## Three kinds of "minutes" — do not conflate them
+
+This codebase has three unrelated features that all get called "minutes" in
+conversation. They share nothing but the word. Before writing or reviewing
+anything that mentions minutes, work out which one is meant.
+
+| End-user name | Code / tables | Scope | Where |
+|---|---|---|---|
+| **Meeting Minutes** | `meeting_minute*` | Organisation-level meetings — AGM, quarterly committee, EGM | General Management → Minutes Manager |
+| **Project Minutes** | `task_mom` (MoM) | One meeting attached to a single task, inside one project | Project → Minutes |
+| **Letter Minutes** | `letter_minute`, `letter_minute_update` | Annotations and delegated actions on one piece of correspondence | Correspondence → letter detail |
+
+Rules:
+
+- **Never rename the existing two.** `task_mom` and `letter_minute` are
+  live, migrated and deployed; the cost of renaming exceeds the confusion it
+  would save.
+- **New organisation-level tables take the `meeting_` prefix**, never a bare
+  `minute_`, so a grep for a table name can never return two modules.
+- The three are **separate domains with separate storage**. They deliberately
+  converge only on the shared central surfaces: notifications, the alert
+  bell, and the pending-decision dialog, so a user sees one unified Home
+  regardless of which module generated the work.
+- In UI copy, always use the full two-word name — "Meeting Minutes", not
+  "Minutes" — anywhere the three could be confused.
+
 ## Important Notes
 
 - **Package Manager**: This project uses **pnpm** (pinned to `10.32.1` via `packageManager` field), not npm or yarn. Requires Node `>=18`
