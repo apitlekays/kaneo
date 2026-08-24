@@ -281,18 +281,43 @@ Neither has been dispatched in this fork: `gh release list` is empty, and
 the `v2.x` tags are inherited from upstream. Trigger with
 `gh workflow run docker.yml -f version=X.Y.Z -f latest=true`.
 
-### There is no deployment target (as of 2026-08-21)
+### The deployment target: MAPIMCore
 
-Nothing in this repo deploys the app to a server, and **no running Kaneo
-instance was found**. The three Hostinger VPSs on the account run other
-things: `srv1651323` (openclaw + traefik), `hackedu.tech` (the hackedu Astro
-app + its own Postgres), and `srv1137184` (no Docker manager). `compose.yml`
-pulls `ghcr.io/usekaneo/kaneo:latest` — **upstream's** image, not this
-fork's, so running it would not ship this fork's code.
+**When the user says "deploy", this is what they mean.** The production
+instance of this fork is:
 
-**If a deployment target is set up later, document it here.** Until then,
-"deploy" means: push `main`, and optionally dispatch `docker.yml` to publish
-an image that nothing currently consumes.
+| | |
+|---|---|
+| URL | <https://core.mapim.dev> (branded **MAPIMCore**) |
+| Host | Hostinger VPS id **1137184**, hostname `mapimcore.mapim.dev` |
+| IP | `72.61.120.91` (PTR remains `srv1137184.hstgr.cloud`) |
+| Spec | KVM 2 — 2 vCPU, 8 GB RAM, 100 GB disk, Ubuntu 24.04 LTS |
+
+The other two VPSs on the account are unrelated: `srv1651323` runs
+openclaw + traefik, and `hackedu.tech` runs the hackedu Astro app.
+
+Serving is **openresty** in front — the built web bundle is served as static
+files and `/api` is proxied to the Hono API (unauthenticated `/api/me`
+returns 401, which is the quickest liveness check). Responses carry
+`X-Served-By: core.mapim.dev`.
+
+**Do not** run `compose.yml` against this box expecting it to ship this
+fork: it pulls `ghcr.io/usekaneo/kaneo:latest`, which is **upstream's**
+image and does not contain this fork's code.
+
+Hostinger's Docker Manager API cannot introspect this VPS — its OS template
+is plain Ubuntu 24.04 rather than the Docker+Traefik template, so
+`VPS_getProjectListV1` returns `[VPS:2044] ... does not support Docker
+Manager`. That is an API limitation, **not** evidence that nothing is
+running there. Probe the URL instead.
+
+**Still undocumented: how code actually gets onto the box.** Whether that is
+a git pull plus build, a compose stack, an rsync of `dist`, or something
+triggered by hand is not recorded anywhere in this repo, and no credentials
+for the box exist in this working copy. Ask, then write the answer here.
+
+Remember migrations run on API startup, so any deploy that restarts the API
+applies pending drizzle migrations to production data.
 
 ## Common Patterns
 
