@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Client } from "pg";
 import db from "../../../apps/api/src/database";
+import { settlePendingEvents } from "../../../apps/api/src/events/index";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = resolve(currentDir, "../../../apps/api/drizzle");
@@ -81,6 +82,15 @@ export async function ensureTestDatabaseMigrated() {
 
 export async function resetTestDatabase() {
   await ensureTestDatabaseMigrated();
+
+  // publishEvent() is fire-and-forget: the previous test's request can
+  // return while its event handlers (e.g. notification delivery) are still
+  // running DB queries against these same tables. Racing that work against
+  // the TRUNCATE below caused an intermittent deadlock — the handler's
+  // SELECT took AccessShareLock on one relation while waiting on another
+  // that TRUNCATE already held AccessExclusiveLock on, and vice versa. Wait
+  // for all in-flight handlers to settle before truncating.
+  await settlePendingEvents();
 
   await db.execute(
     sql.raw(`
