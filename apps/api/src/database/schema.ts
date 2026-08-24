@@ -136,6 +136,11 @@ export const workspaceUserTable = pgTable(
         onDelete: "cascade",
       }),
     role: text("role").default("member").notNull(),
+    // The role this member held before being promoted to global-admin, so a
+    // demotion restores it rather than flattening them to "member". Null
+    // means "never promoted through the Global Admin control" — which is
+    // every pre-existing row, so this column grandfathers itself.
+    previousRole: text("previous_role"),
     joinedAt: timestamp("joined_at", { mode: "date" }).notNull(),
   },
   (table) => [
