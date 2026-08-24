@@ -284,68 +284,61 @@ the `v2.x` tags are inherited from upstream. Trigger with
 ### The deployment target: MAPIMCore
 
 **When the user says "deploy", this is what they mean.** The production
-instance of this fork is:
+instance of this fork is <https://core.mapim.dev>, branded **MAPIMCore**.
 
 | | |
 |---|---|
-| URL | <https://core.mapim.dev> (branded **MAPIMCore**) |
-| Host | Hostinger VPS id **1137184**, hostname `mapimcore.mapim.dev` |
-| IP | `72.61.120.91` (PTR remains `srv1137184.hstgr.cloud`) |
-| Spec | KVM 2 — 2 vCPU, 8 GB RAM, 100 GB disk, Ubuntu 24.04 LTS |
+| Host | Hostinger VPS id **1137184**, hostname `core.mapim.dev` |
+| IP | `72.61.120.91` (IPv6 `2a02:4780:5e:4f1f::1`); PTR stays `srv1137184.hstgr.cloud` |
+| Spec | KVM 2 — 2 vCPU, 7.8 GB RAM, 96 GB disk (~9% used), Ubuntu 24.04 LTS |
+| Created | 2025-11-18, datacenter 21 |
 
 The other two VPSs on the account are unrelated: `srv1651323` runs
 openclaw + traefik, and `hackedu.tech` runs the hackedu Astro app.
 
-Serving is **openresty** in front — the built web bundle is served as static
-files and `/api` is proxied to the Hono API (unauthenticated `/api/me`
-returns 401, which is the quickest liveness check). Responses carry
-`X-Served-By: core.mapim.dev`.
-
-**Do not** run `compose.yml` against this box expecting it to ship this
-fork: it pulls `ghcr.io/usekaneo/kaneo:latest`, which is **upstream's**
-image and does not contain this fork's code.
-
-Hostinger's Docker Manager API cannot introspect this VPS — its OS template
-is plain Ubuntu 24.04 rather than the Docker+Traefik template, so
+**Hostinger's Docker Manager API cannot introspect this VPS** — its OS
+template is plain Ubuntu 24.04 rather than the Docker+Traefik template, so
 `VPS_getProjectListV1` returns `[VPS:2044] ... does not support Docker
-Manager`. That is an API limitation, **not** evidence that nothing is
-running there. Probe the URL instead.
+Manager`. That is an API limitation, **not** evidence that nothing runs
+there. Use SSH.
 
-### How to deploy — the whole procedure
+**Renaming the VPS reboots it.** Both `VPS_setHostnameV1` calls made on
+2026-08-24 rebooted the box and took the site down for a few minutes until
+the containers came back. The API does not warn about this. Hostnames must
+also be a lowercase FQDN — `MAPIMCore` and `mapimcore` were both rejected
+with `[VPS:2004] The hostname format is invalid`.
 
-SSH in with the key made for this purpose:
+### Access
 
 ```bash
 ssh -i ~/.ssh/hostinger_vps1_ed25519 root@72.61.120.91
 ```
 
-(`hostinger_vps1_ed25519.pub` carries the comment `claude-vps1-20260624`.
-The other keys in `~/.ssh` are for unrelated hosts — `hackedu_deploy_*`
-belongs to `hackedu.tech`.)
+`hostinger_vps1_ed25519.pub` carries the comment `claude-vps1-20260624`. The
+other keys in `~/.ssh` are for unrelated hosts — `hackedu_deploy_*` belongs
+to `hackedu.tech`.
 
-**Deploying is one command on the box.** `/usr/local/bin/kaneo-deploy <tag>`
-does everything, so never hand-roll the steps:
+### How to deploy — one command
 
 ```bash
 ssh -i ~/.ssh/hostinger_vps1_ed25519 root@72.61.120.91 'kaneo-deploy <tag>'
 ```
 
-It (1) hard-resets `/opt/build/kaneo` to `origin/main`, (2) builds
-`kaneo:<tag>` from `Dockerfile.kaneo`, (3) backs up the compose file to
-`docker-compose.yml.bak.<timestamp>` and repoints the `kaneo` service's
-image, (4) `docker compose up -d kaneo` and blocks until the container is
-healthy — up to 180s, printing logs and the rollback command if not — then
-(5) runs `kaneo-prune`, which keeps the 5 newest `kaneo:*` tags plus the
-running one.
+`/usr/local/bin/kaneo-deploy` does everything, so never hand-roll the steps:
+(1) hard-resets `/opt/build/kaneo` to `origin/main`, (2) builds `kaneo:<tag>`
+from `Dockerfile.kaneo`, (3) backs up the compose file to
+`docker-compose.yml.bak.<timestamp>` and repoints the `kaneo` service image,
+(4) `docker compose up -d kaneo` and blocks until healthy — up to 180s,
+printing logs and the rollback command if not — then (5) runs `kaneo-prune`.
 
 **It deploys `origin/main`, not your working copy — push first**, or you
 will ship the previous commit and think you shipped yours.
 
-`<tag>` is a short feature name, not a version: past tags are
-`central-alerts`, `pending-decision`, `register-fields`, `letter-linking`,
-`project-visibility`. Allowed chars `A-Za-z0-9._-`.
+`<tag>` is a short feature name, not a version. Past tags: `central-alerts`,
+`pending-decision`, `register-fields`, `letter-linking`,
+`project-visibility`, `assignment-acceptance`. Allowed chars `A-Za-z0-9._-`.
 
-**Rollback** is printed on failure and is just the previous compose backup:
+**Rollback** — the previous compose backup:
 
 ```bash
 cp -a /opt/stacks/kaneo/docker-compose.yml.bak.<timestamp> \
@@ -355,25 +348,58 @@ cd /opt/stacks/kaneo && docker compose up -d kaneo
 
 Migrations run on API startup, so a deploy applies pending drizzle
 migrations to production data. Rolling the *image* back does **not** roll
-migrations back — this is safe only because migrations here are additive
-(new tables, new nullable/defaulted columns), which older images ignore. A
-destructive migration would break that assumption, so think before writing
-one.
+migrations back — safe only because migrations here are additive (new
+tables, new nullable/defaulted columns), which older images ignore. A
+destructive migration would break that assumption.
+
+Verify a deploy from outside: `/api/health` returns 200, `/api/me` returns
+401, and the `assets/index-*.js` hash in the served HTML changes.
 
 ### What runs on the box
 
-Docker Compose stacks under `/opt/stacks/`, managed via Portainer:
+Docker 29.6.0 / Compose 5.1.4. Three stacks under `/opt/stacks/`, also
+manageable through Portainer. Nothing is installed as a systemd service.
 
-- **`kaneo`** — `kaneo:<tag>` (built locally, never pulled) + `kaneo-postgres`
-  (`postgres:16-alpine`, named volume `postgres_data`). Config in
-  `/opt/stacks/kaneo/.env` (root-only, with `.bak.*` copies). The app listens
-  on 5173 internally; healthcheck hits `/api/health`.
-- **`minio`** — object storage backing letter attachments.
-- **`proxy`** — `nginx-proxy-manager` (the openresty seen in response
-  headers) plus a `landing` nginx and `portainer`. Kaneo joins the external
-  `proxy_default` network; it publishes no host ports of its own.
+- **`kaneo`** (`/opt/stacks/kaneo/docker-compose.yml`)
+  - `kaneo` — image `kaneo:<tag>`, **built locally, never pulled**. Listens
+    on 5173 internally, publishes no host port, joins `proxy_default`.
+    Healthcheck hits `/api/health`.
+  - `kaneo-postgres` — `postgres:16-alpine`, volume `kaneo_postgres_data`,
+    database and user both `kaneo` (~14 MB as of 2026-08-24).
+- **`minio`** (`/opt/stacks/minio/`) — `minio/minio:latest`, volume
+  `minio_minio_data`, CORS pinned to `https://core.mapim.dev`. Backs letter
+  attachments.
+- **`proxy`** (`/opt/stacks/proxy/`) — `nginx-proxy-manager` (the openresty
+  in response headers; owns 80/443/81 and the Let's Encrypt certs in
+  `proxy_npm_letsencrypt`), `portainer` (8000/9443), and `landing`
+  (nginx:alpine serving `/opt/landing`).
 
-Hostinger's Docker Manager API cannot see any of this (see above) — use SSH.
+Config lives in `/opt/stacks/kaneo/.env` (root-only, `.bak.*` copies
+alongside). Keys: `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`,
+`AUTH_SECRET`, `KANEO_CLIENT_URL`, `SMTP_*`, `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, `GOOGLE_DRIVE_PICKER_API_KEY`. Never print values.
+
+**Do not** run the repo's `compose.yml` against this box: it pulls
+`ghcr.io/usekaneo/kaneo:latest`, which is **upstream's** image and does not
+contain this fork's code.
+
+### Firewall, backups, housekeeping
+
+`ufw` is **inactive**; filtering is done by the Hostinger firewall group
+`317107` (`vps1-portainer-npm`): 22/80/443 open to any, and 81/8000/9443
+(NPM admin and Portainer) restricted to `219.92.41.147`. The API reports
+`is_synced: false`, but the rules **are** enforced — verified 2026-08-24 by
+probing from an unlisted IP, where 81/8000/9443 are filtered. Do not "fix"
+that flag on the strength of the API alone.
+
+Hostinger backups are weekly, two retained, ~1800s restore time. Snapshots
+therefore lag; do not treat them as a pre-deploy safety net.
+
+Cron: `kaneo-prune` daily at 04:15 (`KANEO_RETAIN=5` — keeps the 5 newest
+`kaneo:*` tags plus the running one, and trims compose backups to 5), and
+`docker builder prune -f` Saturdays at 05:04. Log at
+`/var/log/kaneo-prune.log`.
+
 
 ## Common Patterns
 
