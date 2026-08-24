@@ -118,7 +118,13 @@ actor must satisfy `isGlobalAdmin`.
 - **already in the target state is a no-op**, so a double-click cannot
   overwrite `previousRole` with `"global-admin"` and strand the member's
   real role. This is the failure this endpoint most needs to avoid.
-- Writes an audit event, as the existing matrix toggle does.
+- **No audit event.** The neighbouring matrix toggle
+  (`PUT /workspace-access/:workspaceId`) records none — `workspace-access`
+  does not import `recordAuditEvent` at all — and the correspondence audit
+  chain is scoped to letters, not workspace membership. Adding a lone audit
+  write here would be an inconsistent half-measure; auditing workspace
+  permission changes is worth doing deliberately, for every mutation at
+  once, as its own piece of work.
 
 Both fields change in one statement so a partial write is impossible.
 
