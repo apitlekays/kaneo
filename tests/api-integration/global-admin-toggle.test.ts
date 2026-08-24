@@ -383,36 +383,37 @@ describe("API integration: global admin promote/demote", () => {
 
       const probe = db.update(schema.workspaceUserTable);
       const proto = Object.getPrototypeOf(probe) as {
-        set: (this: { table: unknown }, values: unknown) => {
+        set: (
+          this: { table: unknown },
+          values: unknown,
+        ) => {
           table: unknown;
           execute: (...args: unknown[]) => unknown;
         };
       };
       const originalSet = proto.set;
       let intercepted = false;
-      const setSpy = vi
-        .spyOn(proto, "set")
-        .mockImplementation(function (
-          this: { table: unknown },
-          values: unknown,
-        ) {
-          const built = originalSet.call(this, values);
-          if (!intercepted && this.table === schema.workspaceUserTable) {
-            intercepted = true;
-            const originalExecute = built.execute.bind(built);
-            built.execute = async (...args: unknown[]) => {
-              // The concurrent write that wins the race: some other actor
-              // demotes this member back to "member" (and clears
-              // previousRole) between this route's read and its write.
-              await db
-                .update(schema.workspaceUserTable)
-                .set({ role: "member", previousRole: null })
-                .where(eq(schema.workspaceUserTable.id, targetRow.id));
-              return originalExecute(...args);
-            };
-          }
-          return built;
-        });
+      const setSpy = vi.spyOn(proto, "set").mockImplementation(function (
+        this: { table: unknown },
+        values: unknown,
+      ) {
+        const built = originalSet.call(this, values);
+        if (!intercepted && this.table === schema.workspaceUserTable) {
+          intercepted = true;
+          const originalExecute = built.execute.bind(built);
+          built.execute = async (...args: unknown[]) => {
+            // The concurrent write that wins the race: some other actor
+            // demotes this member back to "member" (and clears
+            // previousRole) between this route's read and its write.
+            await db
+              .update(schema.workspaceUserTable)
+              .set({ role: "member", previousRole: null })
+              .where(eq(schema.workspaceUserTable.id, targetRow.id));
+            return originalExecute(...args);
+          };
+        }
+        return built;
+      });
 
       let response: Response;
       try {
