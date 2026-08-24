@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import db, { schema } from "../../apps/api/src/database";
 import { createApp } from "../../apps/api/src/index";
 import { ACCESS_PAGE_SLUGS } from "../../apps/api/src/workspace-access";
@@ -351,5 +351,148 @@ describe("API integration: global admin promote/demote", () => {
       `/api/correspondence/summary?workspaceId=${workspaceId}`,
     );
     expect(summaryResponse.status).toBe(200);
+  });
+
+  describe("lost-race response (409, not a false success)", () => {
+    // The route reads the member row, then guards its UPDATE with
+    // `eq(role, member.role)` so a concurrent write can't be clobbered by a
+    // stale write. Previously a lost race still returned `{ success: true }`
+    // because a zero-row UPDATE was never distinguished from a real one.
+    //
+    // To simulate "someone else changes the role between the read and the
+    // write" against the *live* route (no route changes, no fake DB), we
+    // hook the one seam Drizzle exposes for this: every `db.update(table)`
+    // call shares `PgUpdateBuilder.prototype.set`, and the `PgUpdateBase`
+    // instance it returns owns its own `execute` (an instance property, not
+    // a shared one). We patch that single instance -- scoped to this exact
+    // table via `this.table`, restored in `finally` -- so that the instant
+    // before the route's conditional UPDATE reaches Postgres, a real
+    // concurrent UPDATE lands first and moves the row out from under its
+    // `eq(role, member.role)` predicate. This is more deterministic than
+    // racing two real HTTP calls against each other (which can just as
+    // easily fully serialize and never exercise the 0-row branch at all),
+    // while still exercising the actual route handler end-to-end.
+    it("returns 409 and leaves the row exactly as the concurrent writer left it", async () => {
+      const admin = await createWorkspaceMember({ role: "global-admin" });
+      const workspaceId = admin.workspace.id;
+      const target = await createWorkspaceMember();
+      const targetRow = await addMember(workspaceId, target.user.id, "manager");
+
+      mockAuthenticatedSession(admin.user);
+      const { app } = createApp();
+
+      const probe = db.update(schema.workspaceUserTable);
+      const proto = Object.getPrototypeOf(probe) as {
+        set: (this: { table: unknown }, values: unknown) => {
+          table: unknown;
+          execute: (...args: unknown[]) => unknown;
+        };
+      };
+      const originalSet = proto.set;
+      let intercepted = false;
+      const setSpy = vi
+        .spyOn(proto, "set")
+        .mockImplementation(function (
+          this: { table: unknown },
+          values: unknown,
+        ) {
+          const built = originalSet.call(this, values);
+          if (!intercepted && this.table === schema.workspaceUserTable) {
+            intercepted = true;
+            const originalExecute = built.execute.bind(built);
+            built.execute = async (...args: unknown[]) => {
+              // The concurrent write that wins the race: some other actor
+              // demotes this member back to "member" (and clears
+              // previousRole) between this route's read and its write.
+              await db
+                .update(schema.workspaceUserTable)
+                .set({ role: "member", previousRole: null })
+                .where(eq(schema.workspaceUserTable.id, targetRow.id));
+              return originalExecute(...args);
+            };
+          }
+          return built;
+        });
+
+      let response: Response;
+      try {
+        response = await toggleGlobalAdmin(
+          app,
+          workspaceId,
+          target.user.id,
+          true,
+        );
+      } finally {
+        setSpy.mockRestore();
+      }
+
+      expect(response.status).toBe(409);
+
+      const rows = await db
+        .select()
+        .from(schema.workspaceUserTable)
+        .where(eq(schema.workspaceUserTable.workspaceId, workspaceId));
+      const member = rows.find((m) => m.userId === target.user.id);
+      // The stale promotion must not have landed on top of the concurrent
+      // write -- the row reflects only what the "other caller" wrote.
+      expect(member?.role).toBe("member");
+      expect(member?.previousRole).toBeNull();
+    });
+  });
+
+  describe("genuine no-ops still succeed (409 must not swallow idempotency)", () => {
+    it("returns success, not 409, when promoting an already-promoted member", async () => {
+      const admin = await createWorkspaceMember({ role: "global-admin" });
+      const workspaceId = admin.workspace.id;
+      const target = await createWorkspaceMember();
+      await addMember(workspaceId, target.user.id, "global-admin", "manager");
+
+      mockAuthenticatedSession(admin.user);
+      const { app } = createApp();
+
+      const response = await toggleGlobalAdmin(
+        app,
+        workspaceId,
+        target.user.id,
+        true,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true });
+
+      const rows = await db
+        .select()
+        .from(schema.workspaceUserTable)
+        .where(eq(schema.workspaceUserTable.workspaceId, workspaceId));
+      const member = rows.find((m) => m.userId === target.user.id);
+      expect(member?.role).toBe("global-admin");
+      expect(member?.previousRole).toBe("manager");
+    });
+
+    it("returns success, not 409, when demoting a member who is not a global admin", async () => {
+      const admin = await createWorkspaceMember({ role: "global-admin" });
+      const workspaceId = admin.workspace.id;
+      const target = await createWorkspaceMember();
+      await addMember(workspaceId, target.user.id, "manager");
+
+      mockAuthenticatedSession(admin.user);
+      const { app } = createApp();
+
+      const response = await toggleGlobalAdmin(
+        app,
+        workspaceId,
+        target.user.id,
+        false,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true });
+
+      const rows = await db
+        .select()
+        .from(schema.workspaceUserTable)
+        .where(eq(schema.workspaceUserTable.workspaceId, workspaceId));
+      const member = rows.find((m) => m.userId === target.user.id);
+      expect(member?.role).toBe("manager");
+      expect(member?.previousRole).toBeNull();
+    });
   });
 });

@@ -211,7 +211,11 @@ const workspaceAccessApi = new Hono<{
         enabled,
       });
       if (next) {
-        await db
+        // The role predicate is the concurrency guard: member.role was read
+        // outside this statement, so a competing toggle may have changed it
+        // since. If so, this claims zero rows rather than clobbering
+        // whatever the other call decided.
+        const updated = await db
           .update(workspaceUserTable)
           .set({ role: next.role, previousRole: next.previousRole })
           .where(
@@ -219,7 +223,13 @@ const workspaceAccessApi = new Hono<{
               eq(workspaceUserTable.id, member.id),
               eq(workspaceUserTable.role, member.role),
             ),
-          );
+          )
+          .returning({ id: workspaceUserTable.id });
+        if (updated.length === 0) {
+          throw new HTTPException(409, {
+            message: "This member's role was already changed",
+          });
+        }
       }
 
       return c.json({ success: true });
