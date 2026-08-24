@@ -65,21 +65,49 @@ Most of the authority model is built. The work is wiring, not invention.
 
 ### Server — the actual boundary
 
+> **Corrected 2026-08-24, after the whole-branch review.** An earlier
+> revision of this section said to gate `GET /config/*`, claimed every
+> config resource is registered through `registerConfigResource`, and
+> asserted in bold that the change "locks nobody out of anything they can do
+> today". **All three were wrong**, and the plan and implementation
+> inherited them. What follows is the corrected boundary. The original is
+> preserved in git history.
+
 Two reads move from `pageAccess` to `assertGmAdmin`:
 
-- `GET /config/*` — every list route registered by `registerConfigResource`
-  in `apps/api/src/correspondence/index.ts`. One change inside that function
-  covers every config resource, because they are all registered through it.
+- `GET /config/approval-chains` and `GET /config/approval-chains/:id` in
+  `apps/api/src/correspondence/index.ts`. These are **not** registered
+  through `registerConfigResource` — they are declared separately, which is
+  why a change inside that function does not reach them. Their writes are
+  already gated; only the reads are open. They are read by exactly one
+  component, `approval-chains-editor.tsx`, used only in Settings, and they
+  expose the module's most security-relevant configuration: `approverRefs`,
+  `quorum`, and `condition`.
 - `GET /summary` in `apps/api/src/correspondence/letters.ts`, which backs
-  the Overview dashboard.
+  the Overview dashboard. `useCorrespondenceSummary` is called only inside
+  the `Overview` component, which now renders only for admins.
+
+**The other config reads must stay on `pageAccess`.** `GET /config/*` looks
+like Settings data and is not: it is the module's reference data.
+`correspondence.tsx` reads organisations to render the register — on the one
+tab a non-admin still sees — and `letter-capture-dialog.tsx` and
+`letter-detail-dialog.tsx` read categories, security labels, organisations,
+distribution lists and retention classes to populate their pickers. Gating
+those reads leaves a non-admin with empty dropdowns, `"—"` in every
+organisation cell, and an unusable dispatch flow — and it fails **silently**,
+because `useConfigList` defaults to `[]` on error.
+
+So the honest boundary is: **configuration reference data is shared with
+everyone who holds the GM page; changing it, and reading the approval chains,
+is admin-only.** Every mutation already required `assertGmAdmin` before this
+change.
 
 Everything else in the module — letter registers, capture, minutes,
-attachments, outgoing, retention, reports — keeps `pageAccess` untouched. A
-non-admin with GM access continues to do all letter work exactly as before.
+attachments, outgoing, retention, reports — keeps `pageAccess` untouched.
 
-**This locks nobody out of anything they can do today.** Config mutation
-already required `assertGmAdmin`; only reading config and the dashboard
-summary changes hands.
+**A regression test that only asks whether `GET /letters` answers does not
+prove letter work functions.** It must exercise the config endpoints the
+non-admin UI actually calls, and assert they still return 200.
 
 ### Web
 
