@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GeneralManagementShell, type SectionKey } from "./gm-shell";
 
@@ -49,7 +50,7 @@ vi.mock("./settings", () => ({
 afterEach(cleanup);
 
 describe("GeneralManagementShell section visibility", () => {
-  it("shows all three sections to an admin", () => {
+  it("shows every section to an admin", () => {
     state.isAdmin = true;
     renderShell({ workspaceId: "ws-1" });
 
@@ -57,10 +58,13 @@ describe("GeneralManagementShell section visibility", () => {
     expect(
       screen.getByRole("button", { name: "Correspondence" }),
     ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Minutes Manager" }),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Settings" })).toBeVisible();
   });
 
-  it("hides Overview and Settings from a non-admin, leaving only Correspondence", () => {
+  it("hides only the admin-only sections from a non-admin", () => {
     state.isAdmin = false;
     renderShell({ workspaceId: "ws-1" });
 
@@ -70,8 +74,28 @@ describe("GeneralManagementShell section visibility", () => {
     expect(
       screen.getByRole("button", { name: "Correspondence" }),
     ).toBeVisible();
+    // Minutes Manager is day-to-day work, not administration — a non-admin
+    // with the General Management page must keep it.
+    expect(
+      screen.getByRole("button", { name: "Minutes Manager" }),
+    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the Minutes Manager panel when its tab is selected", async () => {
+    const user = userEvent.setup();
+    state.isAdmin = false;
+    renderShell({ workspaceId: "ws-1" });
+
+    await user.click(screen.getByRole("button", { name: "Minutes Manager" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Minutes Manager" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("correspondence-panel"),
     ).not.toBeInTheDocument();
   });
 

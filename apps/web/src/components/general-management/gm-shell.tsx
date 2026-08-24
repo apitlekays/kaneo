@@ -1,5 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Mail, Settings as SettingsIcon } from "lucide-react";
+import {
+  LayoutDashboard,
+  Mail,
+  NotepadText,
+  Settings as SettingsIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,12 +24,37 @@ import { useCorrespondenceSummary } from "@/hooks/queries/correspondence/use-let
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
 import { Correspondence } from "./correspondence";
+import { MinutesManager } from "./minutes-manager";
 import { GeneralManagementSettings } from "./settings";
 
+// `adminOnly` drives visibility below. Keeping it on the section itself means
+// adding a tab is a one-line change here, rather than also remembering to
+// amend a separate list of which keys are gated.
 const SECTIONS = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "correspondence", label: "Correspondence", icon: Mail },
-  { key: "settings", label: "Settings", icon: SettingsIcon },
+  {
+    key: "overview",
+    label: "Overview",
+    icon: LayoutDashboard,
+    adminOnly: true,
+  },
+  {
+    key: "correspondence",
+    label: "Correspondence",
+    icon: Mail,
+    adminOnly: false,
+  },
+  {
+    key: "minutes-manager",
+    label: "Minutes Manager",
+    icon: NotepadText,
+    adminOnly: false,
+  },
+  {
+    key: "settings",
+    label: "Settings",
+    icon: SettingsIcon,
+    adminOnly: true,
+  },
 ] as const;
 
 export type SectionKey = (typeof SECTIONS)[number]["key"];
@@ -33,9 +63,7 @@ export type SectionKey = (typeof SECTIONS)[number]["key"];
 // The actual gate lives on the server (GET /config/*, GET /summary), so a
 // wrong value here can only show or hide a tab — never grant data access.
 function visibleSections(isAdmin: boolean) {
-  return isAdmin
-    ? SECTIONS
-    : SECTIONS.filter((s) => s.key === "correspondence");
+  return isAdmin ? SECTIONS : SECTIONS.filter((s) => !s.adminOnly);
 }
 
 function Overview({
@@ -220,6 +248,7 @@ export function GeneralManagementShell({
         {currentKey === "correspondence" && (
           <Correspondence workspaceId={workspaceId} />
         )}
+        {currentKey === "minutes-manager" && <MinutesManager />}
         {currentKey === "settings" && (
           <GeneralManagementSettings workspaceId={workspaceId} />
         )}
