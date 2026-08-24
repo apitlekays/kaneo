@@ -27,6 +27,8 @@ const SECTIONS = [
   { key: "settings", label: "Settings", icon: SettingsIcon },
 ] as const;
 
+export type SectionKey = (typeof SECTIONS)[number]["key"];
+
 // Display-side convenience only: it decides which tab renders, nothing more.
 // The actual gate lives on the server (GET /config/*, GET /summary), so a
 // wrong value here can only show or hide a tab — never grant data access.
@@ -143,11 +145,16 @@ export function GeneralManagementShell({
   initialSection = "overview",
 }: {
   workspaceId: string;
-  /** Test-only override for the initial section; defaults to "overview". */
-  initialSection?: string;
+  /**
+   * Test seam only: lets tests render the shell starting on a given tab
+   * without driving the Select control. Production never passes this — the
+   * real starting tab (and the redirect for a hidden/invalid one) is
+   * decided by `currentKey` below, not by this prop.
+   */
+  initialSection?: SectionKey;
 }) {
   const { isAdmin } = useWorkspacePermission();
-  const [section, setSection] = useState<string>(initialSection);
+  const [section, setSection] = useState<SectionKey>(initialSection);
   const sections = visibleSections(isAdmin);
   const currentKey = sections.some((s) => s.key === section)
     ? section
@@ -159,7 +166,12 @@ export function GeneralManagementShell({
     <div className="flex h-full min-h-0 flex-col sm:flex-row">
       {/* Mobile: section selector */}
       <div className="border-border border-b p-3 sm:hidden">
-        <Select value={currentKey} onValueChange={setSection}>
+        <Select
+          value={currentKey}
+          onValueChange={(value) => {
+            if (value) setSection(value);
+          }}
+        >
           <SelectTrigger className="w-full">
             <SelectValue>
               <span className="flex items-center gap-2">

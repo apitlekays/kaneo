@@ -214,7 +214,12 @@ const workspaceAccessApi = new Hono<{
         await db
           .update(workspaceUserTable)
           .set({ role: next.role, previousRole: next.previousRole })
-          .where(eq(workspaceUserTable.id, member.id));
+          .where(
+            and(
+              eq(workspaceUserTable.id, member.id),
+              eq(workspaceUserTable.role, member.role),
+            ),
+          );
       }
 
       return c.json({ success: true });

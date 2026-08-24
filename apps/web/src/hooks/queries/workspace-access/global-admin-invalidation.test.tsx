@@ -7,6 +7,12 @@ vi.mock("@/fetchers/workspace-access", () => ({
   setGlobalAdmin: vi.fn(async () => ({ success: true })),
 }));
 
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
+vi.mock("@/lib/toast", () => ({
+  toast: { error: toastError, success: vi.fn() },
+}));
+
+import { setGlobalAdmin } from "@/fetchers/workspace-access";
 import { useSetGlobalAdmin } from "./use-set-global-admin";
 
 function setup() {
@@ -62,5 +68,56 @@ describe("useSetGlobalAdmin refreshes every surface the toggle affects", () => {
     expect(invalidatedKeys(invalidate)).toEqual(
       expect.arrayContaining([["page-access", "me", "ws-1"]]),
     );
+  });
+
+  // useGetActiveWorkspaceUser backs useWorkspacePermission's `role`. A
+  // self-demotion must refresh it or the caller keeps looking privileged.
+  it("invalidates the active workspace-user cache", async () => {
+    const { invalidate, wrapper } = setup();
+    const { result } = renderHook(() => useSetGlobalAdmin("ws-1"), {
+      wrapper,
+    });
+
+    result.current.mutate({ userId: "user-1", enabled: false });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidatedKeys(invalidate)).toEqual(
+      expect.arrayContaining([["workspace-user", "active"]]),
+    );
+  });
+
+  // useWorkspacePermission's capability map is keyed by (workspaceId, role);
+  // stale capabilities are exactly what would let a demoted admin keep
+  // acting like one until reload.
+  it("invalidates the workspace-capabilities cache", async () => {
+    const { invalidate, wrapper } = setup();
+    const { result } = renderHook(() => useSetGlobalAdmin("ws-1"), {
+      wrapper,
+    });
+
+    result.current.mutate({ userId: "user-1", enabled: false });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidatedKeys(invalidate)).toEqual(
+      expect.arrayContaining([["workspace-capabilities", "ws-1"]]),
+    );
+  });
+});
+
+describe("useSetGlobalAdmin surfaces failures", () => {
+  it("calls toast.error when the mutation rejects", async () => {
+    toastError.mockClear();
+    vi.mocked(setGlobalAdmin).mockRejectedValueOnce(
+      new Error("not authorized"),
+    );
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useSetGlobalAdmin("ws-1"), {
+      wrapper,
+    });
+
+    result.current.mutate({ userId: "user-1", enabled: true });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(toastError).toHaveBeenCalledWith("not authorized");
   });
 });

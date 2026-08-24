@@ -109,8 +109,6 @@ function registerConfigResource(app: Hono<GmEnv>, def: ConfigResource) {
       pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
-        const userId = c.get("userId") as string;
-        await assertGmAdmin(userId, ws);
         const includeInactive = c.req.valid("query").includeInactive === "true";
         return c.json(await def.list(ws, includeInactive));
       },
@@ -1465,6 +1463,8 @@ app.get(
   pageAccess,
   async (c) => {
     const ws = c.get("workspaceId") as string;
+    const userId = c.get("userId") as string;
+    await assertGmAdmin(userId, ws);
     const inc = c.req.valid("query").includeInactive === "true";
     const chains = await db
       .select()
@@ -1490,6 +1490,8 @@ app.get(
   pageAccess,
   async (c) => {
     const ws = c.get("workspaceId") as string;
+    const userId = c.get("userId") as string;
+    await assertGmAdmin(userId, ws);
     const { id } = c.req.valid("param");
     const chain = await loadChain(ws, id);
     if (!chain) throw new HTTPException(404, { message: "Not found" });

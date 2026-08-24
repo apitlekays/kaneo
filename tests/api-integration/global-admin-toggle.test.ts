@@ -267,7 +267,7 @@ describe("API integration: global admin promote/demote", () => {
     }
   });
 
-  it("blocks a general-management page holder who is not global admin from GM config and summary routes", async () => {
+  it("lets a general-management page holder who is not global admin read the config reference data their UI actually calls, but blocks approval-chains and summary", async () => {
     const admin = await createWorkspaceMember({ role: "global-admin" });
     const workspaceId = admin.workspace.id;
     const target = await createWorkspaceMember();
@@ -277,11 +277,25 @@ describe("API integration: global admin promote/demote", () => {
     mockAuthenticatedSession(target.user);
     const { app } = createApp();
 
-    const configResponse = await app.request(
-      `/api/correspondence/config/categories?workspaceId=${workspaceId}`,
-    );
-    expect(configResponse.status).toBe(403);
+    // GET /config/* is reference data (organisations, categories, security
+    // labels, distribution lists, retention classes) read by the register
+    // and by the capture/detail dialogs' pickers — every GM page holder
+    // needs it, not just admins.
+    for (const path of ["categories", "organisations", "security-labels"]) {
+      const response = await app.request(
+        `/api/correspondence/config/${path}?workspaceId=${workspaceId}`,
+      );
+      expect(response.status).toBe(200);
+    }
 
+    // Approval chains expose approverRefs/quorum/condition and are read by
+    // exactly one component, used only in Settings — admin-only.
+    const approvalChainsResponse = await app.request(
+      `/api/correspondence/config/approval-chains?workspaceId=${workspaceId}`,
+    );
+    expect(approvalChainsResponse.status).toBe(403);
+
+    // The Overview dashboard is admin-only, so its summary data is too.
     const summaryResponse = await app.request(
       `/api/correspondence/summary?workspaceId=${workspaceId}`,
     );
@@ -304,7 +318,7 @@ describe("API integration: global admin promote/demote", () => {
     expect(registerResponse.status).toBe(200);
   });
 
-  it("lets that same member through the previously-403 routes once promoted to global admin", async () => {
+  it("lets that same member through the previously-403 approval-chains and summary routes once promoted to global admin", async () => {
     const admin = await createWorkspaceMember({ role: "global-admin" });
     const workspaceId = admin.workspace.id;
     const target = await createWorkspaceMember();
@@ -327,6 +341,11 @@ describe("API integration: global admin promote/demote", () => {
       `/api/correspondence/config/categories?workspaceId=${workspaceId}`,
     );
     expect(configResponse.status).toBe(200);
+
+    const approvalChainsResponse = await app.request(
+      `/api/correspondence/config/approval-chains?workspaceId=${workspaceId}`,
+    );
+    expect(approvalChainsResponse.status).toBe(200);
 
     const summaryResponse = await app.request(
       `/api/correspondence/summary?workspaceId=${workspaceId}`,

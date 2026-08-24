@@ -1,11 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GeneralManagementShell } from "./gm-shell";
+import { GeneralManagementShell, type SectionKey } from "./gm-shell";
 
 // Overview (rendered for admins) calls useQuery directly, so every render
 // needs a real QueryClient in context.
-function renderShell(props: { workspaceId: string; initialSection?: string }) {
+function renderShell(props: {
+  workspaceId: string;
+  initialSection?: SectionKey;
+}) {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
