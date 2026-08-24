@@ -109,6 +109,8 @@ function registerConfigResource(app: Hono<GmEnv>, def: ConfigResource) {
       pageAccess,
       async (c) => {
         const ws = c.get("workspaceId") as string;
+        const userId = c.get("userId") as string;
+        await assertGmAdmin(userId, ws);
         const includeInactive = c.req.valid("query").includeInactive === "true";
         return c.json(await def.list(ws, includeInactive));
       },

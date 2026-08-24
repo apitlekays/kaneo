@@ -5,7 +5,10 @@ import { createApp } from "../../apps/api/src/index";
 import { ACCESS_PAGE_SLUGS } from "../../apps/api/src/workspace-access";
 import { mockAuthenticatedSession } from "./helpers/auth";
 import { resetTestDatabase } from "./helpers/database";
-import { createWorkspaceMember } from "./helpers/fixtures";
+import {
+  createWorkspaceMember,
+  grantGeneralManagement,
+} from "./helpers/fixtures";
 
 async function addMember(
   workspaceId: string,
@@ -262,5 +265,72 @@ describe("API integration: global admin promote/demote", () => {
     for (const slug of ACCESS_PAGE_SLUGS) {
       expect(body.pages).toContain(slug);
     }
+  });
+
+  it("blocks a general-management page holder who is not global admin from GM config and summary routes", async () => {
+    const admin = await createWorkspaceMember({ role: "global-admin" });
+    const workspaceId = admin.workspace.id;
+    const target = await createWorkspaceMember();
+    await addMember(workspaceId, target.user.id, "member");
+    await grantGeneralManagement(workspaceId, target.user.id);
+
+    mockAuthenticatedSession(target.user);
+    const { app } = createApp();
+
+    const configResponse = await app.request(
+      `/api/correspondence/config/categories?workspaceId=${workspaceId}`,
+    );
+    expect(configResponse.status).toBe(403);
+
+    const summaryResponse = await app.request(
+      `/api/correspondence/summary?workspaceId=${workspaceId}`,
+    );
+    expect(summaryResponse.status).toBe(403);
+  });
+
+  it("still lets that same general-management page holder list the letters register — the letter-work regression guard", async () => {
+    const admin = await createWorkspaceMember({ role: "global-admin" });
+    const workspaceId = admin.workspace.id;
+    const target = await createWorkspaceMember();
+    await addMember(workspaceId, target.user.id, "member");
+    await grantGeneralManagement(workspaceId, target.user.id);
+
+    mockAuthenticatedSession(target.user);
+    const { app } = createApp();
+
+    const registerResponse = await app.request(
+      `/api/correspondence/letters?workspaceId=${workspaceId}`,
+    );
+    expect(registerResponse.status).toBe(200);
+  });
+
+  it("lets that same member through the previously-403 routes once promoted to global admin", async () => {
+    const admin = await createWorkspaceMember({ role: "global-admin" });
+    const workspaceId = admin.workspace.id;
+    const target = await createWorkspaceMember();
+    await addMember(workspaceId, target.user.id, "member");
+    await grantGeneralManagement(workspaceId, target.user.id);
+
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+    const promote = await toggleGlobalAdmin(
+      app,
+      workspaceId,
+      target.user.id,
+      true,
+    );
+    expect(promote.status).toBe(200);
+
+    mockAuthenticatedSession(target.user);
+
+    const configResponse = await app.request(
+      `/api/correspondence/config/categories?workspaceId=${workspaceId}`,
+    );
+    expect(configResponse.status).toBe(200);
+
+    const summaryResponse = await app.request(
+      `/api/correspondence/summary?workspaceId=${workspaceId}`,
+    );
+    expect(summaryResponse.status).toBe(200);
   });
 });
