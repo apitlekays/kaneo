@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, DrizzleQueryError, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -20,6 +20,7 @@ import {
   gmSignatoryTable,
   gmSlaPolicyTable,
   gmTemplateTable,
+  meetingTypeTable,
 } from "../database/schema";
 import { requireWorkspacePageAccess } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
@@ -48,6 +49,19 @@ const optStr = v.optional(v.string());
 const optBool = v.optional(v.boolean());
 const optNum = v.optional(v.number());
 const optRec = v.optional(v.record(v.string(), v.unknown()));
+
+/**
+ * True only for a Postgres unique-constraint violation (SQLSTATE 23505)
+ * surfaced through drizzle's `DrizzleQueryError` wrapper. Deliberately
+ * narrow: any other error (a different constraint, a connection failure,
+ * a bug) must keep propagating as-is rather than being folded into a 409.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof DrizzleQueryError &&
+    (error.cause as { code?: string } | undefined)?.code === "23505"
+  );
+}
 
 function getIp(c: Context) {
   return (
@@ -123,19 +137,29 @@ function registerConfigResource(app: Hono<GmEnv>, def: ConfigResource) {
         const userId = c.get("userId") as string;
         await assertGmAdmin(userId, ws);
         const body = c.req.valid("json") as Row;
-        const created = await db.transaction(async (tx) => {
-          const row = await def.create(tx, ws, body);
-          await recordAuditEvent(tx, {
-            workspaceId: ws,
-            entityType: def.entityType,
-            entityId: String(row.id),
-            action: "create",
-            actorId: userId,
-            after: row,
-            ip: getIp(c),
+        let created: Row;
+        try {
+          created = await db.transaction(async (tx) => {
+            const row = await def.create(tx, ws, body);
+            await recordAuditEvent(tx, {
+              workspaceId: ws,
+              entityType: def.entityType,
+              entityId: String(row.id),
+              action: "create",
+              actorId: userId,
+              after: row,
+              ip: getIp(c),
+            });
+            return row;
           });
-          return row;
-        });
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new HTTPException(409, {
+              message: `A ${def.entityType.replace(/_/g, " ")} with that key already exists`,
+            });
+          }
+          throw error;
+        }
         return c.json(created, 201);
       },
     )
@@ -151,21 +175,31 @@ function registerConfigResource(app: Hono<GmEnv>, def: ConfigResource) {
         await assertGmAdmin(userId, ws);
         const { id } = c.req.valid("param");
         const body = c.req.valid("json") as Row;
-        const result = await db.transaction(async (tx) => {
-          const res = await def.update(tx, ws, id, body);
-          if (!res) return null;
-          await recordAuditEvent(tx, {
-            workspaceId: ws,
-            entityType: def.entityType,
-            entityId: id,
-            action: "update",
-            actorId: userId,
-            before: res.before,
-            after: res.after,
-            ip: getIp(c),
+        let result: Row | null;
+        try {
+          result = await db.transaction(async (tx) => {
+            const res = await def.update(tx, ws, id, body);
+            if (!res) return null;
+            await recordAuditEvent(tx, {
+              workspaceId: ws,
+              entityType: def.entityType,
+              entityId: id,
+              action: "update",
+              actorId: userId,
+              before: res.before,
+              after: res.after,
+              ip: getIp(c),
+            });
+            return res.after;
           });
-          return res.after;
-        });
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new HTTPException(409, {
+              message: `A ${def.entityType.replace(/_/g, " ")} with that key already exists`,
+            });
+          }
+          throw error;
+        }
         if (!result) throw new HTTPException(404, { message: "Not found" });
         return c.json(result);
       },
@@ -380,6 +414,91 @@ registerConfigResource(app, {
           eq(gmOrganisationTable.id, id),
           eq(gmOrganisationTable.workspaceId, ws),
         ),
+      )
+      .returning();
+    return { before: before as Row, after: after as Row };
+  },
+});
+
+// ── meeting_type ─────────────────────────────────────────────────────────────
+registerConfigResource(app, {
+  path: "meeting-types",
+  entityType: "meeting_type",
+  createSchema: v.object({
+    workspaceId: v.string(),
+    key: v.string(),
+    label: v.string(),
+    active: optBool,
+  }),
+  updateSchema: v.object({
+    workspaceId: v.string(),
+    key: optStr,
+    label: optStr,
+    active: optBool,
+  }),
+  list: (ws, includeInactive) =>
+    db
+      .select()
+      .from(meetingTypeTable)
+      .where(
+        includeInactive
+          ? eq(meetingTypeTable.workspaceId, ws)
+          : and(
+              eq(meetingTypeTable.workspaceId, ws),
+              eq(meetingTypeTable.active, true),
+            ),
+      )
+      .orderBy(asc(meetingTypeTable.createdAt)),
+  create: async (tx, ws, b) => {
+    const [row] = await tx
+      .insert(meetingTypeTable)
+      .values({
+        workspaceId: ws,
+        key: b.key as string,
+        label: b.label as string,
+        active: (b.active as boolean | undefined) ?? true,
+      })
+      .returning();
+    return row as Row;
+  },
+  update: async (tx, ws, id, b) => {
+    const [before] = await tx
+      .select()
+      .from(meetingTypeTable)
+      .where(
+        and(eq(meetingTypeTable.id, id), eq(meetingTypeTable.workspaceId, ws)),
+      )
+      .limit(1);
+    if (!before) return null;
+    const [after] = await tx
+      .update(meetingTypeTable)
+      .set(
+        patch<typeof meetingTypeTable.$inferInsert>(b, [
+          "key",
+          "label",
+          "active",
+        ]),
+      )
+      .where(
+        and(eq(meetingTypeTable.id, id), eq(meetingTypeTable.workspaceId, ws)),
+      )
+      .returning();
+    return { before: before as Row, after: after as Row };
+  },
+  deactivate: async (tx, ws, id) => {
+    const [before] = await tx
+      .select()
+      .from(meetingTypeTable)
+      .where(
+        and(eq(meetingTypeTable.id, id), eq(meetingTypeTable.workspaceId, ws)),
+      )
+      .limit(1);
+    if (!before) return null;
+    const [after] = await tx
+      .update(meetingTypeTable)
+      .set({ active: false })
+      .where(
+        and(eq(meetingTypeTable.id, id), eq(meetingTypeTable.workspaceId, ws)),
       )
       .returning();
     return { before: before as Row, after: after as Row };
