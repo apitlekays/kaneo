@@ -244,6 +244,288 @@ app.get(
   },
 );
 
+// ── Bodies ───────────────────────────────────────────────────────────────
+// Standing bodies (and their membership) determine adoption authority — see
+// `bodyRoleFor` / `canAdoptMeeting` above — so writes here are gated on
+// `assertGmAdmin`, not the looser `assertMeetingWriteAccess`. Reads stay open
+// to any General Management page holder, same as meeting reads.
+//
+// This whole "/bodies*" block MUST stay registered before the "/:id" routes
+// below (Detail's GET and Update's PUT). Hono matches literal path segments
+// against parameterised ones in registration order, so a "/bodies*" route
+// declared after "/:id" would be swallowed by it (id = "bodies") and 404 —
+// don't let a later alphabetical re-sort of these sections separate them.
+const BODY_ROLES = ["chair", "secretary", "member"] as const;
+
+async function loadBody(workspaceId: string, id: string) {
+  const [row] = await db
+    .select()
+    .from(meetingBodyTable)
+    .where(
+      and(
+        eq(meetingBodyTable.id, id),
+        eq(meetingBodyTable.workspaceId, workspaceId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+app.get(
+  "/bodies",
+  describeRoute({
+    operationId: "listMeetingBodies",
+    tags: ["Meeting"],
+    description: "List standing bodies in a workspace",
+  }),
+  validator(
+    "query",
+    v.object({ workspaceId: v.string(), includeInactive: optStr }),
+  ),
+  workspaceAccess.fromQuery("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const includeInactive = c.req.valid("query").includeInactive === "true";
+    const rows = await db
+      .select()
+      .from(meetingBodyTable)
+      .where(
+        includeInactive
+          ? eq(meetingBodyTable.workspaceId, ws)
+          : and(
+              eq(meetingBodyTable.workspaceId, ws),
+              eq(meetingBodyTable.active, true),
+            ),
+      )
+      .orderBy(asc(meetingBodyTable.createdAt));
+    return c.json(rows);
+  },
+);
+
+app.post(
+  "/bodies",
+  describeRoute({
+    operationId: "createMeetingBody",
+    tags: ["Meeting"],
+    description: "Create a standing body (General Management admin only)",
+  }),
+  validator(
+    "json",
+    v.object({
+      workspaceId: v.string(),
+      name: v.string(),
+      description: optStr,
+      quorumRule: optStr,
+    }),
+  ),
+  workspaceAccess.fromBody("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const userId = c.get("userId") as string;
+    await assertGmAdmin(userId, ws);
+    const b = c.req.valid("json");
+    const name = b.name.trim();
+    if (!name) throw new HTTPException(400, { message: "Name required" });
+    const [row] = await db
+      .insert(meetingBodyTable)
+      .values({
+        workspaceId: ws,
+        name,
+        description: b.description ?? null,
+        quorumRule: b.quorumRule ?? null,
+      })
+      .returning();
+    return c.json(row, 201);
+  },
+);
+
+app.put(
+  "/bodies/:bodyId",
+  describeRoute({
+    operationId: "updateMeetingBody",
+    tags: ["Meeting"],
+    description: "Update a standing body (General Management admin only)",
+  }),
+  validator("param", v.object({ bodyId: v.string() })),
+  validator(
+    "json",
+    v.object({
+      workspaceId: v.string(),
+      name: optStr,
+      description: optStr,
+      quorumRule: optStr,
+      active: optBool,
+    }),
+  ),
+  workspaceAccess.fromBody("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const userId = c.get("userId") as string;
+    await assertGmAdmin(userId, ws);
+    const { bodyId } = c.req.valid("param");
+    const b = c.req.valid("json");
+    const body = await loadBody(ws, bodyId);
+    if (!body) throw new HTTPException(404, { message: "Not found" });
+    const p = patch<typeof meetingBodyTable.$inferInsert>(b, [
+      "description",
+      "quorumRule",
+      "active",
+    ]);
+    if (b.name !== undefined) p.name = b.name.trim();
+    const [row] = await db
+      .update(meetingBodyTable)
+      .set(p)
+      .where(
+        and(
+          eq(meetingBodyTable.id, bodyId),
+          eq(meetingBodyTable.workspaceId, ws),
+        ),
+      )
+      .returning();
+    return c.json(row);
+  },
+);
+
+app.delete(
+  "/bodies/:bodyId",
+  describeRoute({
+    operationId: "deactivateMeetingBody",
+    tags: ["Meeting"],
+    description:
+      "Deactivate a standing body — never a hard delete; historical meetings keep referencing it (General Management admin only)",
+  }),
+  validator("param", v.object({ bodyId: v.string() })),
+  validator("query", v.object({ workspaceId: v.string() })),
+  workspaceAccess.fromQuery("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const userId = c.get("userId") as string;
+    await assertGmAdmin(userId, ws);
+    const { bodyId } = c.req.valid("param");
+    const body = await loadBody(ws, bodyId);
+    if (!body) throw new HTTPException(404, { message: "Not found" });
+    const [row] = await db
+      .update(meetingBodyTable)
+      .set({ active: false })
+      .where(
+        and(
+          eq(meetingBodyTable.id, bodyId),
+          eq(meetingBodyTable.workspaceId, ws),
+        ),
+      )
+      .returning();
+    return c.json(row);
+  },
+);
+
+// ── Body members ─────────────────────────────────────────────────────────
+app.get(
+  "/bodies/:bodyId/members",
+  describeRoute({
+    operationId: "listMeetingBodyMembers",
+    tags: ["Meeting"],
+    description: "List a standing body's members",
+  }),
+  validator("param", v.object({ bodyId: v.string() })),
+  validator("query", v.object({ workspaceId: v.string() })),
+  workspaceAccess.fromQuery("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const { bodyId } = c.req.valid("param");
+    const body = await loadBody(ws, bodyId);
+    if (!body) throw new HTTPException(404, { message: "Not found" });
+    const rows = await db
+      .select()
+      .from(meetingBodyMemberTable)
+      .where(eq(meetingBodyMemberTable.bodyId, bodyId))
+      .orderBy(asc(meetingBodyMemberTable.createdAt));
+    return c.json(rows);
+  },
+);
+
+app.post(
+  "/bodies/:bodyId/members",
+  describeRoute({
+    operationId: "addMeetingBodyMember",
+    tags: ["Meeting"],
+    description:
+      "Add a body member — exactly one of userId or name (General Management admin only)",
+  }),
+  validator("param", v.object({ bodyId: v.string() })),
+  validator(
+    "json",
+    v.object({
+      workspaceId: v.string(),
+      userId: optStr,
+      name: optStr,
+      role: v.optional(v.picklist(BODY_ROLES)),
+    }),
+  ),
+  workspaceAccess.fromBody("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const callerId = c.get("userId") as string;
+    await assertGmAdmin(callerId, ws);
+    const { bodyId } = c.req.valid("param");
+    const b = c.req.valid("json");
+    const body = await loadBody(ws, bodyId);
+    if (!body) throw new HTTPException(404, { message: "Not found" });
+    assertExactlyOneOfUserIdOrName(b.userId, b.name);
+    if (b.userId && !(await isWorkspaceMember(b.userId, ws)))
+      throw new HTTPException(400, { message: "Invalid userId" });
+    const [row] = await db
+      .insert(meetingBodyMemberTable)
+      .values({
+        bodyId,
+        userId: b.userId?.trim() || null,
+        name: b.name?.trim() || null,
+        role: b.role ?? "member",
+      })
+      .returning();
+    return c.json(row, 201);
+  },
+);
+
+app.delete(
+  "/bodies/:bodyId/members/:memberId",
+  describeRoute({
+    operationId: "removeMeetingBodyMember",
+    tags: ["Meeting"],
+    description:
+      "Deactivate a body member — never a hard delete (General Management admin only)",
+  }),
+  validator("param", v.object({ bodyId: v.string(), memberId: v.string() })),
+  validator("query", v.object({ workspaceId: v.string() })),
+  workspaceAccess.fromQuery("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const callerId = c.get("userId") as string;
+    await assertGmAdmin(callerId, ws);
+    const { bodyId, memberId } = c.req.valid("param");
+    const body = await loadBody(ws, bodyId);
+    if (!body) throw new HTTPException(404, { message: "Not found" });
+    const [row] = await db
+      .update(meetingBodyMemberTable)
+      .set({ active: false })
+      .where(
+        and(
+          eq(meetingBodyMemberTable.id, memberId),
+          eq(meetingBodyMemberTable.bodyId, bodyId),
+        ),
+      )
+      .returning();
+    if (!row) throw new HTTPException(404, { message: "Not found" });
+    return c.json(row);
+  },
+);
+
 // ── Detail ───────────────────────────────────────────────────────────────
 app.get(
   "/:id",

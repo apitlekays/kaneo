@@ -104,6 +104,13 @@ export type AddMinuteItemInput = {
 
 export type UpdateMinuteItemInput = Partial<AddMinuteItemInput>;
 
+export type AddActionInput = {
+  description: string;
+  minuteItemId?: string;
+  assigneeId?: string;
+  dueAt?: string;
+};
+
 function post<T>(path: string, workspaceId: string, body: object): Promise<T> {
   return fetch(url(path), {
     method: "POST",
@@ -186,3 +193,9 @@ export const adoptMeeting = (
   id: string,
   adoptedByMeetingId: string,
 ) => post<Meeting>(`${id}/adopt`, workspaceId, { adoptedByMeetingId });
+
+export const addAction = (
+  workspaceId: string,
+  id: string,
+  body: AddActionInput,
+) => post<MeetingAction>(`${id}/actions`, workspaceId, body);

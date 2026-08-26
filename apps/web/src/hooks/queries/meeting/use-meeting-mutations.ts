@@ -80,5 +80,14 @@ export function useMeetingMutations(workspaceId: string, meetingId?: string) {
       },
       onError,
     }),
+    addAction: useMutation({
+      mutationFn: (body: api.AddActionInput) =>
+        api.addAction(workspaceId, id, body),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Action recorded");
+      },
+      onError,
+    }),
   };
 }
