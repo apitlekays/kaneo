@@ -116,9 +116,12 @@ async function seedMeetingWithAction(options?: {
     description: "Draft the audit response",
     assigneeId: assignee.user.id,
   });
-  const action = await actionRes.json();
+  // A refusal (e.g. assigning on a confidential meeting to a non-reader) is
+  // a plain-text HTTPException body, not JSON — only parse on success so
+  // callers exercising the refusal path can still inspect actionRes itself.
+  const action = actionRes.ok ? await actionRes.json() : null;
 
-  return { owner, assignee, meeting, action, ownerApp };
+  return { owner, assignee, meeting, action, actionRes, ownerApp };
 }
 
 function app_addAttendee(
@@ -314,5 +317,77 @@ describe("API integration: meeting actions", () => {
       (i: { source: string }) => i.source === "meeting-action",
     );
     expect(item).toBeUndefined();
+  });
+
+  it("8. assigning an action on a confidential meeting to a non-attendee is refused at creation: 403, no action row, no notification row", async () => {
+    const { owner, assignee, actionRes } = await seedMeetingWithAction({
+      confidential: true,
+      // Deliberately NOT an attendee — this is the exact case the whole-branch
+      // review flagged: a confidential meeting's title must never leak
+      // through a notification to someone who cannot read the meeting, and
+      // gating only the notification would leave an undecidable action row
+      // behind. The fix must refuse the assignment itself, before any write.
+      assigneeIsAttendee: false,
+    });
+
+    expect(actionRes.status).toBe(403);
+
+    const actionRows = await db
+      .select()
+      .from(schema.meetingActionTable)
+      .where(eq(schema.meetingActionTable.fromUserId, owner.user.id));
+    expect(actionRows).toHaveLength(0);
+
+    const notifications = await db
+      .select()
+      .from(schema.notificationTable)
+      .where(eq(schema.notificationTable.userId, assignee.user.id));
+    expect(notifications).toHaveLength(0);
+  });
+
+  it("9. a General Management page holder who is not an attendee is refused completing an action on a confidential meeting (403); the assignee themself is unaffected", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      confidential: true,
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const accept = await decideAction(assigneeApp, action.id, {
+      workspaceId: owner.workspace.id,
+      decision: "accepted",
+      reason: null,
+    });
+    expect(accept.status).toBe(200);
+
+    // A GM page holder who was never an attendee of this confidential
+    // meeting must not be able to read it — and completing this action
+    // would let them read who did what and why, so it stays gated too.
+    const gmOfficer = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: owner.workspace.id,
+      userId: gmOfficer.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(owner.workspace.id, gmOfficer.user.id);
+
+    mockAuthenticatedSession(gmOfficer.user);
+    const { app: gmApp } = createApp();
+    const officerAttempt = await completeAction(gmApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+    });
+    expect(officerAttempt.status).toBe(403);
+
+    // The assignee's own branch is unaffected by the gate above.
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp2 } = createApp();
+    const assigneeComplete = await completeAction(
+      assigneeApp2,
+      meeting.id,
+      action.id,
+      { workspaceId: owner.workspace.id },
+    );
+    expect(assigneeComplete.status).toBe(200);
   });
 });

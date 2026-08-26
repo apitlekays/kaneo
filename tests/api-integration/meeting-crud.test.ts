@@ -188,10 +188,17 @@ describe("API integration: meeting CRUD", () => {
 
     // Adoption on a standalone meeting: no body means no body role, so only
     // a global admin (which this creator is, being the workspace owner) may
-    // adopt it.
+    // adopt it. `adoptedByMeetingId` must resolve to a real meeting in this
+    // workspace — see idInWorkspace in the adopt route.
+    const laterMeeting = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Later Ratifying Meeting",
+    });
+    const laterMeetingBody = await laterMeeting.json();
+
     const adopted = await adoptMeeting(app, meeting.id, {
       workspaceId: admin.workspace.id,
-      adoptedByMeetingId: `later-${randomUUID()}`,
+      adoptedByMeetingId: laterMeetingBody.id,
     });
     expect(adopted.status).toBe(200);
     const adoptedBody = await adopted.json();
@@ -347,7 +354,20 @@ describe("API integration: meeting CRUD", () => {
     });
     const meeting = await created.json();
 
-    const laterMeetingId = `later-${randomUUID()}`;
+    // `adoptedByMeetingId` must resolve to a real meeting in this workspace
+    // (see idInWorkspace in the adopt route), so seed two real "later"
+    // meetings rather than fabricating ids.
+    const laterMeetingRes = await createMeeting(adminApp, {
+      workspaceId: admin.workspace.id,
+      title: "Later Ratifying Meeting",
+    });
+    const laterMeetingId = (await laterMeetingRes.json()).id as string;
+    const anotherLaterMeetingRes = await createMeeting(adminApp, {
+      workspaceId: admin.workspace.id,
+      title: "Another Later Ratifying Meeting",
+    });
+    const anotherLaterMeetingId = (await anotherLaterMeetingRes.json())
+      .id as string;
 
     // An ordinary member (not chair/secretary, not global admin) is refused.
     mockAuthenticatedSession(plainMember.user);
@@ -374,7 +394,7 @@ describe("API integration: meeting CRUD", () => {
     // A second adopt attempt claims no rows — 409, not a silent overwrite.
     const secondAdopt = await adoptMeeting(chairApp, meeting.id, {
       workspaceId: admin.workspace.id,
-      adoptedByMeetingId: `another-${randomUUID()}`,
+      adoptedByMeetingId: anotherLaterMeetingId,
     });
     expect(secondAdopt.status).toBe(409);
 
@@ -402,9 +422,15 @@ describe("API integration: meeting CRUD", () => {
     });
     const minuteItem = await minuteItemRes.json();
 
+    const laterMeetingRes = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Later Ratifying Meeting",
+    });
+    const laterMeetingId = (await laterMeetingRes.json()).id as string;
+
     const adopted = await adoptMeeting(app, meeting.id, {
       workspaceId: admin.workspace.id,
-      adoptedByMeetingId: `later-${randomUUID()}`,
+      adoptedByMeetingId: laterMeetingId,
     });
     expect(adopted.status).toBe(200);
 
@@ -419,5 +445,76 @@ describe("API integration: meeting CRUD", () => {
       .from(schema.meetingMinuteItemTable)
       .where(eq(schema.meetingMinuteItemTable.id, minuteItem.id));
     expect(row.agenda).toBe("Original agenda text");
+  });
+
+  it("8. adopting with a meeting id from another workspace is refused (400)", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    const otherOwner = await createWorkspaceMember({ role: "owner" });
+
+    mockAuthenticatedSession(otherOwner.user);
+    const { app: otherApp } = createApp();
+    const otherWorkspaceMeeting = await createMeeting(otherApp, {
+      workspaceId: otherOwner.workspace.id,
+      title: "Other Workspace's Later Meeting",
+    });
+    const otherWorkspaceMeetingId = (await otherWorkspaceMeeting.json())
+      .id as string;
+
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+    const created = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Meeting To Adopt",
+    });
+    const meeting = await created.json();
+
+    const crossWorkspaceAdopt = await adoptMeeting(app, meeting.id, {
+      workspaceId: admin.workspace.id,
+      adoptedByMeetingId: otherWorkspaceMeetingId,
+    });
+    expect(crossWorkspaceAdopt.status).toBe(400);
+
+    const [row] = await db
+      .select()
+      .from(schema.meetingTable)
+      .where(eq(schema.meetingTable.id, meeting.id));
+    expect(row.status).toBe("draft");
+    expect(row.adoptedByMeetingId).toBeNull();
+  });
+
+  it("9. a dangling adoptedByMeetingId (its target meeting later deleted) renders as absent, not a crash, in the detail route", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+
+    const created = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Meeting To Adopt",
+    });
+    const meeting = await created.json();
+
+    const laterMeetingRes = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Later Ratifying Meeting",
+    });
+    const laterMeetingId = (await laterMeetingRes.json()).id as string;
+
+    const adopted = await adoptMeeting(app, meeting.id, {
+      workspaceId: admin.workspace.id,
+      adoptedByMeetingId: laterMeetingId,
+    });
+    expect(adopted.status).toBe(200);
+
+    // The column deliberately carries no FK: deleting the later meeting
+    // leaves adoptedByMeetingId dangling rather than cascading.
+    await db
+      .delete(schema.meetingTable)
+      .where(eq(schema.meetingTable.id, laterMeetingId));
+
+    const detail = await getMeeting(app, meeting.id, admin.workspace.id);
+    expect(detail.status).toBe(200);
+    const detailBody = await detail.json();
+    expect(detailBody.adoptedByMeetingId).toBe(laterMeetingId);
+    expect(detailBody.adoptedByMeeting).toBeNull();
   });
 });

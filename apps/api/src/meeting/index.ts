@@ -102,7 +102,10 @@ async function bodyRoleFor(
 
 /** Verify a config id belongs to the workspace (or is null/undefined). */
 async function idInWorkspace(
-  table: typeof meetingTypeTable | typeof meetingBodyTable,
+  table:
+    | typeof meetingTypeTable
+    | typeof meetingBodyTable
+    | typeof meetingTable,
   id: string | null | undefined,
   workspaceId: string,
 ) {
@@ -284,7 +287,12 @@ app.get(
       const [row] = await db
         .select({ id: meetingTable.id, title: meetingTable.title })
         .from(meetingTable)
-        .where(eq(meetingTable.id, meeting.adoptedByMeetingId))
+        .where(
+          and(
+            eq(meetingTable.id, meeting.adoptedByMeetingId),
+            eq(meetingTable.workspaceId, ws),
+          ),
+        )
         .limit(1);
       adoptedByMeeting = row ?? null;
     }
@@ -600,6 +608,8 @@ app.post(
     const { adoptedByMeetingId } = c.req.valid("json");
     const meeting = await loadMeeting(ws, id);
     if (!meeting) throw new HTTPException(404, { message: "Not found" });
+    if (!(await idInWorkspace(meetingTable, adoptedByMeetingId, ws)))
+      throw new HTTPException(400, { message: "Invalid adoptedByMeetingId" });
     const admin = await isGlobalAdmin(userId, ws);
     const bodyRole = await bodyRoleFor(meeting.bodyId, userId);
     if (!canAdoptMeeting({ isGlobalAdmin: admin, bodyRole }))
@@ -672,8 +682,29 @@ app.post(
     if (!description)
       throw new HTTPException(400, { message: "Description required" });
     const assigneeId = b.assigneeId?.trim() || null;
-    if (assigneeId && !(await isWorkspaceMember(assigneeId, ws)))
-      throw new HTTPException(400, { message: "Invalid assignee" });
+    if (assigneeId) {
+      if (!(await isWorkspaceMember(assigneeId, ws)))
+        throw new HTTPException(400, { message: "Invalid assignee" });
+      // Assigning an action on a confidential meeting to someone who cannot
+      // read that meeting is not a valid assignment — refuse it here, before
+      // any write, rather than gating only the notification. Composed
+      // against the assignee (the target of the assignment), not the
+      // caller.
+      const attendeeUserIds = await loadAttendeeUserIds(id);
+      const assigneeIsGlobalAdmin = await isGlobalAdmin(assigneeId, ws);
+      if (
+        !canReadMeeting({
+          confidential: meeting.confidential,
+          attendeeUserIds,
+          userId: assigneeId,
+          isGlobalAdmin: assigneeIsGlobalAdmin,
+        })
+      )
+        throw new HTTPException(403, {
+          message:
+            "Cannot assign an action on a confidential meeting to someone who cannot read it",
+        });
+    }
     if (b.minuteItemId) {
       const [item] = await db
         .select({ id: meetingMinuteItemTable.id })
@@ -750,10 +781,17 @@ app.post(
       .limit(1);
     if (!action) throw new HTTPException(404, { message: "Not found" });
     const hasPage = await hasWorkspacePageAccess(callerId, ws, PAGE_SLUG);
-    if (action.assigneeId !== callerId && !hasPage)
-      throw new HTTPException(403, {
-        message: "Only the action's assignee can complete it",
-      });
+    if (action.assigneeId !== callerId) {
+      if (!hasPage)
+        throw new HTTPException(403, {
+          message: "Only the action's assignee can complete it",
+        });
+      // A GM page holder is not automatically an attendee: a confidential
+      // meeting's action stays closed to them unless they can also read the
+      // meeting itself. The assignee's own branch above is deliberately not
+      // gated this way — see the route-level comment.
+      await assertCanReadMeeting(callerId, ws, meeting);
+    }
     // Accepting is not doing: an action that was never agreed to isn't yet
     // anyone's work, so it cannot be marked done.
     if (action.acceptance !== "accepted")
