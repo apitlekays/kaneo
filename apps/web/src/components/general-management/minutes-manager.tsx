@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -167,7 +168,7 @@ function CreateMeetingDialog({
         <DialogHeader>
           <DialogTitle>New meeting</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="space-y-3 px-6">
           <div className="space-y-1">
             <Label className="text-xs">Title</Label>
             <Input
@@ -204,7 +205,7 @@ function CreateMeetingDialog({
             <span>Confidential — restrict to attendees and admins</span>
           </label>
         </div>
-        <div className="flex justify-end gap-2 pt-2">
+        <DialogFooter variant="bare">
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
           </Button>
@@ -218,7 +219,7 @@ function CreateMeetingDialog({
             )}
             Create
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
