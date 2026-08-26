@@ -11,6 +11,7 @@ import {
   removeLabelFromGitHub,
   syncLabelToGitHub,
 } from "../../plugins/github/utils/sync-label-to-github";
+import { trackBackgroundWork } from "../../utils/background-work";
 
 async function assignLabelToTask(id: string, taskId: string, userId: string) {
   const label = await db.query.labelTable.findFirst({
@@ -59,23 +60,31 @@ async function assignLabelToTask(id: string, taskId: string, userId: string) {
   }
 
   if (label.taskId && label.taskId !== taskId) {
-    removeLabelFromGitHub(label.taskId, label.name).catch((error) => {
-      console.error("Failed to remove label from GitHub:", error);
-    });
-    removeLabelFromGitea(label.taskId, label.name).catch((error) => {
-      console.error("Failed to remove label from Gitea:", error);
-    });
+    trackBackgroundWork(
+      removeLabelFromGitHub(label.taskId, label.name).catch((error) => {
+        console.error("Failed to remove label from GitHub:", error);
+      }),
+    );
+    trackBackgroundWork(
+      removeLabelFromGitea(label.taskId, label.name).catch((error) => {
+        console.error("Failed to remove label from Gitea:", error);
+      }),
+    );
   }
 
-  syncLabelToGitHub(taskId, updatedLabel.name, updatedLabel.color).catch(
-    (error) => {
-      console.error("Failed to sync label to GitHub:", error);
-    },
+  trackBackgroundWork(
+    syncLabelToGitHub(taskId, updatedLabel.name, updatedLabel.color).catch(
+      (error) => {
+        console.error("Failed to sync label to GitHub:", error);
+      },
+    ),
   );
-  syncLabelToGitea(taskId, updatedLabel.name, updatedLabel.color).catch(
-    (error) => {
-      console.error("Failed to sync label to Gitea:", error);
-    },
+  trackBackgroundWork(
+    syncLabelToGitea(taskId, updatedLabel.name, updatedLabel.color).catch(
+      (error) => {
+        console.error("Failed to sync label to Gitea:", error);
+      },
+    ),
   );
 
   await publishEvent("task.label_assigned", {

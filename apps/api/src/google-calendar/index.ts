@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import db from "../database";
 import { taskCalendarEventTable } from "../database/schema";
+import { trackBackgroundWork } from "../utils/background-work";
 import {
   deleteConnection,
   getConnection,
@@ -99,9 +100,13 @@ const googleCalendar = new Hono<{ Variables: { userId: string } }>()
         expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
         scope: tokens.scope ?? null,
       });
-      // Backfill existing tasks onto the calendar (fire and forget).
-      void syncAllTasksForUser(userId).catch((err) =>
-        console.error("Initial calendar backfill failed:", err),
+      // Backfill existing tasks onto the calendar (fire and forget). Still
+      // tracked: it reads taskTable after this request has already
+      // responded, so a test harness truncating tables can race it.
+      trackBackgroundWork(
+        syncAllTasksForUser(userId).catch((err) =>
+          console.error("Initial calendar backfill failed:", err),
+        ),
       );
       return c.redirect(clientRedirect("connected"));
     } catch (err) {
