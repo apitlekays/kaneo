@@ -260,7 +260,7 @@ app.get(
     const meeting = await loadMeeting(ws, id);
     if (!meeting) throw new HTTPException(404, { message: "Not found" });
     await assertCanReadMeeting(userId, ws, meeting);
-    const [attendees, minuteItems] = await Promise.all([
+    const [attendees, minuteItems, actions] = await Promise.all([
       db
         .select()
         .from(meetingAttendeeTable)
@@ -271,6 +271,11 @@ app.get(
         .from(meetingMinuteItemTable)
         .where(eq(meetingMinuteItemTable.meetingId, id))
         .orderBy(asc(meetingMinuteItemTable.position)),
+      db
+        .select()
+        .from(meetingActionTable)
+        .where(eq(meetingActionTable.meetingId, id))
+        .orderBy(asc(meetingActionTable.createdAt)),
     ]);
     // `adoptedByMeetingId` carries no FK: the meeting it points at may since
     // have been deleted. Tolerate that lookup coming back empty.
@@ -283,7 +288,13 @@ app.get(
         .limit(1);
       adoptedByMeeting = row ?? null;
     }
-    return c.json({ ...meeting, attendees, minuteItems, adoptedByMeeting });
+    return c.json({
+      ...meeting,
+      attendees,
+      minuteItems,
+      actions,
+      adoptedByMeeting,
+    });
   },
 );
 

@@ -50,9 +50,11 @@ export type MeetingMinuteItem = {
   createdAt: string;
 };
 
-// Not yet exposed by a route (a later task appends the ACTION routes), but
-// shaped from `meetingActionTable` in apps/api/src/database/schema.ts so the
-// UI layer can be typed ahead of it.
+// Returned as part of `GET /meeting/:id`'s `actions` array, alongside
+// `attendees` and `minuteItems`. Checked field-by-field against
+// `meetingActionTable` (apps/api/src/database/schema.ts) and against the
+// integration-test responses in tests/api-integration/meeting-actions.test.ts
+// — no field needed correcting.
 export type MeetingAction = {
   id: string;
   meetingId: string;
@@ -72,6 +74,7 @@ export type MeetingAction = {
 export type MeetingDetail = Meeting & {
   attendees: MeetingAttendee[];
   minuteItems: MeetingMinuteItem[];
+  actions: MeetingAction[];
   adoptedByMeeting: { id: string; title: string } | null;
 };
 

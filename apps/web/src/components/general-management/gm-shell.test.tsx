@@ -91,8 +91,13 @@ describe("GeneralManagementShell section visibility", () => {
 
     await user.click(screen.getByRole("button", { name: "Minutes Manager" }));
 
+    // The panel's own heading spells out "Meeting Minutes" — never bare
+    // "Minutes" — to stay distinguishable from the other two features in
+    // this codebase colloquially called "minutes" (task_mom, letter_minute).
+    // The tab/button label above is a separate, pre-existing fixture name
+    // ("Minutes Manager", from gm-shell.tsx) and is unaffected.
     expect(
-      screen.getByRole("heading", { name: "Minutes Manager" }),
+      screen.getByRole("heading", { name: "Meeting Minutes" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByTestId("correspondence-panel"),
