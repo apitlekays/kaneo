@@ -41,6 +41,7 @@ import getInstanceStatus from "./instance/controllers/get-instance-status";
 import invitation from "./invitation";
 import label from "./label";
 import mcpRoutes, { mcpWellKnownRoutes } from "./mcp";
+import meeting from "./meeting";
 import { migrateColumns } from "./migrations/column-migration";
 import notification from "./notification";
 import notificationPreferences from "./notification-preferences";
@@ -599,6 +600,7 @@ export function createApp() {
   api.route("/asset-registry", assetRegistry);
   api.route("/correspondence", correspondence);
   api.route("/pending-decision", pendingDecision);
+  api.route("/meeting", meeting);
 
   app.route(
     "/",

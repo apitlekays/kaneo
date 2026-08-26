@@ -2547,3 +2547,187 @@ export const letterDispositionTable = pgTable(
   },
   (table) => [index("letter_disposition_letterId_idx").on(table.letterId)],
 );
+
+export const meetingTypeTable = pgTable(
+  "meeting_type",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("meeting_type_workspaceId_idx").on(table.workspaceId),
+    unique("meeting_type_ws_key_unique").on(table.workspaceId, table.key),
+  ],
+);
+
+export const meetingBodyTable = pgTable(
+  "meeting_body",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    // Free text a human reads ("half plus one"). Encoding every
+    // constitution's arithmetic is deliberately out of scope.
+    quorumRule: text("quorum_rule"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("meeting_body_workspaceId_idx").on(table.workspaceId)],
+);
+
+export const meetingBodyMemberTable = pgTable(
+  "meeting_body_member",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    bodyId: text("body_id")
+      .notNull()
+      .references(() => meetingBodyTable.id, { onDelete: "cascade" }),
+    // Exactly one of userId / name is set. An external member has no
+    // account; a linked member is the only kind that can hold an action.
+    userId: text("user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    name: text("name"),
+    // chair | secretary | member
+    role: text("role").notNull().default("member"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("meeting_body_member_bodyId_idx").on(table.bodyId)],
+);
+
+export const meetingTable = pgTable(
+  "meeting",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    meetingTypeId: text("meeting_type_id").references(
+      () => meetingTypeTable.id,
+      { onDelete: "set null" },
+    ),
+    // Null for a standalone meeting. Quorum is only meaningful with a body.
+    bodyId: text("body_id").references(() => meetingBodyTable.id, {
+      onDelete: "set null",
+    }),
+    scheduledAt: timestamp("scheduled_at", { mode: "date" }),
+    location: text("location"),
+    confidential: boolean("confidential").notNull().default(false),
+    // draft | adopted
+    status: text("status").notNull().default("draft"),
+    adoptedAt: timestamp("adopted_at", { mode: "date" }),
+    // The later meeting at which these minutes were adopted. Self-reference,
+    // and it MUST be set null on delete: removing a later meeting must not
+    // cascade away an earlier meeting's adoption record.
+    adoptedByMeetingId: text("adopted_by_meeting_id"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("meeting_workspaceId_idx").on(table.workspaceId),
+    index("meeting_bodyId_idx").on(table.bodyId),
+  ],
+);
+
+export const meetingAttendeeTable = pgTable(
+  "meeting_attendee",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meetingTable.id, { onDelete: "cascade" }),
+    // Exactly one of userId / name, as with body members.
+    userId: text("user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    name: text("name"),
+    // present | apology | absent — absentees are recorded, not omitted.
+    attendance: text("attendance").notNull().default("present"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("meeting_attendee_meetingId_idx").on(table.meetingId)],
+);
+
+export const meetingMinuteItemTable = pgTable(
+  "meeting_minute_item",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meetingTable.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+    agenda: text("agenda").notNull(),
+    discussion: text("discussion"),
+    decision: text("decision"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("meeting_minute_item_meetingId_idx").on(table.meetingId)],
+);
+
+export const meetingActionTable = pgTable(
+  "meeting_action",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meetingTable.id, { onDelete: "cascade" }),
+    // Null when the action arose outside any single agenda item.
+    minuteItemId: text("minute_item_id").references(
+      () => meetingMinuteItemTable.id,
+      { onDelete: "set null" },
+    ),
+    assigneeId: text("assignee_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    fromUserId: text("from_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    description: text("description").notNull(),
+    dueAt: timestamp("due_at", { mode: "date" }),
+    // pending | accepted | rejected — is this work yours?
+    acceptance: text("acceptance").notNull().default("pending"),
+    rejectionReason: text("rejection_reason"),
+    // open | done | cancelled — is it finished? A separate axis on purpose.
+    status: text("status").notNull().default("open"),
+    completedAt: timestamp("completed_at", { mode: "date" }),
+    completedBy: text("completed_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("meeting_action_meetingId_idx").on(table.meetingId),
+    index("meeting_action_assigneeId_idx").on(table.assigneeId),
+  ],
+);

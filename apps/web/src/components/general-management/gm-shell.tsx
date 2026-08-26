@@ -45,7 +45,7 @@ const SECTIONS = [
   },
   {
     key: "minutes-manager",
-    label: "Minutes Manager",
+    label: "Meeting Minutes",
     icon: NotepadText,
     adminOnly: false,
   },
@@ -248,7 +248,9 @@ export function GeneralManagementShell({
         {currentKey === "correspondence" && (
           <Correspondence workspaceId={workspaceId} />
         )}
-        {currentKey === "minutes-manager" && <MinutesManager />}
+        {currentKey === "minutes-manager" && (
+          <MinutesManager workspaceId={workspaceId} />
+        )}
         {currentKey === "settings" && (
           <GeneralManagementSettings workspaceId={workspaceId} />
         )}
