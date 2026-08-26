@@ -131,6 +131,33 @@ async function getAssignments(taskId: string) {
     .where(eq(schema.taskAssignmentTable.taskId, taskId));
 }
 
+/**
+ * Compact dump of a task's assignment rows, for attaching to an assertion
+ * message.
+ *
+ * The supersede test below has failed intermittently in full-suite runs —
+ * roughly one run in five to eight — while passing consistently in
+ * isolation, which points at cross-file interference rather than its own
+ * logic. Both observed failures were lost because the run ended before the
+ * assertion text could be read, leaving nothing to diagnose. Attaching the
+ * actual rows means the next occurrence explains itself instead of costing
+ * another hunt.
+ */
+function describeAssignments(
+  rows: {
+    status: string;
+    toUserId: string | null;
+    fromUserId: string | null;
+  }[],
+) {
+  return rows
+    .map(
+      (r) =>
+        `{status=${r.status} to=${r.toUserId ?? "null"} from=${r.fromUserId ?? "null"}}`,
+    )
+    .join(" ");
+}
+
 async function getNotificationsFor(userId: string) {
   return db
     .select()
@@ -512,9 +539,10 @@ describe("API integration: further task.userId assignment paths", () => {
       // task.userId stays owner (untouched by the offer).
       await assignTask(app, created.id, member.user.id);
       const midAssignments = await getAssignments(created.id);
-      expect(midAssignments.filter((a) => a.status === "pending")).toHaveLength(
-        1,
-      );
+      expect(
+        midAssignments.filter((a) => a.status === "pending"),
+        `after offering to member, rows: ${describeAssignments(midAssignments)}`,
+      ).toHaveLength(1);
 
       // Owner reasserts themselves as assignee (userId === existing
       // task.userId, currentUserId === owner too). This is NOT a true
@@ -522,20 +550,27 @@ describe("API integration: further task.userId assignment paths", () => {
       // superseded, or member would keep a stale prompt for a task owner
       // just reclaimed.
       const reclaim = await assignTask(app, created.id, owner.user.id);
-      expect(reclaim.status).toBe(200);
-
-      const task = await getTaskRow(created.id);
-      expect(task.userId).toBe(owner.user.id);
+      expect(reclaim.status, await reclaim.clone().text()).toBe(200);
 
       const finalAssignments = await getAssignments(created.id);
+      const rows = describeAssignments(finalAssignments);
+
+      const task = await getTaskRow(created.id);
+      expect(task.userId, `owner=${owner.user.id} rows: ${rows}`).toBe(
+        owner.user.id,
+      );
+
       const pending = finalAssignments.filter((a) => a.status === "pending");
-      expect(pending).toHaveLength(0);
+      expect(pending, `rows: ${rows}`).toHaveLength(0);
 
       const superseded = finalAssignments.filter(
         (a) => a.status === "superseded",
       );
-      expect(superseded.length).toBeGreaterThanOrEqual(1);
-      expect(superseded.some((a) => a.toUserId === member.user.id)).toBe(true);
+      expect(superseded.length, `rows: ${rows}`).toBeGreaterThanOrEqual(1);
+      expect(
+        superseded.some((a) => a.toUserId === member.user.id),
+        `member=${member.user.id} rows: ${rows}`,
+      ).toBe(true);
     });
 
     it("does not notify the offeree that the task is assigned to them while the offer is only pending", async () => {
