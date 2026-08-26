@@ -59,7 +59,7 @@ describe("GeneralManagementShell section visibility", () => {
       screen.getByRole("button", { name: "Correspondence" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Minutes Manager" }),
+      screen.getByRole("button", { name: "Meeting Minutes" }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Settings" })).toBeVisible();
   });
@@ -74,28 +74,26 @@ describe("GeneralManagementShell section visibility", () => {
     expect(
       screen.getByRole("button", { name: "Correspondence" }),
     ).toBeVisible();
-    // Minutes Manager is day-to-day work, not administration — a non-admin
+    // Meeting Minutes is day-to-day work, not administration — a non-admin
     // with the General Management page must keep it.
     expect(
-      screen.getByRole("button", { name: "Minutes Manager" }),
+      screen.getByRole("button", { name: "Meeting Minutes" }),
     ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Settings" }),
     ).not.toBeInTheDocument();
   });
 
-  it("opens the Minutes Manager panel when its tab is selected", async () => {
+  it("opens the Meeting Minutes panel when its tab is selected", async () => {
     const user = userEvent.setup();
     state.isAdmin = false;
     renderShell({ workspaceId: "ws-1" });
 
-    await user.click(screen.getByRole("button", { name: "Minutes Manager" }));
+    await user.click(screen.getByRole("button", { name: "Meeting Minutes" }));
 
-    // The panel's own heading spells out "Meeting Minutes" — never bare
-    // "Minutes" — to stay distinguishable from the other two features in
-    // this codebase colloquially called "minutes" (task_mom, letter_minute).
-    // The tab/button label above is a separate, pre-existing fixture name
-    // ("Minutes Manager", from gm-shell.tsx) and is unaffected.
+    // Tab and heading both read "Meeting Minutes": bare "Minutes" would be
+    // ambiguous next to the project-level Minutes page and a letter's
+    // minutes, which are unrelated features sharing the word.
     expect(
       screen.getByRole("heading", { name: "Meeting Minutes" }),
     ).toBeInTheDocument();

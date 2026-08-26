@@ -45,7 +45,7 @@ const SECTIONS = [
   },
   {
     key: "minutes-manager",
-    label: "Minutes Manager",
+    label: "Meeting Minutes",
     icon: NotepadText,
     adminOnly: false,
   },
