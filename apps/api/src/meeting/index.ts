@@ -6,14 +6,20 @@ import * as v from "valibot";
 import { assertGmAdmin } from "../correspondence/roles";
 import db from "../database";
 import {
+  meetingActionTable,
   meetingAttendeeTable,
   meetingBodyMemberTable,
   meetingBodyTable,
   meetingMinuteItemTable,
   meetingTable,
   meetingTypeTable,
+  workspaceUserTable,
 } from "../database/schema";
-import { requireWorkspacePageAccess } from "../utils/page-access";
+import createNotification from "../notification/controllers/create-notification";
+import {
+  hasWorkspacePageAccess,
+  requireWorkspacePageAccess,
+} from "../utils/page-access";
 import { isGlobalAdmin } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { canReadMeeting } from "./access";
@@ -155,6 +161,20 @@ function assertMeetingEditable(meeting: { status: string }): void {
     throw new HTTPException(409, {
       message: "This meeting has been adopted; its minutes are read-only",
     });
+}
+
+async function isWorkspaceMember(userId: string, workspaceId: string) {
+  const [row] = await db
+    .select({ id: workspaceUserTable.id })
+    .from(workspaceUserTable)
+    .where(
+      and(
+        eq(workspaceUserTable.workspaceId, workspaceId),
+        eq(workspaceUserTable.userId, userId),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 /** Exactly one of userId / name must be set — the schema cannot express this. */
@@ -603,7 +623,149 @@ app.post(
   },
 );
 
-// A later task appends ACTION routes to this router. Nothing above needs to
-// change to accommodate them.
+// ── Actions ──────────────────────────────────────────────────────────────
+// Accept/reject of an existing action runs through the generic
+// pending-decision endpoint (see
+// ../pending-decision/providers/meeting-action.ts), not a route here.
+app.post(
+  "/:id/actions",
+  describeRoute({
+    operationId: "createMeetingAction",
+    tags: ["Meeting"],
+    description:
+      "Record a follow-up action from this meeting, optionally delegated to one attendee",
+  }),
+  validator("param", v.object({ id: v.string() })),
+  validator(
+    "json",
+    v.object({
+      workspaceId: v.string(),
+      description: v.string(),
+      minuteItemId: optStr,
+      assigneeId: optStr,
+      dueAt: optDate,
+    }),
+  ),
+  workspaceAccess.fromBody("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const callerId = c.get("userId") as string;
+    const { id } = c.req.valid("param");
+    const b = c.req.valid("json");
+    const meeting = await loadMeeting(ws, id);
+    if (!meeting) throw new HTTPException(404, { message: "Not found" });
+    assertMeetingEditable(meeting);
+    await assertMeetingWriteAccess(callerId, ws, meeting);
+    const description = b.description.trim();
+    if (!description)
+      throw new HTTPException(400, { message: "Description required" });
+    const assigneeId = b.assigneeId?.trim() || null;
+    if (assigneeId && !(await isWorkspaceMember(assigneeId, ws)))
+      throw new HTTPException(400, { message: "Invalid assignee" });
+    if (b.minuteItemId) {
+      const [item] = await db
+        .select({ id: meetingMinuteItemTable.id })
+        .from(meetingMinuteItemTable)
+        .where(
+          and(
+            eq(meetingMinuteItemTable.id, b.minuteItemId),
+            eq(meetingMinuteItemTable.meetingId, id),
+          ),
+        )
+        .limit(1);
+      if (!item)
+        throw new HTTPException(400, { message: "Invalid minuteItemId" });
+    }
+    const [row] = await db
+      .insert(meetingActionTable)
+      .values({
+        meetingId: id,
+        minuteItemId: b.minuteItemId ?? null,
+        assigneeId,
+        fromUserId: callerId,
+        description,
+        dueAt: toDate(b.dueAt),
+        // Self-delegation is auto-accepted — asking someone to accept work
+        // they just gave themselves is ceremony with no reader.
+        acceptance:
+          assigneeId && assigneeId !== callerId ? "pending" : "accepted",
+      })
+      .returning();
+    if (assigneeId && assigneeId !== callerId)
+      await createNotification({
+        userId: assigneeId,
+        type: "meeting_action_assigned",
+        title: `Action required — ${meeting.title}`,
+        content: description,
+        resourceId: id,
+        resourceType: "meeting",
+      }).catch(() => {});
+    return c.json(row, 201);
+  },
+);
+
+// ── Complete a delegated action (its assignee, or a GM officer) ───────────
+// Deliberately not gated by `pageAccess`: the assignee of a follow-up action
+// is often a plain workspace member who was never granted the General
+// Management page, and requiring that grant just to close out their own
+// accepted work would lock them out of it.
+app.post(
+  "/:id/actions/:actionId/complete",
+  describeRoute({
+    operationId: "completeMeetingAction",
+    tags: ["Meeting"],
+    description:
+      "Mark a delegated action done; refuses one that hasn't been accepted",
+  }),
+  validator("param", v.object({ id: v.string(), actionId: v.string() })),
+  validator("json", v.object({ workspaceId: v.string() })),
+  workspaceAccess.fromBody("workspaceId"),
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const callerId = c.get("userId") as string;
+    const { id, actionId } = c.req.valid("param");
+    const meeting = await loadMeeting(ws, id);
+    if (!meeting) throw new HTTPException(404, { message: "Not found" });
+    const [action] = await db
+      .select()
+      .from(meetingActionTable)
+      .where(
+        and(
+          eq(meetingActionTable.id, actionId),
+          eq(meetingActionTable.meetingId, id),
+        ),
+      )
+      .limit(1);
+    if (!action) throw new HTTPException(404, { message: "Not found" });
+    const hasPage = await hasWorkspacePageAccess(callerId, ws, PAGE_SLUG);
+    if (action.assigneeId !== callerId && !hasPage)
+      throw new HTTPException(403, {
+        message: "Only the action's assignee can complete it",
+      });
+    // Accepting is not doing: an action that was never agreed to isn't yet
+    // anyone's work, so it cannot be marked done.
+    if (action.acceptance !== "accepted")
+      throw new HTTPException(409, {
+        message: "This action must be accepted before it can be completed",
+      });
+    const now = new Date();
+    // Guard the UPDATE on the current status so a concurrent second
+    // completion claims no rows rather than silently overwriting.
+    const [row] = await db
+      .update(meetingActionTable)
+      .set({ status: "done", completedAt: now, completedBy: callerId })
+      .where(
+        and(
+          eq(meetingActionTable.id, actionId),
+          eq(meetingActionTable.status, "open"),
+        ),
+      )
+      .returning();
+    if (!row)
+      throw new HTTPException(409, { message: "Action already completed" });
+    return c.json(row);
+  },
+);
 
 export default app;
