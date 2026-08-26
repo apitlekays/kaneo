@@ -4,6 +4,7 @@ import db from "../../database";
 import { activityTable, taskTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { deleteOrphanedAssets } from "../../storage/cleanup-assets";
+import { trackBackgroundWork } from "../../utils/background-work";
 
 async function updateComment(userId: string, id: string, content: string) {
   const [existing] = await db
@@ -48,9 +49,11 @@ async function updateComment(userId: string, id: string, content: string) {
     });
   }
 
-  deleteOrphanedAssets(existing.content, content, {
-    taskId: existing.taskId,
-  }).catch(() => {});
+  trackBackgroundWork(
+    deleteOrphanedAssets(existing.content, content, {
+      taskId: existing.taskId,
+    }).catch(() => {}),
+  );
 
   return updated;
 }

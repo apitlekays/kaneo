@@ -1,43 +1,28 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { EventEmitter } from "node:events";
+import {
+  settleBackgroundWork,
+  trackBackgroundWork,
+} from "../utils/background-work";
 
 const EVENTS = new EventEmitter();
 EVENTS.setMaxListeners(100);
 export const eventContext = new AsyncLocalStorage<{ initiatorId: string }>();
 
-// Tracks in-flight event handler promises. `publishEvent` is fire-and-forget
-// (EventEmitter#emit doesn't await async listeners), so handler DB work can
-// still be running after the publishing request has already returned. Tests
-// need a way to wait for that work to finish before doing anything that
-// could race it (e.g. truncating tables) — see `settlePendingEvents`.
-const PENDING_HANDLERS = new Set<Promise<void>>();
-
-// Bound on how many times `settlePendingEvents` will loop draining newly
-// added promises (handlers can publish further events, which adds more
-// pending promises while we're waiting). This is just a safety net against
-// a pathological publish-in-handler cycle that never quiesces — it should
-// never be hit in practice.
-const MAX_SETTLE_ITERATIONS = 1000;
-
 /**
  * Waits for all currently in-flight event handler invocations to settle,
- * including any further events they publish while settling. Intended for
- * test harnesses that need to know handler side effects (e.g. DB writes)
- * are complete before proceeding. Does not affect production behaviour —
- * `publishEvent` never awaits this.
+ * including any further events they publish while settling — and, since
+ * handler promises are registered in the shared background-work tracker,
+ * any other background work (e.g. notification delivery) that was in flight
+ * too. Intended for test harnesses that need to know handler side effects
+ * (e.g. DB writes) are complete before proceeding. Does not affect
+ * production behaviour — `publishEvent` never awaits this.
+ *
+ * Kept as a thin alias over `settleBackgroundWork` so existing callers and
+ * this module's own tests don't need to change.
  */
 export async function settlePendingEvents(): Promise<void> {
-  let iterations = 0;
-  while (PENDING_HANDLERS.size > 0) {
-    if (iterations >= MAX_SETTLE_ITERATIONS) {
-      throw new Error(
-        `settlePendingEvents: exceeded ${MAX_SETTLE_ITERATIONS} drain iterations without the pending handler set emptying. ` +
-          "This likely means an event handler is stuck in a publish loop.",
-      );
-    }
-    iterations++;
-    await Promise.allSettled(Array.from(PENDING_HANDLERS));
-  }
+  await settleBackgroundWork();
 }
 
 export type EventPayload<T = unknown> = {
@@ -88,10 +73,7 @@ export async function subscribeToEvent<T>(
         }
       })();
 
-      PENDING_HANDLERS.add(settled);
-      settled.finally(() => {
-        PENDING_HANDLERS.delete(settled);
-      });
+      trackBackgroundWork(settled);
     });
   } catch (error) {
     console.error("Failed to subscribe to event:", error);

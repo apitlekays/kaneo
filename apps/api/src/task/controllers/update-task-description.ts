@@ -4,6 +4,7 @@ import db from "../../database";
 import { taskTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { deleteOrphanedAssets } from "../../storage/cleanup-assets";
+import { trackBackgroundWork } from "../../utils/background-work";
 
 async function updateTaskDescription({
   id,
@@ -45,9 +46,11 @@ async function updateTaskDescription({
     type: "description_changed",
   });
 
-  deleteOrphanedAssets(existingTask.description, description, {
-    taskId: id,
-  }).catch(() => {});
+  trackBackgroundWork(
+    deleteOrphanedAssets(existingTask.description, description, {
+      taskId: id,
+    }).catch(() => {}),
+  );
 
   return updatedTask;
 }

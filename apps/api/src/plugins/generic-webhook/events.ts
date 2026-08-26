@@ -7,6 +7,7 @@ import {
   userTable,
   workspaceTable,
 } from "../../database/schema";
+import { trackBackgroundWork } from "../../utils/background-work";
 import type {
   PluginContext,
   TaskCommentCreatedEvent,
@@ -177,29 +178,33 @@ async function sendEvent(
       config.secret,
     );
 
-    void persistWebhookHealth(projectId, (currentConfig) => ({
-      ...currentConfig,
-      health: {
-        ...currentConfig.health,
-        lastSuccessAt: new Date().toISOString(),
-        lastFailureMessage: undefined,
-        lastAttempt: attempt,
-      },
-    }));
+    trackBackgroundWork(
+      persistWebhookHealth(projectId, (currentConfig) => ({
+        ...currentConfig,
+        health: {
+          ...currentConfig.health,
+          lastSuccessAt: new Date().toISOString(),
+          lastFailureMessage: undefined,
+          lastAttempt: attempt,
+        },
+      })),
+    );
   } catch (error) {
     const message =
       error instanceof Error ? (error.stack ?? error.message) : String(error);
 
-    void persistWebhookHealth(projectId, (currentConfig) => ({
-      ...currentConfig,
-      health: {
-        ...currentConfig.health,
-        lastFailureAt: new Date().toISOString(),
-        lastFailureMessage: message,
-        failureCount: (currentConfig.health?.failureCount ?? 0) + 1,
-        lastAttempt: attempt,
-      },
-    }));
+    trackBackgroundWork(
+      persistWebhookHealth(projectId, (currentConfig) => ({
+        ...currentConfig,
+        health: {
+          ...currentConfig.health,
+          lastFailureAt: new Date().toISOString(),
+          lastFailureMessage: message,
+          failureCount: (currentConfig.health?.failureCount ?? 0) + 1,
+          lastAttempt: attempt,
+        },
+      })),
+    );
 
     console.error("sendEvent postToGenericWebhook failed", {
       error,

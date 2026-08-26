@@ -3,6 +3,7 @@ import db from "../../database";
 import { notificationTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { deliverNotification } from "../../notification-preferences/delivery";
+import { trackBackgroundWork } from "../../utils/background-work";
 import { broadcastToUser } from "../../ws";
 
 async function createNotification({
@@ -41,12 +42,19 @@ async function createNotification({
       notificationId: notification.id,
       userId,
     });
-    void deliverNotification(notification.id).catch((error) => {
-      console.error("Failed to deliver notification", {
-        notificationId: notification.id,
-        error,
-      });
-    });
+    // Delivery must stay fire-and-forget in production (the request must not
+    // wait on email/webhook/etc. delivery) but it still runs DB queries
+    // after this function has already returned — see
+    // `apps/api/src/utils/background-work.ts` for why that needs to be
+    // observable to test harnesses.
+    trackBackgroundWork(
+      deliverNotification(notification.id).catch((error) => {
+        console.error("Failed to deliver notification", {
+          notificationId: notification.id,
+          error,
+        });
+      }),
+    );
 
     // Instant push: nudge the recipient's user channel so their bell badge and
     // Home activity feed update immediately (no 60s wait).

@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Client } from "pg";
 import db from "../../../apps/api/src/database";
-import { settlePendingEvents } from "../../../apps/api/src/events/index";
+import { settleBackgroundWork } from "../../../apps/api/src/utils/background-work";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = resolve(currentDir, "../../../apps/api/drizzle");
@@ -88,9 +88,19 @@ export async function resetTestDatabase() {
   // running DB queries against these same tables. Racing that work against
   // the TRUNCATE below caused an intermittent deadlock — the handler's
   // SELECT took AccessShareLock on one relation while waiting on another
-  // that TRUNCATE already held AccessExclusiveLock on, and vice versa. Wait
-  // for all in-flight handlers to settle before truncating.
-  await settlePendingEvents();
+  // that TRUNCATE already held AccessExclusiveLock on, and vice versa.
+  //
+  // An earlier version of this fix only drained event-handler promises
+  // (via `settlePendingEvents`). That missed the layer beneath them: a
+  // handler can itself kick off further fire-and-forget work (e.g.
+  // `createNotification` firing off `deliverNotification`, which runs its
+  // own SELECT after the handler that started it has already resolved).
+  // Draining handlers only let that inner work keep running, and it hit the
+  // exact same deadlock one layer down. `settleBackgroundWork` drains a
+  // single shared registry that every layer — event handlers and whatever
+  // they kick off — reports into, so this now waits for *all* registered
+  // background work, not just event handlers, before truncating.
+  await settleBackgroundWork();
 
   await db.execute(
     sql.raw(`

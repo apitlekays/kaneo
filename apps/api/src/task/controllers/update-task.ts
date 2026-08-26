@@ -4,6 +4,7 @@ import db from "../../database";
 import { columnTable, taskTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { deleteOrphanedAssets } from "../../storage/cleanup-assets";
+import { trackBackgroundWork } from "../../utils/background-work";
 import { writeTaskAssignment } from "../assignment-write";
 import { assertValidTaskStatus } from "../validate-task-fields";
 
@@ -134,9 +135,11 @@ async function updateTask(
   });
 
   if (existingTask.description !== description) {
-    deleteOrphanedAssets(existingTask.description, description, {
-      taskId: id,
-    }).catch(() => {});
+    trackBackgroundWork(
+      deleteOrphanedAssets(existingTask.description, description, {
+        taskId: id,
+      }).catch(() => {}),
+    );
   }
 
   return updatedTask;
