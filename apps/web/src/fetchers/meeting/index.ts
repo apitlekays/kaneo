@@ -136,6 +136,21 @@ export type MeetingDetail = Meeting & {
   adoptedByMeeting: { id: string; title: string } | null;
 };
 
+/**
+ * The list route joins `meeting_type` and `meeting_body` to search their
+ * names, so it can return the labels too — which is what the cards display.
+ * The detail route does not join, so `MeetingDetail` has no such fields.
+ */
+export type MeetingListItem = Meeting & {
+  meetingTypeLabel: string | null;
+  bodyName: string | null;
+};
+
+export type MeetingPage = {
+  items: MeetingListItem[];
+  nextCursor: string | null;
+};
+
 export type CreateMeetingInput = {
   title: string;
   meetingTypeId?: string;
@@ -187,11 +202,16 @@ function put<T>(path: string, workspaceId: string, body: object): Promise<T> {
   }).then(jsonOrThrow<T>);
 }
 
-export async function listMeetings(workspaceId: string): Promise<Meeting[]> {
+export async function listMeetings(
+  workspaceId: string,
+  opts: { cursor?: string; q?: string; limit?: number } = {},
+): Promise<MeetingPage> {
+  const params = new URLSearchParams({ workspaceId });
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.q) params.set("q", opts.q);
+  if (opts.limit !== undefined) params.set("limit", String(opts.limit));
   return jsonOrThrow(
-    await fetch(url(`?workspaceId=${encodeURIComponent(workspaceId)}`), {
-      credentials: "include",
-    }),
+    await fetch(url(`?${params.toString()}`), { credentials: "include" }),
   );
 }
 
