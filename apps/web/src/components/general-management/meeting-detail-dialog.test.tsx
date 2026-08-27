@@ -12,7 +12,12 @@ import { MeetingDetailDialog } from "./meeting-detail-dialog";
 const state = vi.hoisted(() => ({
   meeting: null as MeetingDetail | null,
   meetings: [] as Meeting[],
+  meetingIsLoading: false,
+  meetingIsError: false,
+  meetingsIsError: false,
 }));
+
+const refetchMeeting = vi.hoisted(() => vi.fn());
 
 const mutations = vi.hoisted(() => ({
   addAttendee: { mutate: vi.fn(), isPending: false },
@@ -26,11 +31,20 @@ const mutations = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/queries/meeting/use-meeting", () => ({
-  useMeeting: () => ({ data: state.meeting, isLoading: false }),
+  useMeeting: () => ({
+    data: state.meeting,
+    isLoading: state.meetingIsLoading,
+    isError: state.meetingIsError,
+    refetch: refetchMeeting,
+  }),
 }));
 
 vi.mock("@/hooks/queries/meeting/use-meetings", () => ({
-  useMeetings: () => ({ data: state.meetings, isLoading: false }),
+  useMeetings: () => ({
+    data: state.meetings,
+    isLoading: false,
+    isError: state.meetingsIsError,
+  }),
 }));
 
 vi.mock("@/hooks/queries/meeting/use-meeting-mutations", () => ({
@@ -110,6 +124,10 @@ async function pickOption(
 afterEach(() => {
   state.meeting = null;
   state.meetings = [];
+  state.meetingIsLoading = false;
+  state.meetingIsError = false;
+  state.meetingsIsError = false;
+  refetchMeeting.mockClear();
   for (const m of Object.values(mutations)) {
     m.mutate.mockClear();
     m.isPending = false;
@@ -384,5 +402,68 @@ describe("MeetingDetailDialog", () => {
       "meeting-2",
       expect.anything(),
     );
+  });
+
+  it("7. a failed meeting-detail load shows a terminal error state instead of spinning forever, and offers a retry", async () => {
+    const user = userEvent.setup();
+    state.meeting = null;
+    state.meetingIsLoading = false;
+    state.meetingIsError = true;
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    // Terminal error state, not the loading spinner (finding C2: `isLoading
+    // || !data` was true in both the "still loading" and "errored" cases,
+    // so the dialog never stopped spinning on error).
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /couldn't load this meeting/i,
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    expect(refetchMeeting).toHaveBeenCalled();
+  });
+
+  it("8. the loading state is announced to assistive tech", () => {
+    state.meeting = null;
+    state.meetingIsLoading = true;
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toBeVisible();
+  });
+
+  it("9. AdoptControl distinguishes a failed candidate-meetings load from a genuinely empty one", async () => {
+    state.meeting = makeMeeting({ status: "draft" });
+    state.meetings = [];
+    state.meetingsIsError = true;
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    // Finding C3: `useMeetings` defaulted to `[]` on error, so this control
+    // rendered the confident "No other meetings yet…" sentence even when the
+    // underlying fetch had failed.
+    expect(
+      screen.queryByText(/no other meetings yet/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/couldn't load other meetings/i)).toBeVisible();
   });
 });

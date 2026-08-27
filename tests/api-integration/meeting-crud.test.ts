@@ -48,6 +48,36 @@ function addAttendee(
   });
 }
 
+function removeAttendee(
+  app: App,
+  meetingId: string,
+  attendeeId: string,
+  workspaceId: string,
+) {
+  return app.request(
+    `/api/meeting/${meetingId}/attendees/${attendeeId}?workspaceId=${workspaceId}`,
+    { method: "DELETE" },
+  );
+}
+
+function updateMeeting(
+  app: App,
+  meetingId: string,
+  body: {
+    workspaceId: string;
+    title?: string;
+    bodyId?: string;
+    meetingTypeId?: string;
+    confidential?: boolean;
+  },
+) {
+  return app.request(`/api/meeting/${meetingId}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function addMinuteItem(
   app: App,
   meetingId: string,
@@ -327,7 +357,7 @@ describe("API integration: meeting CRUD", () => {
     expect(row).toBeUndefined();
   });
 
-  it("6. adoption: chair succeeds and records adoptedByMeetingId; an ordinary member is refused; a second adopt is 409", async () => {
+  it("6. adoption: chair succeeds and records adoptedByMeetingId; an ordinary member is refused; a second adopt is 409; a confidential meeting refuses a non-attendee chair and never leaks its title (F2)", async () => {
     const admin = await createWorkspaceMember({ role: "owner" });
     const chair = await createWorkspaceMember({ role: "member" });
     const plainMember = await createWorkspaceMember({ role: "member" });
@@ -347,10 +377,14 @@ describe("API integration: meeting CRUD", () => {
 
     mockAuthenticatedSession(admin.user);
     const { app: adminApp } = createApp();
+    // F2: this meeting is confidential and the chair is deliberately NOT an
+    // attendee — the exact vulnerable shape the audit found: body-role
+    // adoption authority does not imply confidentiality read access.
     const created = await createMeeting(adminApp, {
       workspaceId: admin.workspace.id,
-      title: "Committee Meeting",
+      title: "IN-CAMERA COMMITTEE MEETING",
       bodyId: body.id,
+      confidential: true,
     });
     const meeting = await created.json();
 
@@ -378,9 +412,40 @@ describe("API integration: meeting CRUD", () => {
     });
     expect(memberAttempt.status).toBe(403);
 
-    // The chair succeeds.
+    // The chair has adoption authority via the body role, but is NOT an
+    // attendee of this confidential meeting — F2 says this must be refused,
+    // and the refusal body must never carry the sealed title.
     mockAuthenticatedSession(chair.user);
     const { app: chairApp } = createApp();
+    const chairAttemptWhileNotAttendee = await adoptMeeting(
+      chairApp,
+      meeting.id,
+      { workspaceId: admin.workspace.id, adoptedByMeetingId: laterMeetingId },
+    );
+    expect(chairAttemptWhileNotAttendee.status).toBe(403);
+    const refusalText = await chairAttemptWhileNotAttendee.text();
+    expect(refusalText).not.toContain("IN-CAMERA COMMITTEE MEETING");
+
+    const [stillDraft] = await db
+      .select()
+      .from(schema.meetingTable)
+      .where(eq(schema.meetingTable.id, meeting.id));
+    expect(stillDraft.status).toBe("draft");
+    expect(stillDraft.adoptedByMeetingId).toBeNull();
+
+    // Once the chair is also an attendee (i.e. can actually read the
+    // meeting), adoption succeeds — body-role authority AND read access,
+    // not either alone. The session mock is global, not per-`app` handle —
+    // switch back to admin before reusing it, same as everywhere else in
+    // this suite.
+    mockAuthenticatedSession(admin.user);
+    const { app: adminApp2 } = createApp();
+    const addChairAsAttendee = await addAttendee(adminApp2, meeting.id, {
+      workspaceId: admin.workspace.id,
+      userId: chair.user.id,
+    });
+    expect(addChairAsAttendee.status).toBe(201);
+
     const chairAdopt = await adoptMeeting(chairApp, meeting.id, {
       workspaceId: admin.workspace.id,
       adoptedByMeetingId: laterMeetingId,
@@ -403,6 +468,30 @@ describe("API integration: meeting CRUD", () => {
       .from(schema.meetingTable)
       .where(eq(schema.meetingTable.id, meeting.id));
     expect(row.adoptedByMeetingId).toBe(laterMeetingId);
+  });
+
+  it("6b. a meeting cannot adopt itself (F8)", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+    const created = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Self-Adoption Attempt",
+    });
+    const meeting = await created.json();
+
+    const selfAdopt = await adoptMeeting(app, meeting.id, {
+      workspaceId: admin.workspace.id,
+      adoptedByMeetingId: meeting.id,
+    });
+    expect(selfAdopt.status).toBe(400);
+
+    const [row] = await db
+      .select()
+      .from(schema.meetingTable)
+      .where(eq(schema.meetingTable.id, meeting.id));
+    expect(row.status).toBe("draft");
+    expect(row.adoptedByMeetingId).toBeNull();
   });
 
   it("7. editing a minute item on an adopted meeting is 409", async () => {
@@ -516,5 +605,281 @@ describe("API integration: meeting CRUD", () => {
     const detailBody = await detail.json();
     expect(detailBody.adoptedByMeetingId).toBe(laterMeetingId);
     expect(detailBody.adoptedByMeeting).toBeNull();
+  });
+
+  it("10. F1: the creator of a meeting later marked confidential cannot re-grant themselves read access by adding themselves as an attendee, nor flip confidential back off", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    const creator = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: admin.workspace.id,
+      userId: creator.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(admin.workspace.id, creator.user.id);
+
+    mockAuthenticatedSession(creator.user);
+    const { app: creatorApp } = createApp();
+    const created = await createMeeting(creatorApp, {
+      workspaceId: admin.workspace.id,
+      title: "Routine catch-up",
+    });
+    const meeting = await created.json();
+    expect(meeting.createdBy).toBe(creator.user.id);
+
+    // A global admin later locks it down. The creator is NOT made an
+    // attendee.
+    mockAuthenticatedSession(admin.user);
+    const { app: adminApp } = createApp();
+    const sealed = await updateMeeting(adminApp, meeting.id, {
+      workspaceId: admin.workspace.id,
+      title: "IN CAMERA: DISMISSAL OF JANE DOE",
+      confidential: true,
+    });
+    expect(sealed.status).toBe(200);
+
+    mockAuthenticatedSession(creator.user);
+    const { app: creatorApp2 } = createApp();
+    const blockedDetail = await getMeeting(
+      creatorApp2,
+      meeting.id,
+      admin.workspace.id,
+    );
+    expect(blockedDetail.status).toBe(403);
+
+    // F1: writing themselves into the attendee list — the confidentiality
+    // ACL — must be refused, not silently grant read access back.
+    const selfEnrol = await addAttendee(creatorApp2, meeting.id, {
+      workspaceId: admin.workspace.id,
+      userId: creator.user.id,
+    });
+    expect(selfEnrol.status).toBe(403);
+
+    const stillBlockedDetail = await getMeeting(
+      creatorApp2,
+      meeting.id,
+      admin.workspace.id,
+    );
+    expect(stillBlockedDetail.status).toBe(403);
+
+    const [attendeeRow] = await db
+      .select()
+      .from(schema.meetingAttendeeTable)
+      .where(eq(schema.meetingAttendeeTable.meetingId, meeting.id));
+    expect(attendeeRow).toBeUndefined();
+
+    // The same seam must also refuse flipping `confidential` back off.
+    const unseal = await updateMeeting(creatorApp2, meeting.id, {
+      workspaceId: admin.workspace.id,
+      confidential: false,
+    });
+    expect(unseal.status).toBe(403);
+
+    const [row] = await db
+      .select()
+      .from(schema.meetingTable)
+      .where(eq(schema.meetingTable.id, meeting.id));
+    expect(row.confidential).toBe(true);
+  });
+
+  it("11. F3: removing an attendee that doesn't exist (or belongs to a different meeting) is 404, not a false success", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+
+    const meetingA = await (
+      await createMeeting(app, {
+        workspaceId: admin.workspace.id,
+        title: "Meeting A",
+      })
+    ).json();
+    const meetingB = await (
+      await createMeeting(app, {
+        workspaceId: admin.workspace.id,
+        title: "Meeting B",
+      })
+    ).json();
+
+    const attendeeRes = await addAttendee(app, meetingB.id, {
+      workspaceId: admin.workspace.id,
+      name: "External Observer",
+    });
+    const attendee = await attendeeRes.json();
+
+    // Wrong meeting: the attendee belongs to B, not A.
+    const wrongMeeting = await removeAttendee(
+      app,
+      meetingA.id,
+      attendee.id,
+      admin.workspace.id,
+    );
+    expect(wrongMeeting.status).toBe(404);
+
+    // Non-existent attendee id entirely.
+    const nonExistent = await removeAttendee(
+      app,
+      meetingA.id,
+      "does-not-exist",
+      admin.workspace.id,
+    );
+    expect(nonExistent.status).toBe(404);
+
+    // The row is untouched by either failed attempt.
+    const [row] = await db
+      .select()
+      .from(schema.meetingAttendeeTable)
+      .where(eq(schema.meetingAttendeeTable.id, attendee.id));
+    expect(row).toBeDefined();
+
+    // The real deletion still works and is reported correctly.
+    const realDelete = await removeAttendee(
+      app,
+      meetingB.id,
+      attendee.id,
+      admin.workspace.id,
+    );
+    expect(realDelete.status).toBe(200);
+    const [gone] = await db
+      .select()
+      .from(schema.meetingAttendeeTable)
+      .where(eq(schema.meetingAttendeeTable.id, attendee.id));
+    expect(gone).toBeUndefined();
+  });
+
+  it("12. F4: an attendee userId from a foreign workspace is refused, same as the body-member route", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    const foreignOwner = await createWorkspaceMember({ role: "owner" });
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+
+    const created = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Tenancy Test Meeting",
+    });
+    const meeting = await created.json();
+
+    const crossTenant = await addAttendee(app, meeting.id, {
+      workspaceId: admin.workspace.id,
+      userId: foreignOwner.user.id,
+    });
+    expect(crossTenant.status).toBe(400);
+
+    const [row] = await db
+      .select()
+      .from(schema.meetingAttendeeTable)
+      .where(eq(schema.meetingAttendeeTable.meetingId, meeting.id));
+    expect(row).toBeUndefined();
+  });
+
+  it("13. F5: an empty-string bodyId/meetingTypeId is treated as absent, not a 500", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+
+    const createdWithEmptyBody = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Empty bodyId on create",
+      // Exercising a raw "" — the value a client-side <select> that clears
+      // its selection actually sends.
+      bodyId: "",
+    });
+    expect(createdWithEmptyBody.status).toBe(201);
+    const created = await createdWithEmptyBody.json();
+    expect(created.bodyId).toBeNull();
+
+    const updatedWithEmptyType = await app.request(
+      `/api/meeting/${created.id}`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: admin.workspace.id,
+          meetingTypeId: "",
+        }),
+      },
+    );
+    expect(updatedWithEmptyType.status).toBe(200);
+    const updated = await updatedWithEmptyType.json();
+    expect(updated.meetingTypeId).toBeNull();
+
+    const updatedWithEmptyBody = await app.request(
+      `/api/meeting/${created.id}`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: admin.workspace.id, bodyId: "" }),
+      },
+    );
+    expect(updatedWithEmptyBody.status).toBe(200);
+    const updatedBody = await updatedWithEmptyBody.json();
+    expect(updatedBody.bodyId).toBeNull();
+  });
+
+  it("14. F9: an unparseable scheduledAt is refused with 400, not silently dropped", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+
+    const created = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Garbage date meeting",
+      // @ts-expect-error — deliberately not a real date string.
+      scheduledAt: "next friday",
+    });
+    expect(created.status).toBe(400);
+
+    const [row] = await db
+      .select()
+      .from(schema.meetingTable)
+      .where(eq(schema.meetingTable.title, "Garbage date meeting"));
+    expect(row).toBeUndefined();
+  });
+
+  it("15. F12: new actions can still be recorded against an adopted meeting; attendees and minute items remain frozen", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+
+    const created = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Meeting To Adopt For Actions",
+    });
+    const meeting = await created.json();
+
+    const laterMeetingRes = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Later Ratifying Meeting",
+    });
+    const laterMeetingId = (await laterMeetingRes.json()).id as string;
+
+    const adopted = await adoptMeeting(app, meeting.id, {
+      workspaceId: admin.workspace.id,
+      adoptedByMeetingId: laterMeetingId,
+    });
+    expect(adopted.status).toBe(200);
+
+    // Actions stay mutable per the module's stated rule — this must NOT 409.
+    const actionRes = await app.request(`/api/meeting/${meeting.id}/actions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: admin.workspace.id,
+        description: "Follow up after adoption",
+      }),
+    });
+    expect(actionRes.status).toBe(201);
+
+    // Attendees and minute items are still frozen.
+    const attendeeAttempt = await addAttendee(app, meeting.id, {
+      workspaceId: admin.workspace.id,
+      name: "Late Arrival",
+    });
+    expect(attendeeAttempt.status).toBe(409);
+
+    const minuteItemAttempt = await addMinuteItem(app, meeting.id, {
+      workspaceId: admin.workspace.id,
+      agenda: "New item after adoption",
+    });
+    expect(minuteItemAttempt.status).toBe(409);
   });
 });

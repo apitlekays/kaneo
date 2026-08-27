@@ -221,6 +221,95 @@ describe("API integration: meeting actions", () => {
     expect(rejection).toBeDefined();
     expect(rejection?.content).toBe("Not my area of responsibility");
     expect(rejection?.resourceType).toBe("meeting");
+    // `title` is the field that carried the last shipped Critical and F6 —
+    // it must actually be asserted, not just the fields around it. Here the
+    // meeting is not confidential and its title hasn't changed since
+    // creation, so `fromUserId` (the owner/creator) can read it: the real
+    // meeting title is expected in the subject line.
+    expect(rejection?.title).toBe("Action declined — Q3 Committee Meeting");
+  });
+
+  it("3b. F6: once a meeting is sealed confidential after an action was delegated, the rejection notification's subject line must not carry the sealed title to a fromUserId who can no longer read it", async () => {
+    // Deliberately NOT using seedMeetingWithAction: its `owner` is created
+    // with role "owner", which is itself a global-admin role and can always
+    // read a confidential meeting — that would never exercise the leak.
+    // This test needs a creator who is a plain member (GM page holder only)
+    // so losing attendee status on a sealed meeting actually locks them out.
+    const globalAdmin = await createWorkspaceMember({ role: "owner" });
+    const creator = await createWorkspaceMember({ role: "member" });
+    const assignee = await createWorkspaceMember({ role: "member" });
+    for (const u of [creator, assignee]) {
+      await db.insert(schema.workspaceUserTable).values({
+        workspaceId: globalAdmin.workspace.id,
+        userId: u.user.id,
+        role: "member",
+        joinedAt: new Date(),
+      });
+      await grantGeneralManagement(globalAdmin.workspace.id, u.user.id);
+    }
+
+    mockAuthenticatedSession(creator.user);
+    const { app: creatorApp } = createApp();
+    const meetingRes = await createMeeting(creatorApp, {
+      workspaceId: globalAdmin.workspace.id,
+      title: "Q3 Committee Meeting",
+    });
+    const meeting = await meetingRes.json();
+
+    const actionRes = await createAction(creatorApp, meeting.id, {
+      workspaceId: globalAdmin.workspace.id,
+      description: "Draft the audit response",
+      assigneeId: assignee.user.id,
+    });
+    expect(actionRes.status).toBe(201);
+    const action = await actionRes.json();
+
+    // A global admin then seals the meeting confidential and renames it —
+    // exactly how F1's reproduction turns a once-readable meeting into one
+    // its own creator can no longer read. `creator` is NOT made an attendee.
+    mockAuthenticatedSession(globalAdmin.user);
+    const { app: adminApp } = createApp();
+    const sealed = await adminApp.request(`/api/meeting/${meeting.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: globalAdmin.workspace.id,
+        title: "SEALED: CONFIDENTIAL PANEL ON JANE DOE",
+        confidential: true,
+      }),
+    });
+    expect(sealed.status).toBe(200);
+
+    // Confirm the creator really is now locked out of reading the meeting —
+    // otherwise this test wouldn't be exercising the leak at all.
+    mockAuthenticatedSession(creator.user);
+    const { app: creatorApp2 } = createApp();
+    const creatorBlocked = await creatorApp2.request(
+      `/api/meeting/${meeting.id}?workspaceId=${globalAdmin.workspace.id}`,
+    );
+    expect(creatorBlocked.status).toBe(403);
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const decided = await decideAction(assigneeApp, action.id, {
+      workspaceId: globalAdmin.workspace.id,
+      decision: "rejected",
+      reason: "Reassigning this",
+    });
+    expect(decided.status).toBe(200);
+
+    const notifications = await db
+      .select()
+      .from(schema.notificationTable)
+      .where(eq(schema.notificationTable.userId, creator.user.id));
+    const rejection = notifications.find(
+      (n) => n.type === "meeting_action_rejected",
+    );
+    expect(rejection).toBeDefined();
+    expect(rejection?.title).not.toContain(
+      "SEALED: CONFIDENTIAL PANEL ON JANE DOE",
+    );
+    expect(rejection?.title).toBe("Action declined");
   });
 
   it("4. rejecting with an empty reason is 400 and changes nothing", async () => {

@@ -11,12 +11,19 @@ import { MinutesManager } from "./minutes-manager";
 const state = vi.hoisted(() => ({
   meetings: [] as Meeting[],
   isLoading: false,
+  isError: false,
 }));
 
 const createMutate = vi.hoisted(() => vi.fn());
+const refetchMeetings = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/queries/meeting/use-meetings", () => ({
-  useMeetings: () => ({ data: state.meetings, isLoading: state.isLoading }),
+  useMeetings: () => ({
+    data: state.meetings,
+    isLoading: state.isLoading,
+    isError: state.isError,
+    refetch: refetchMeetings,
+  }),
 }));
 
 vi.mock("@/hooks/queries/meeting/use-meeting-mutations", () => ({
@@ -55,7 +62,9 @@ function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
 afterEach(() => {
   state.meetings = [];
   state.isLoading = false;
+  state.isError = false;
   createMutate.mockClear();
+  refetchMeetings.mockClear();
 });
 
 describe("MinutesManager", () => {
@@ -136,5 +145,47 @@ describe("MinutesManager", () => {
     const openRow = screen.getByText("Open Session").closest("button");
     expect(closedRow?.textContent).toContain("Confidential");
     expect(openRow?.textContent).not.toContain("Confidential");
+  });
+
+  it("5. a failed list load shows an error state distinguishable from empty and loading, with a retry", async () => {
+    const user = userEvent.setup();
+    state.meetings = [];
+    state.isLoading = false;
+    state.isError = true;
+
+    render(<MinutesManager workspaceId="ws-1" />);
+
+    // Distinguishable from the empty state (finding C1: this used to render
+    // the exact same "No Meeting Minutes yet" text as a genuinely empty
+    // workspace).
+    expect(screen.getByText(/couldn't load meeting minutes/i)).toBeVisible();
+    expect(
+      screen.queryByText("No Meeting Minutes yet"),
+    ).not.toBeInTheDocument();
+    // Distinguishable from loading.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    expect(refetchMeetings).toHaveBeenCalled();
+  });
+
+  it("6. the loading state is announced to assistive tech", () => {
+    state.isLoading = true;
+
+    render(<MinutesManager workspaceId="ws-1" />);
+
+    expect(screen.getByRole("status")).toBeVisible();
+  });
+
+  it("7. the New meeting dialog's Title, Scheduled date and Location inputs are labelled programmatically", async () => {
+    const user = userEvent.setup();
+    state.meetings = [];
+
+    render(<MinutesManager workspaceId="ws-1" />);
+    await user.click(screen.getByRole("button", { name: /new meeting/i }));
+
+    expect(screen.getByLabelText("Title")).toBeInTheDocument();
+    expect(screen.getByLabelText("Scheduled date")).toBeInTheDocument();
+    expect(screen.getByLabelText("Location")).toBeInTheDocument();
   });
 });

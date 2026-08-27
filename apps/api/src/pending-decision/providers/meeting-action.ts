@@ -138,6 +138,7 @@ export const meetingActionProvider: PendingDecisionProvider = {
         fromUserId: meetingActionTable.fromUserId,
         acceptance: meetingActionTable.acceptance,
         meetingTitle: meetingTable.title,
+        confidential: meetingTable.confidential,
       })
       .from(meetingActionTable)
       .innerJoin(
@@ -184,10 +185,37 @@ export const meetingActionProvider: PendingDecisionProvider = {
     // to tell: a grandfathered row with no recorded delegator notifies
     // nobody rather than inventing one.
     if (decision === "rejected" && action.fromUserId) {
+      // F6: `fromUserId` was the meeting's creator (or a global admin) at
+      // delegation time, but the title can change — including a flip to
+      // `confidential: true` — after that. The same rule that keeps a
+      // confidential meeting's title out of the pending-decision `list`
+      // above must gate this notification's *subject line* too, not just
+      // its body: `createNotification` carries `title` through to email and
+      // webhook delivery. Compose the same `canReadMeeting` check against
+      // `fromUserId` and fall back to a title-free subject if it fails.
+      const attendeeRows = await db
+        .select({ userId: meetingAttendeeTable.userId })
+        .from(meetingAttendeeTable)
+        .where(eq(meetingAttendeeTable.meetingId, action.meetingId));
+      const attendeeUserIds = attendeeRows
+        .map((r) => r.userId)
+        .filter((uid): uid is string => Boolean(uid));
+      const fromUserIsGlobalAdmin = await isGlobalAdmin(
+        action.fromUserId,
+        workspaceId,
+      );
+      const fromUserCanRead = canReadMeeting({
+        confidential: action.confidential,
+        attendeeUserIds,
+        userId: action.fromUserId,
+        isGlobalAdmin: fromUserIsGlobalAdmin,
+      });
       await createNotification({
         userId: action.fromUserId,
         type: "meeting_action_rejected",
-        title: `Action declined — ${action.meetingTitle}`,
+        title: fromUserCanRead
+          ? `Action declined — ${action.meetingTitle}`
+          : "Action declined",
         content: reason,
         resourceId: action.meetingId,
         resourceType: "meeting",

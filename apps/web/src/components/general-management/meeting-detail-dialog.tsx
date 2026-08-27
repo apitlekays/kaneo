@@ -65,7 +65,10 @@ export function MeetingDetailDialog({
   meetingId: string | null;
   onClose: () => void;
 }) {
-  const { data, isLoading } = useMeeting(workspaceId, meetingId);
+  const { data, isLoading, isError, refetch } = useMeeting(
+    workspaceId,
+    meetingId,
+  );
   const [section, setSection] = useState("overview");
 
   return (
@@ -79,8 +82,25 @@ export function MeetingDetailDialog({
       }}
     >
       <DialogContent className="flex h-[85dvh] max-w-4xl flex-col overflow-hidden">
-        {isLoading || !data ? (
-          <div className="flex h-40 items-center justify-center">
+        {isError ? (
+          <div
+            className="flex h-40 flex-col items-center justify-center gap-3 text-center"
+            role="alert"
+          >
+            <p className="text-sm">Couldn't load this meeting</p>
+            <p className="text-muted-foreground text-xs">
+              Something went wrong fetching its details.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              Try again
+            </Button>
+          </div>
+        ) : isLoading || !data ? (
+          <div
+            className="flex h-40 items-center justify-center"
+            role="status"
+            aria-label="Loading meeting"
+          >
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
@@ -110,7 +130,8 @@ function Body({
   const m = useMeetingMutations(workspaceId, meeting.id);
   const { data: usersData } = useGetActiveWorkspaceUsers(workspaceId);
   const users = usersData?.members ?? [];
-  const { data: meetings = [] } = useMeetings(workspaceId);
+  const { data: meetings = [], isError: isMeetingsError } =
+    useMeetings(workspaceId);
 
   return (
     <>
@@ -166,7 +187,12 @@ function Body({
         ]}
       >
         <DialogSidebarPanel value="overview">
-          <OverviewSection meeting={meeting} m={m} meetings={meetings} />
+          <OverviewSection
+            meeting={meeting}
+            m={m}
+            meetings={meetings}
+            isMeetingsError={isMeetingsError}
+          />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="attendees">
           <AttendeesSection meeting={meeting} m={m} users={users} />
@@ -186,10 +212,12 @@ function OverviewSection({
   meeting,
   m,
   meetings,
+  isMeetingsError,
 }: {
   meeting: MeetingDetail;
   m: Mutations;
   meetings: Meeting[];
+  isMeetingsError: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -245,7 +273,12 @@ function OverviewSection({
       </div>
 
       {meeting.status === "draft" && (
-        <AdoptControl meeting={meeting} m={m} meetings={meetings} />
+        <AdoptControl
+          meeting={meeting}
+          m={m}
+          meetings={meetings}
+          isMeetingsError={isMeetingsError}
+        />
       )}
     </div>
   );
@@ -255,10 +288,12 @@ function AdoptControl({
   meeting,
   m,
   meetings,
+  isMeetingsError,
 }: {
   meeting: MeetingDetail;
   m: Mutations;
   meetings: Meeting[];
+  isMeetingsError: boolean;
 }) {
   const [adoptedByMeetingId, setAdoptedByMeetingId] = useState("");
   const candidates = meetings.filter((other) => other.id !== meeting.id);
@@ -306,10 +341,17 @@ function AdoptControl({
           Adopt
         </Button>
       </div>
-      {candidates.length === 0 && (
-        <p className="text-muted-foreground text-xs">
-          No other meetings yet to record as the adopting meeting.
+      {isMeetingsError ? (
+        <p className="text-destructive text-xs" role="alert">
+          Couldn't load other meetings to adopt from — try reopening this
+          dialog.
         </p>
+      ) : (
+        candidates.length === 0 && (
+          <p className="text-muted-foreground text-xs">
+            No other meetings yet to record as the adopting meeting.
+          </p>
+        )
       )}
     </div>
   );

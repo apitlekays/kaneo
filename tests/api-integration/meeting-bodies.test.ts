@@ -96,9 +96,26 @@ function removeMember(
 
 function createMeeting(
   app: App,
-  body: { workspaceId: string; title: string; bodyId?: string },
+  body: {
+    workspaceId: string;
+    title: string;
+    bodyId?: string;
+    confidential?: boolean;
+  },
 ) {
   return app.request("/api/meeting", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function addAttendee(
+  app: App,
+  meetingId: string,
+  body: { workspaceId: string; userId?: string; name?: string },
+) {
+  return app.request(`/api/meeting/${meetingId}/attendees`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -457,5 +474,83 @@ describe("API integration: meeting bodies", () => {
       .where(eq(schema.meetingTable.id, meeting.id));
     expect(row.status).toBe("adopted");
     expect(row.adoptedByMeetingId).toBe(laterMeetingId);
+  });
+
+  it("7. F2: a chair with body-role adoption authority is still refused on a confidential meeting they are not an attendee of, and the refusal never carries the sealed title", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    const chair = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: admin.workspace.id,
+      userId: chair.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await grantGeneralManagement(admin.workspace.id, chair.user.id);
+
+    mockAuthenticatedSession(admin.user);
+    const { app: adminApp } = createApp();
+
+    const bodyRes = await createBody(adminApp, {
+      workspaceId: admin.workspace.id,
+      name: "Confidential Adoption Test Body",
+    });
+    const body = await bodyRes.json();
+
+    const chairAdd = await addMember(adminApp, body.id, {
+      workspaceId: admin.workspace.id,
+      userId: chair.user.id,
+      role: "chair",
+    });
+    expect(chairAdd.status).toBe(201);
+
+    // Confidential, and the chair is deliberately NOT an attendee: body-role
+    // adoption authority (a governance fact) must not stand in for
+    // confidentiality read access (an attendance fact).
+    const meetingRes = await createMeeting(adminApp, {
+      workspaceId: admin.workspace.id,
+      title: "SEALED: DISCIPLINARY MATTER",
+      bodyId: body.id,
+      confidential: true,
+    });
+    const meeting = await meetingRes.json();
+
+    const laterMeetingRes = await createMeeting(adminApp, {
+      workspaceId: admin.workspace.id,
+      title: "Later Ratifying Meeting",
+    });
+    const laterMeetingId = (await laterMeetingRes.json()).id as string;
+
+    mockAuthenticatedSession(chair.user);
+    const { app: chairApp } = createApp();
+    const chairAttempt = await adoptMeeting(chairApp, meeting.id, {
+      workspaceId: admin.workspace.id,
+      adoptedByMeetingId: laterMeetingId,
+    });
+    expect(chairAttempt.status).toBe(403);
+    const refusalText = await chairAttempt.text();
+    expect(refusalText).not.toContain("SEALED: DISCIPLINARY MATTER");
+
+    const [row] = await db
+      .select()
+      .from(schema.meetingTable)
+      .where(eq(schema.meetingTable.id, meeting.id));
+    expect(row.status).toBe("draft");
+    expect(row.adoptedByMeetingId).toBeNull();
+
+    // Once made an attendee, the same chair can adopt. The session mock is
+    // global, not per-`app` handle — switch back to admin before reusing it.
+    mockAuthenticatedSession(admin.user);
+    const { app: adminApp2 } = createApp();
+    const addChairAsAttendee = await addAttendee(adminApp2, meeting.id, {
+      workspaceId: admin.workspace.id,
+      userId: chair.user.id,
+    });
+    expect(addChairAsAttendee.status).toBe(201);
+
+    const chairAdoptNow = await adoptMeeting(chairApp, meeting.id, {
+      workspaceId: admin.workspace.id,
+      adoptedByMeetingId: laterMeetingId,
+    });
+    expect(chairAdoptNow.status).toBe(200);
   });
 });

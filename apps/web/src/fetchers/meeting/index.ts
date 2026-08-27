@@ -1,7 +1,53 @@
 import { getApiUrl } from "@/fetchers/get-api-url";
 
+/**
+ * Reduce a failed response's body to one short, human-readable line.
+ *
+ * Two shapes reach here: a hand-thrown `HTTPException(400, { message })`
+ * (e.g. "Title required"), whose body is that plain string, and a Valibot
+ * `validator("json"/"query", …)` middleware rejection — hit *before* the
+ * route handler runs — whose body is a JSON blob like
+ * `{"data":{...},"error":[{...}],"success":false}`, the entire issue tree
+ * serialized. Fed straight into a toast (every mutation's `onError` in
+ * `use-meeting-mutations.ts` does exactly that with `error.message`), the
+ * second shape is an unreadable wall of JSON. This is the one seam every
+ * caller goes through, so fixing it here fixes it for all of them at once
+ * rather than each `onError` re-parsing the body itself.
+ *
+ * Not reachable from today's UI (it always sends well-typed payloads), but
+ * a latent trap for the next field added to a form or any other caller.
+ */
+async function formatErrorMessage(response: Response): Promise<string> {
+  const text = await response.text();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text.trim() || `Request failed (${response.status})`;
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const body = parsed as Record<string, unknown>;
+    if (typeof body.message === "string" && body.message.trim()) {
+      return body.message;
+    }
+    if (Array.isArray(body.error) && body.error.length > 0) {
+      const [firstIssue] = body.error;
+      if (
+        firstIssue &&
+        typeof firstIssue === "object" &&
+        typeof (firstIssue as Record<string, unknown>).message === "string"
+      ) {
+        return (firstIssue as { message: string }).message;
+      }
+    }
+  }
+
+  return `Request failed (${response.status})`;
+}
+
 async function jsonOrThrow<T>(response: Response): Promise<T> {
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw new Error(await formatErrorMessage(response));
   return response.json();
 }
 const jsonHeaders = { "Content-Type": "application/json" };

@@ -1,8 +1,10 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import type { Context } from "hono";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute, validator } from "hono-openapi";
 import * as v from "valibot";
+import { recordAuditEvent } from "../correspondence/audit";
 import { assertGmAdmin } from "../correspondence/roles";
 import db from "../database";
 import {
@@ -39,10 +41,37 @@ const optBool = v.optional(v.boolean());
 const optDate = v.optional(v.string());
 const optNum = v.optional(v.number());
 
-function toDate(value: unknown) {
-  if (!value || typeof value !== "string") return null;
+/**
+ * Parse an optional date field. `undefined`/empty string means "not set" and
+ * maps to `null` — clearing the field is legitimate (e.g. a form clearing a
+ * date picker). Any other value MUST parse, or the caller gets a 400: a
+ * garbage string like "next friday" being silently dropped told the client
+ * their deadline was accepted when it wasn't (F9).
+ */
+function parseOptionalDate(
+  value: string | undefined,
+  field: string,
+): Date | null {
+  if (value === undefined || value === "") return null;
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (Number.isNaN(d.getTime()))
+    throw new HTTPException(400, { message: `Invalid ${field}` });
+  return d;
+}
+
+/** Empty string means "clear this field" — never a literal FK value (F5). */
+function emptyToNull(value: string | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function getIp(c: Context): string | null {
+  return (
+    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
+    c.req.header("x-real-ip") ||
+    null
+  );
 }
 
 /** Copy only the defined keys from a request body into a typed update patch. */
@@ -148,12 +177,21 @@ async function assertCanReadMeeting(
  * created it. There is no `createdBy` to check at creation time, so `POST
  * /meeting` itself is gated on holding the General Management page instead
  * (see the route below) — this helper only applies once a meeting exists.
+ *
+ * Composed with `assertCanReadMeeting` FIRST: write authority must never
+ * exceed read authority. The attendee list IS the confidentiality ACL
+ * (`access.ts`), so every route that can mutate it — or mutate the meeting
+ * itself — has to already be allowed to read the meeting. Without this, the
+ * creator of a meeting an admin later marked confidential could re-grant
+ * themselves (or anyone) read access via `POST /:id/attendees`, or simply
+ * flip `confidential: false` back via `PUT /:id`.
  */
 async function assertMeetingWriteAccess(
   userId: string,
   workspaceId: string,
-  meeting: { createdBy: string | null },
+  meeting: { createdBy: string | null; confidential: boolean; id: string },
 ): Promise<void> {
+  await assertCanReadMeeting(userId, workspaceId, meeting);
   if (meeting.createdBy === userId) return;
   await assertGmAdmin(userId, workspaceId);
 }
@@ -616,18 +654,23 @@ app.post(
     const b = c.req.valid("json");
     const title = b.title.trim();
     if (!title) throw new HTTPException(400, { message: "Title required" });
-    if (!(await idInWorkspace(meetingTypeTable, b.meetingTypeId, ws)))
+    // Empty-string ids reach here from a form clearing a select box; treat
+    // them as "no value" rather than a literal FK value (F5), same as
+    // `undefined`.
+    const meetingTypeId = emptyToNull(b.meetingTypeId);
+    const bodyId = emptyToNull(b.bodyId);
+    if (!(await idInWorkspace(meetingTypeTable, meetingTypeId, ws)))
       throw new HTTPException(400, { message: "Invalid meetingTypeId" });
-    if (!(await idInWorkspace(meetingBodyTable, b.bodyId, ws)))
+    if (!(await idInWorkspace(meetingBodyTable, bodyId, ws)))
       throw new HTTPException(400, { message: "Invalid bodyId" });
     const [row] = await db
       .insert(meetingTable)
       .values({
         workspaceId: ws,
         title,
-        meetingTypeId: b.meetingTypeId ?? null,
-        bodyId: b.bodyId ?? null,
-        scheduledAt: toDate(b.scheduledAt),
+        meetingTypeId: meetingTypeId ?? null,
+        bodyId: bodyId ?? null,
+        scheduledAt: parseOptionalDate(b.scheduledAt, "scheduledAt"),
         location: b.location ?? null,
         confidential: b.confidential ?? false,
         status: "draft",
@@ -668,26 +711,44 @@ app.put(
     const b = c.req.valid("json");
     const meeting = await loadMeeting(ws, id);
     if (!meeting) throw new HTTPException(404, { message: "Not found" });
-    assertMeetingEditable(meeting);
+    // Authorization before resource state (F7): who may act is decided
+    // before whether the resource currently allows it.
     await assertMeetingWriteAccess(userId, ws, meeting);
-    if (!(await idInWorkspace(meetingTypeTable, b.meetingTypeId, ws)))
+    assertMeetingEditable(meeting);
+    const meetingTypeId = emptyToNull(b.meetingTypeId);
+    const bodyId = emptyToNull(b.bodyId);
+    if (!(await idInWorkspace(meetingTypeTable, meetingTypeId, ws)))
       throw new HTTPException(400, { message: "Invalid meetingTypeId" });
-    if (!(await idInWorkspace(meetingBodyTable, b.bodyId, ws)))
+    if (!(await idInWorkspace(meetingBodyTable, bodyId, ws)))
       throw new HTTPException(400, { message: "Invalid bodyId" });
     const p = patch<typeof meetingTable.$inferInsert>(b, [
       "title",
-      "meetingTypeId",
-      "bodyId",
       "location",
       "confidential",
     ]);
     if (b.title !== undefined) p.title = b.title.trim();
-    if (b.scheduledAt !== undefined) p.scheduledAt = toDate(b.scheduledAt);
-    const [row] = await db
-      .update(meetingTable)
-      .set({ ...p, updatedAt: new Date() })
-      .where(and(eq(meetingTable.id, id), eq(meetingTable.workspaceId, ws)))
-      .returning();
+    if (meetingTypeId !== undefined) p.meetingTypeId = meetingTypeId;
+    if (bodyId !== undefined) p.bodyId = bodyId;
+    if (b.scheduledAt !== undefined)
+      p.scheduledAt = parseOptionalDate(b.scheduledAt, "scheduledAt");
+    const row = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(meetingTable)
+        .set({ ...p, updatedAt: new Date() })
+        .where(and(eq(meetingTable.id, id), eq(meetingTable.workspaceId, ws)))
+        .returning();
+      await recordAuditEvent(tx, {
+        workspaceId: ws,
+        entityType: "meeting",
+        entityId: id,
+        action: "update",
+        actorId: userId,
+        before: meeting,
+        after: updated,
+        ip: getIp(c),
+      });
+      return updated;
+    });
     return c.json(row);
   },
 );
@@ -719,18 +780,38 @@ app.post(
     const b = c.req.valid("json");
     const meeting = await loadMeeting(ws, id);
     if (!meeting) throw new HTTPException(404, { message: "Not found" });
-    assertMeetingEditable(meeting);
+    // Authorization before resource state (F7).
     await assertMeetingWriteAccess(callerId, ws, meeting);
+    assertMeetingEditable(meeting);
     assertExactlyOneOfUserIdOrName(b.userId, b.name);
-    const [row] = await db
-      .insert(meetingAttendeeTable)
-      .values({
-        meetingId: id,
-        userId: b.userId?.trim() || null,
-        name: b.name?.trim() || null,
-        attendance: b.attendance ?? "present",
-      })
-      .returning();
+    // The attendee list IS the confidentiality ACL (see access.ts) — a
+    // cross-workspace identity written into it is a latent tenancy hole the
+    // moment any other route reads `meeting_attendee` without re-deriving
+    // workspace membership (F4). The parallel body-member route already
+    // enforces this; attendees must too.
+    if (b.userId && !(await isWorkspaceMember(b.userId, ws)))
+      throw new HTTPException(400, { message: "Invalid userId" });
+    const row = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(meetingAttendeeTable)
+        .values({
+          meetingId: id,
+          userId: b.userId?.trim() || null,
+          name: b.name?.trim() || null,
+          attendance: b.attendance ?? "present",
+        })
+        .returning();
+      await recordAuditEvent(tx, {
+        workspaceId: ws,
+        entityType: "meeting",
+        entityId: id,
+        action: "attendee_add",
+        actorId: callerId,
+        after: inserted,
+        ip: getIp(c),
+      });
+      return inserted;
+    });
     return c.json(row, 201);
   },
 );
@@ -752,16 +833,34 @@ app.delete(
     const { id, attendeeId } = c.req.valid("param");
     const meeting = await loadMeeting(ws, id);
     if (!meeting) throw new HTTPException(404, { message: "Not found" });
-    assertMeetingEditable(meeting);
+    // Authorization before resource state (F7).
     await assertMeetingWriteAccess(callerId, ws, meeting);
-    await db
-      .delete(meetingAttendeeTable)
-      .where(
-        and(
-          eq(meetingAttendeeTable.id, attendeeId),
-          eq(meetingAttendeeTable.meetingId, id),
-        ),
-      );
+    assertMeetingEditable(meeting);
+    await db.transaction(async (tx) => {
+      // .returning() + a 404 on zero rows (F3): this route is a
+      // confidentiality control (the attendee list is the ACL), and
+      // reporting success while deleting nothing left an operator believing
+      // they'd revoked read access when they hadn't.
+      const [deleted] = await tx
+        .delete(meetingAttendeeTable)
+        .where(
+          and(
+            eq(meetingAttendeeTable.id, attendeeId),
+            eq(meetingAttendeeTable.meetingId, id),
+          ),
+        )
+        .returning();
+      if (!deleted) throw new HTTPException(404, { message: "Not found" });
+      await recordAuditEvent(tx, {
+        workspaceId: ws,
+        entityType: "meeting",
+        entityId: id,
+        action: "attendee_remove",
+        actorId: callerId,
+        before: deleted,
+        ip: getIp(c),
+      });
+    });
     return c.json({ success: true });
   },
 );
@@ -794,8 +893,9 @@ app.post(
     const b = c.req.valid("json");
     const meeting = await loadMeeting(ws, id);
     if (!meeting) throw new HTTPException(404, { message: "Not found" });
-    assertMeetingEditable(meeting);
+    // Authorization before resource state (F7).
     await assertMeetingWriteAccess(callerId, ws, meeting);
+    assertMeetingEditable(meeting);
     const agenda = b.agenda.trim();
     if (!agenda) throw new HTTPException(400, { message: "Agenda required" });
     const [row] = await db
@@ -839,8 +939,9 @@ app.put(
     const b = c.req.valid("json");
     const meeting = await loadMeeting(ws, id);
     if (!meeting) throw new HTTPException(404, { message: "Not found" });
-    assertMeetingEditable(meeting);
+    // Authorization before resource state (F7).
     await assertMeetingWriteAccess(callerId, ws, meeting);
+    assertMeetingEditable(meeting);
     const [existing] = await db
       .select({ id: meetingMinuteItemTable.id })
       .from(meetingMinuteItemTable)
@@ -890,6 +991,19 @@ app.post(
     const { adoptedByMeetingId } = c.req.valid("json");
     const meeting = await loadMeeting(ws, id);
     if (!meeting) throw new HTTPException(404, { message: "Not found" });
+    // F2: adoption returned the whole meeting row — title, location,
+    // provenance — to a caller the detail and list routes both refuse, and
+    // then performed an irreversible write (freezing the minutes) on a
+    // resource they cannot read. Body-role adoption authority is a
+    // governance fact; attendance is the confidentiality fact. They are not
+    // the same set, so read access must be proven before anything else.
+    await assertCanReadMeeting(userId, ws, meeting);
+    // F8: a meeting adopting itself is a self-ratifying record — meaningless
+    // in every deliberative procedure the module models.
+    if (adoptedByMeetingId === id)
+      throw new HTTPException(400, {
+        message: "A meeting cannot adopt itself",
+      });
     if (!(await idInWorkspace(meetingTable, adoptedByMeetingId, ws)))
       throw new HTTPException(400, { message: "Invalid adoptedByMeetingId" });
     const admin = await isGlobalAdmin(userId, ws);
@@ -899,29 +1013,42 @@ app.post(
         message: "Only the chair, secretary, or a global admin may adopt",
       });
     const now = new Date();
-    // Guard the UPDATE on the current status so a concurrent second adopt
-    // (or a retry after a lost race) claims no rows rather than silently
-    // overwriting the first adoption.
-    const [row] = await db
-      .update(meetingTable)
-      .set({
-        status: "adopted",
-        adoptedAt: now,
-        adoptedByMeetingId,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(meetingTable.id, id),
-          eq(meetingTable.workspaceId, ws),
-          eq(meetingTable.status, "draft"),
-        ),
-      )
-      .returning();
-    if (!row)
-      throw new HTTPException(409, {
-        message: "This meeting was already adopted",
+    const row = await db.transaction(async (tx) => {
+      // Guard the UPDATE on the current status so a concurrent second adopt
+      // (or a retry after a lost race) claims no rows rather than silently
+      // overwriting the first adoption.
+      const [updated] = await tx
+        .update(meetingTable)
+        .set({
+          status: "adopted",
+          adoptedAt: now,
+          adoptedByMeetingId,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(meetingTable.id, id),
+            eq(meetingTable.workspaceId, ws),
+            eq(meetingTable.status, "draft"),
+          ),
+        )
+        .returning();
+      if (!updated)
+        throw new HTTPException(409, {
+          message: "This meeting was already adopted",
+        });
+      await recordAuditEvent(tx, {
+        workspaceId: ws,
+        entityType: "meeting",
+        entityId: id,
+        action: "adopt",
+        actorId: userId,
+        before: meeting,
+        after: updated,
+        ip: getIp(c),
       });
+      return updated;
+    });
     return c.json(row);
   },
 );
@@ -930,6 +1057,21 @@ app.post(
 // Accept/reject of an existing action runs through the generic
 // pending-decision endpoint (see
 // ../pending-decision/providers/meeting-action.ts), not a route here.
+//
+// F12 decision: the module's stated rule is "adopted meetings are read-only
+// for items and attendees; actions stay mutable" — the audit found
+// `POST /:id/actions` violated that rule by calling `assertMeetingEditable`
+// and refusing new follow-up actions on adopted minutes with a 409.
+// `.../complete` already correctly omits that check. I've made
+// `POST /:id/actions` match: it no longer calls `assertMeetingEditable`, so
+// new actions can be recorded against an adopted meeting's minutes.
+// Reasoning: adoption is a governance act that closes the deliberative
+// record (what was discussed, what was decided, who attended) — it is not,
+// and should not be, a mechanism for cutting off follow-up work that the
+// adopted minutes themselves may have created. Freezing `items`/`attendees`
+// preserves the historical record; freezing `actions` would instead prevent
+// the module from ever tracking new work arising from a meeting once its
+// minutes are ratified, which is the opposite of what adoption is for.
 app.post(
   "/:id/actions",
   describeRoute({
@@ -958,7 +1100,10 @@ app.post(
     const b = c.req.valid("json");
     const meeting = await loadMeeting(ws, id);
     if (!meeting) throw new HTTPException(404, { message: "Not found" });
-    assertMeetingEditable(meeting);
+    // F12: adopted meetings are read-only for items and attendees, but
+    // actions stay mutable — deliberately no `assertMeetingEditable` call
+    // here. See the module-level note near the route registration below for
+    // the full reasoning.
     await assertMeetingWriteAccess(callerId, ws, meeting);
     const description = b.description.trim();
     if (!description)
@@ -1009,7 +1154,7 @@ app.post(
         assigneeId,
         fromUserId: callerId,
         description,
-        dueAt: toDate(b.dueAt),
+        dueAt: parseOptionalDate(b.dueAt, "dueAt"),
         // Self-delegation is auto-accepted — asking someone to accept work
         // they just gave themselves is ceremony with no reader.
         acceptance:
@@ -1093,8 +1238,23 @@ app.post(
         ),
       )
       .returning();
-    if (!row)
-      throw new HTTPException(409, { message: "Action already completed" });
+    if (!row) {
+      // The guarded UPDATE (status = 'open') is the right concurrency
+      // control — it just can't distinguish *why* it claimed no rows. F11:
+      // re-check the actual status so a cancelled action isn't falsely told
+      // it was "already completed".
+      const [current] = await db
+        .select({ status: meetingActionTable.status })
+        .from(meetingActionTable)
+        .where(eq(meetingActionTable.id, actionId))
+        .limit(1);
+      throw new HTTPException(409, {
+        message:
+          current?.status === "cancelled"
+            ? "This action was cancelled"
+            : "Action already completed",
+      });
+    }
     return c.json(row);
   },
 );

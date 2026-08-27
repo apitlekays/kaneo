@@ -28,7 +28,12 @@ import { MeetingDetailDialog } from "./meeting-detail-dialog";
  * Takes `workspaceId` from the shell, like its sibling panels.
  */
 export function MinutesManager({ workspaceId }: { workspaceId: string }) {
-  const { data: meetings, isLoading } = useMeetings(workspaceId);
+  const {
+    data: meetings,
+    isLoading,
+    isError,
+    refetch,
+  } = useMeetings(workspaceId);
   const [openMeetingId, setOpenMeetingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -49,8 +54,25 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
       </div>
 
       {isLoading ? (
-        <div className="flex h-32 items-center justify-center">
+        <div
+          className="flex h-32 items-center justify-center"
+          role="status"
+          aria-label="Loading Meeting Minutes"
+        >
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : isError ? (
+        <div
+          className="mx-auto max-w-md space-y-3 py-12 text-center"
+          role="alert"
+        >
+          <h3 className="font-medium text-sm">Couldn't load Meeting Minutes</h3>
+          <p className="text-muted-foreground text-sm">
+            Something went wrong fetching this workspace's meetings.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Try again
+          </Button>
         </div>
       ) : !meetings || meetings.length === 0 ? (
         <div className="mx-auto max-w-md space-y-2 py-12 text-center">
@@ -170,24 +192,33 @@ function CreateMeetingDialog({
         </DialogHeader>
         <div className="space-y-3 px-6">
           <div className="space-y-1">
-            <Label className="text-xs">Title</Label>
+            <Label className="text-xs" htmlFor="new-meeting-title">
+              Title
+            </Label>
             <Input
+              id="new-meeting-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Q3 Committee Meeting"
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Scheduled date</Label>
+            <Label className="text-xs" htmlFor="new-meeting-scheduled-at">
+              Scheduled date
+            </Label>
             <Input
+              id="new-meeting-scheduled-at"
               type="datetime-local"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Location</Label>
+            <Label className="text-xs" htmlFor="new-meeting-location">
+              Location
+            </Label>
             <Input
+              id="new-meeting-location"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Optional"
