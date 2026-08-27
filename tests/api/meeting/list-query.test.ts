@@ -124,6 +124,7 @@ describe("cursor codec", () => {
       "2026-01-01 00:00:60", // impossible second
       "2026-00-01 00:00:00", // month zero
       "2026-01-00 00:00:00", // day zero
+      "0000-01-01 00:00:00", // year zero — Postgres has no year 0
     ]) {
       expect(
         decodeCursor(raw({ scheduledAt: null, createdAt: value, id: "m" })),

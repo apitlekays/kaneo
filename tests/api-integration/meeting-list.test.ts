@@ -677,6 +677,30 @@ describe("GET /meeting", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects a year-zero cursor with 400, not 500", async () => {
+    // "0000-01-01 00:00:00" matches decodeCursor's shape regex (month 1,
+    // day 1, zeros elsewhere) but year 0 does not exist as a Postgres
+    // timestamp: `select '0000-01-01 00:00:00'::timestamp` raises
+    // date/time-out-of-range, while year 1 succeeds. Same unhandled-500
+    // failure mode as the "9999-13-45 99:99:99" case above, reached through
+    // the identical hand-crafted-cursor path.
+    const owner = await seedOwner();
+    const app = appAs(owner);
+    const cursor = Buffer.from(
+      JSON.stringify({
+        scheduledAt: null,
+        createdAt: "0000-01-01 00:00:00",
+        id: "does-not-matter",
+      }),
+    ).toString("base64url");
+    const res = await list(
+      app,
+      owner.workspace.id,
+      `&cursor=${encodeURIComponent(cursor)}`,
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("still refuses a member without General Management", async () => {
     const owner = await seedOwner();
     const ws = owner.workspace.id;

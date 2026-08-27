@@ -74,6 +74,11 @@ function isValidCalendarTimestamp(value: string): boolean {
   const hour = Number(m[4]);
   const minute = Number(m[5]);
   const second = Number(m[6]);
+  // Postgres's `timestamp` has no year 0 (year 1 BC is out of range too, but
+  // the regex's `\d{4}` can never capture a sign): `select '0000-01-01
+  // 00:00:00'::timestamp` raises date/time-out-of-range, while year 1
+  // succeeds. Same failure mode as an out-of-range month/day/etc below.
+  if (year < 1) return false;
   if (month < 1 || month > 12) return false;
   if (day < 1 || day > daysInMonth(year, month)) return false;
   if (hour > 23) return false;
