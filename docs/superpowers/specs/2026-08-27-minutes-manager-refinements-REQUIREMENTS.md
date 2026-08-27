@@ -137,3 +137,31 @@
 ## Outstanding design questions
 
 Asked via AskUserQuestion on 2026-08-27 — answers to be appended here.
+
+---
+
+## Design answers — round 1 (2026-08-27)
+
+**Q1 — PDF full-text search.** ANSWER: **Extract text on upload with an OCR
+fallback** for PDFs with no text layer (archival scans need it), **and
+scale down / compress the PDF on upload to optimise storage on the VPS.**
+Note: a `usePdfCompression` hook already exists in the web app (used by the
+Attachments tab in Correspondence) — check whether it can be reused, and
+decide client-side vs server-side compression. VPS is KVM 2: 2 vCPU, 8 GB
+RAM, 96 GB disk (~9% used), so OCR cost and disk growth both matter.
+
+**Q2 — Who may send the memorandum.** ANSWER: **any General Management page
+holder**; recipient name and email are **free text** (external recipients
+must work).
+
+**Q3 — Email copy.** ANSWER: **NOT hardcoded.** The wording in section 5 is
+the **default template**, which appears in a **WYSIWYG editor inside the
+Configure popup**. The user can customise the text before sending.
+**Provide shortcodes** the user can insert to pull data/the table from the
+minute. (So: a shortcode/token system + a rich-text editor + rendering
+shortcodes to email HTML.)
+
+**Q4 — Action reply threads.** ANSWER: **copy the Letter Minutes pattern with
+new tables** — a `meeting_action_update`-style append-only thread, no edit or
+delete route, PDF attachments tagged to the update. No refactor of the live
+Correspondence module.
