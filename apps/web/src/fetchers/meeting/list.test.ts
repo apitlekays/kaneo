@@ -29,17 +29,18 @@ describe("listMeetings", () => {
     expect(requested).toContain("workspaceId=ws-1");
   });
 
-  it("passes cursor, q and limit through, encoded", async () => {
+  it("passes cursor, q and limit through", async () => {
     const fetchMock = mockFetchOnce({ items: [], nextCursor: null });
     await listMeetings("ws-1", {
       cursor: "abc+/=",
       q: "majlis syura",
       limit: 10,
     });
-    const requested = String(fetchMock.mock.calls[0][0]);
-    expect(requested).toContain(`cursor=${encodeURIComponent("abc+/=")}`);
-    expect(requested).toContain(`q=${encodeURIComponent("majlis syura")}`);
-    expect(requested).toContain("limit=10");
+    const requested = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(requested.searchParams.get("workspaceId")).toBe("ws-1");
+    expect(requested.searchParams.get("cursor")).toBe("abc+/=");
+    expect(requested.searchParams.get("q")).toBe("majlis syura");
+    expect(requested.searchParams.get("limit")).toBe("10");
   });
 
   it("omits optional params entirely when not given", async () => {
