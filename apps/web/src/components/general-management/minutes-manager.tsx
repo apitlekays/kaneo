@@ -1,6 +1,5 @@
-import { Loader2, Lock, Plus } from "lucide-react";
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { Loader2, Plus, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -15,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import type { CreateMeetingInput } from "@/fetchers/meeting";
 import { useMeetingMutations } from "@/hooks/queries/meeting/use-meeting-mutations";
 import { useMeetings } from "@/hooks/queries/meeting/use-meetings";
-import { formatDateMedium } from "@/lib/format";
+import { MeetingCard } from "./meeting-card";
 import { MeetingDetailDialog } from "./meeting-detail-dialog";
 
 /**
@@ -28,17 +27,49 @@ import { MeetingDetailDialog } from "./meeting-detail-dialog";
  * Takes `workspaceId` from the shell, like its sibling panels.
  */
 export function MinutesManager({ workspaceId }: { workspaceId: string }) {
+  const [openMeetingId, setOpenMeetingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+
+  // Debounced so typing does not fire a query per keystroke. 300ms is the
+  // usual "finished a word" pause; shorter feels twitchy on a slow link.
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const {
-    data: meetings,
+    data,
     isLoading,
     isError,
     refetch,
-  } = useMeetings(workspaceId);
-  const [openMeetingId, setOpenMeetingId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useMeetings(workspaceId, debounced);
+
+  const meetings = useMemo(
+    () => data?.pages.flatMap((p) => p.items) ?? [],
+    [data],
+  );
+
+  // Auto-load on scroll, with the button below as the accessible and
+  // testable path. jsdom has no IntersectionObserver, hence the guard.
+  const sentinel = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !hasNextPage || isFetchingNextPage) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) fetchNextPage();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold text-lg">Meeting Minutes</h2>
@@ -53,13 +84,39 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
         </Button>
       </div>
 
+      <div className="relative">
+        <Search className="-translate-y-1/2 absolute top-1/2 left-3 h-4 w-4 text-muted-foreground" />
+        <Input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search Meeting Minutes by title, location, type or body"
+          aria-label="Search Meeting Minutes"
+          className="pl-9"
+        />
+      </div>
+
       {isLoading ? (
         <div
-          className="flex h-32 items-center justify-center"
+          className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4"
           role="status"
           aria-label="Loading Meeting Minutes"
         >
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          {Array.from({ length: 8 }, (_, i) => (
+            <div
+              key={`skeleton-${
+                // biome-ignore lint/suspicious/noArrayIndexKey: It's a skeleton
+                i
+              }`}
+              className="animate-pulse rounded-lg border border-border"
+            >
+              <div className="aspect-[3/4] w-full rounded-t-lg bg-muted" />
+              <div className="space-y-2 p-3">
+                <div className="h-2 w-2/3 rounded bg-muted" />
+                <div className="h-2 w-1/2 rounded bg-muted" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : isError ? (
         <div
@@ -74,55 +131,71 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
             Try again
           </Button>
         </div>
-      ) : !meetings || meetings.length === 0 ? (
-        <div className="mx-auto max-w-md space-y-2 py-12 text-center">
-          <h3 className="font-medium text-sm">No Meeting Minutes yet</h3>
-          <p className="text-muted-foreground text-sm">
-            Create a meeting to start recording its agenda, attendance and
-            decisions.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {meetings.map((meeting) => (
-            <button
-              key={meeting.id}
-              type="button"
-              onClick={() => setOpenMeetingId(meeting.id)}
-              className="flex w-full items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-muted"
+      ) : meetings.length === 0 ? (
+        debounced ? (
+          <div className="mx-auto max-w-md space-y-3 py-12 text-center">
+            <h3 className="font-medium text-sm">No Meeting Minutes matched</h3>
+            <p className="text-muted-foreground text-sm">
+              Nothing in this workspace matches “{debounced}”.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              // Clear BOTH: the copy above keys off `debounced`, so clearing
+              // only the raw input left "matched “…”" quoting the old term
+              // for the 300ms until the debounce caught up.
+              onClick={() => {
+                setSearch("");
+                setDebounced("");
+              }}
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="truncate font-medium">{meeting.title}</span>
-                {meeting.confidential && (
-                  <Badge
-                    variant="destructive"
-                    className="flex shrink-0 items-center gap-1 text-xs"
-                  >
-                    <Lock className="h-3 w-3" />
-                    Confidential
-                  </Badge>
-                )}
-              </span>
-              <span className="flex shrink-0 items-center gap-3 text-muted-foreground text-xs">
-                {/* No meeting-type labels are exposed to the web layer yet
-                    (there is no meeting-type listing route or fetcher) —
-                    render the raw id rather than inventing a lookup here. */}
-                <span>{meeting.meetingTypeId ?? "—"}</span>
-                <span>
-                  {meeting.scheduledAt
-                    ? formatDateMedium(meeting.scheduledAt)
-                    : "—"}
-                </span>
-                <Badge
-                  variant={meeting.status === "adopted" ? "success" : "outline"}
-                  className="text-xs"
+              <X className="h-3.5 w-3.5" />
+              Clear search
+            </Button>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-md space-y-2 py-12 text-center">
+            <h3 className="font-medium text-sm">No Meeting Minutes yet</h3>
+            <p className="text-muted-foreground text-sm">
+              Create a meeting to start recording its agenda, attendance and
+              decisions.
+            </p>
+          </div>
+        )
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {meetings.map((meeting) => (
+              <MeetingCard
+                key={meeting.id}
+                meeting={meeting}
+                onOpen={() => setOpenMeetingId(meeting.id)}
+              />
+            ))}
+          </div>
+          <div ref={sentinel} />
+          {hasNextPage && (
+            <div className="flex justify-center py-2">
+              {isFetchingNextPage ? (
+                <span
+                  role="status"
+                  className="flex items-center gap-2 text-muted-foreground text-sm"
                 >
-                  {meeting.status === "adopted" ? "Adopted" : "Draft"}
-                </Badge>
-              </span>
-            </button>
-          ))}
-        </div>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading more…
+                </span>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchNextPage()}
+                >
+                  Load more
+                </Button>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       <CreateMeetingDialog

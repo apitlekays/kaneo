@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, type SQL, sql } from "drizzle-orm";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -26,6 +26,14 @@ import { isGlobalAdmin } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { canReadMeeting } from "./access";
 import { canAdoptMeeting } from "./action-rules";
+import {
+  clampLimit,
+  decodeCursor,
+  encodeCursor,
+  escapeLikePattern,
+  keysetCondition,
+  visibilityCondition,
+} from "./list-query";
 
 // Context variables populated by the auth + workspace-access middleware.
 type MeetingEnv = { Variables: { userId: string; workspaceId?: string } };
@@ -234,51 +242,148 @@ function assertExactlyOneOfUserIdOrName(
 const app = new Hono<MeetingEnv>();
 
 // ── List ─────────────────────────────────────────────────────────────────
+// Keyset-paginated, searchable, and confidentiality-filtered IN THE QUERY.
+//
+// The previous implementation fetched every meeting and filtered the result
+// in JavaScript. That cannot be paginated: dropping rows after the fact
+// yields a short page that is not the last page, so the client cannot tell
+// "some were hidden" from "end of list", and a cursor taken from the last
+// surviving row skips the hidden ones.
+//
+// `canReadMeeting` (access.ts) remains the single source of truth for the
+// RULE and is what the detail route and pending-decision provider use;
+// `visibilityCondition` is its SQL twin, and an integration test asserts
+// the two agree across confidential x attendee x admin.
 app.get(
   "/",
   describeRoute({
     operationId: "listMeetings",
     tags: ["Meeting"],
-    description: "List meetings in a workspace, confidentiality-filtered",
+    description:
+      "List meetings in a workspace, newest first, cursor-paginated, searchable, confidentiality-filtered",
   }),
-  validator("query", v.object({ workspaceId: v.string() })),
+  validator(
+    "query",
+    v.object({
+      workspaceId: v.string(),
+      limit: optStr,
+      cursor: optStr,
+      q: optStr,
+    }),
+  ),
   workspaceAccess.fromQuery("workspaceId"),
   pageAccess,
   async (c) => {
     const ws = c.get("workspaceId") as string;
     const userId = c.get("userId") as string;
-    const rows = await db
-      .select()
-      .from(meetingTable)
-      .where(eq(meetingTable.workspaceId, ws))
-      .orderBy(asc(meetingTable.scheduledAt));
+    const { limit: rawLimit, cursor: rawCursor, q } = c.req.valid("query");
+
+    const limit = clampLimit(rawLimit);
     const admin = await isGlobalAdmin(userId, ws);
-    const meetingIds = rows.map((m) => m.id);
-    const attendeeRows = meetingIds.length
-      ? await db
-          .select({
-            meetingId: meetingAttendeeTable.meetingId,
-            userId: meetingAttendeeTable.userId,
-          })
-          .from(meetingAttendeeTable)
-          .where(inArray(meetingAttendeeTable.meetingId, meetingIds))
-      : [];
-    const attendeesByMeeting = new Map<string, string[]>();
-    for (const r of attendeeRows) {
-      if (!r.userId) continue;
-      const list = attendeesByMeeting.get(r.meetingId) ?? [];
-      list.push(r.userId);
-      attendeesByMeeting.set(r.meetingId, list);
+
+    const conditions = [eq(meetingTable.workspaceId, ws)];
+
+    const visibility = visibilityCondition(userId, admin);
+    if (visibility) conditions.push(visibility);
+
+    if (rawCursor) {
+      const cursor = decodeCursor(rawCursor);
+      // A silent reset would re-serve page one forever and read as an
+      // infinite-scroll loop; say so instead.
+      if (!cursor) throw new HTTPException(400, { message: "Invalid cursor" });
+      conditions.push(keysetCondition(cursor));
     }
-    const visible = rows.filter((m) =>
-      canReadMeeting({
-        confidential: m.confidential,
-        attendeeUserIds: attendeesByMeeting.get(m.id) ?? [],
-        userId,
-        isGlobalAdmin: admin,
-      }),
+
+    const term = q?.trim();
+    if (term) {
+      const pattern = `%${escapeLikePattern(term)}%`;
+      conditions.push(
+        or(
+          ilike(meetingTable.title, pattern),
+          ilike(meetingTable.location, pattern),
+          ilike(meetingTypeTable.label, pattern),
+          ilike(meetingBodyTable.name, pattern),
+        ) as SQL,
+      );
+    }
+
+    // Fetch one extra row: its existence is what distinguishes "there is
+    // another page" from "this is the last one", without a second COUNT.
+    const rows = await db
+      .select({
+        id: meetingTable.id,
+        workspaceId: meetingTable.workspaceId,
+        title: meetingTable.title,
+        meetingTypeId: meetingTable.meetingTypeId,
+        bodyId: meetingTable.bodyId,
+        scheduledAt: meetingTable.scheduledAt,
+        location: meetingTable.location,
+        confidential: meetingTable.confidential,
+        status: meetingTable.status,
+        adoptedAt: meetingTable.adoptedAt,
+        adoptedByMeetingId: meetingTable.adoptedByMeetingId,
+        createdBy: meetingTable.createdBy,
+        createdAt: meetingTable.createdAt,
+        updatedAt: meetingTable.updatedAt,
+        meetingTypeLabel: meetingTypeTable.label,
+        bodyName: meetingBodyTable.name,
+        // Cursor material ONLY — stripped from the response below. Both sort
+        // keys are read as Postgres timestamp text so the cursor carries
+        // them at the column's full microsecond precision; a JS `Date`
+        // holds milliseconds and silently loses rows (see the invariants
+        // above `keysetCondition`). Rendered with `to_char(..., 'YYYY-MM-DD
+        // HH24:MI:SS.US')` rather than `::text`: the latter renders per the
+        // server's `DateStyle` setting, so an operator who has configured a
+        // non-ISO `DateStyle` would get cursors `decodeCursor` rejects,
+        // breaking pagination — fails safe (400, not lost rows) but is an
+        // avoidable coupling to server config. `to_char` always emits a
+        // fixed-width six-digit fraction (`.000000` for a zero fraction,
+        // where `::text` would have dropped it), which `PG_TIMESTAMP`
+        // accepts, and returns NULL for a NULL input, which is exactly the
+        // undated cursor case.
+        createdAtText: sql<string>`to_char(${meetingTable.createdAt}, 'YYYY-MM-DD HH24:MI:SS.US')`,
+        scheduledAtText: sql<
+          string | null
+        >`to_char(${meetingTable.scheduledAt}, 'YYYY-MM-DD HH24:MI:SS.US')`,
+      })
+      .from(meetingTable)
+      .leftJoin(
+        meetingTypeTable,
+        eq(meetingTable.meetingTypeId, meetingTypeTable.id),
+      )
+      .leftJoin(meetingBodyTable, eq(meetingTable.bodyId, meetingBodyTable.id))
+      .where(and(...conditions))
+      .orderBy(
+        sql`${meetingTable.scheduledAt} DESC NULLS LAST`,
+        desc(meetingTable.createdAt),
+        desc(meetingTable.id),
+      )
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    const nextCursor =
+      hasMore && last
+        ? encodeCursor({
+            scheduledAt: last.scheduledAtText,
+            createdAt: last.createdAtText,
+            id: last.id,
+          })
+        : null;
+
+    // The two `*Text` columns exist for the cursor alone; leaving them on
+    // the items would change the response shape the web types are built
+    // against.
+    const items = page.map(
+      ({
+        createdAtText: _createdAtText,
+        scheduledAtText: _scheduledAtText,
+        ...item
+      }) => item,
     );
-    return c.json(visible);
+
+    return c.json({ items, nextCursor });
   },
 );
 

@@ -21,7 +21,7 @@
 - **Every fetcher URL must be exercised by a test.** A trailing-slash 404 shipped because integration tests called routes directly and never exercised the client's URL construction. Hono routes strictly: `/api/meeting` and `/api/meeting/` are different paths.
 - **Biome:** spaces, double quotes, semicolons. Run `pnpm lint` before committing.
 - **Unit tests:** `pnpm --filter @kaneo/api test`, `pnpm --filter @kaneo/web test`.
-- **Integration tests:** `pnpm --filter @kaneo/api test:integration`. Do NOT use the root `pnpm test:integration` if you override `DATABASE_URL` — `turbo.json` declares no `env`/`passThroughEnv` for that task and silently drops the override, falling back to port 5432 and failing with a confusing `ECONNREFUSED`.
+- **Integration tests:** `pnpm --filter @kaneo/api test:integration`. **This session's test database is `DATABASE_URL="postgresql://postgres:postgres@localhost:5470/kaneo"`** — export it in the same shell as the command (the setup file derives `kaneo_test` from it and creates/migrates that database itself). Filter to one file by appending the pattern directly — `pnpm --filter @kaneo/api test:integration meeting-list` — **not** `-- meeting-list`, which vitest ignores, silently running all 25 files for four minutes. Do NOT use the root `pnpm test:integration` if you override `DATABASE_URL` — `turbo.json` declares no `env`/`passThroughEnv` for that task and silently drops the override, falling back to port 5432 and failing with a confusing `ECONNREFUSED`.
 - **Commits** use Conventional Commits. The pre-commit hook runs `biome ci .` plus a full monorepo build and is slow; `--no-verify` is acceptable for incremental work but then `biome ci .` must be run manually before the branch is pushed.
 
 ## File Structure
@@ -157,7 +157,7 @@ describe("clampLimit", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm --filter @kaneo/api test -- list-query`
+Run: `pnpm --filter @kaneo/api test list-query`
 Expected: FAIL — cannot resolve `apps/api/src/meeting/list-query`.
 
 - [ ] **Step 3: Implement**
@@ -285,7 +285,7 @@ export function keysetCondition(cursor: MeetingCursor): SQL {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pnpm --filter @kaneo/api test -- list-query`
+Run: `pnpm --filter @kaneo/api test list-query`
 Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Commit**
@@ -772,7 +772,7 @@ explicitly.
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `pnpm --filter @kaneo/api test:integration -- meeting-list`
+Run: `pnpm --filter @kaneo/api test:integration meeting-list`
 Expected: FAIL — the route still returns a bare array, so `body.items` is undefined.
 
 - [ ] **Step 3: Replace the list handler**
@@ -924,7 +924,7 @@ app.get(
 
 - [ ] **Step 4: Run the integration tests**
 
-Run: `pnpm --filter @kaneo/api test:integration -- meeting-list`
+Run: `pnpm --filter @kaneo/api test:integration meeting-list`
 Expected: PASS, 14 tests.
 
 - [ ] **Step 5: Run the rest of the API suite for regressions**
@@ -1027,7 +1027,7 @@ describe("listMeetings", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm --filter @kaneo/web test -- list.test`
+Run: `pnpm --filter @kaneo/web test list.test`
 Expected: FAIL — `listMeetings` takes one argument and returns an array.
 
 - [ ] **Step 3: Implement**
@@ -1070,7 +1070,7 @@ export async function listMeetings(
 
 - [ ] **Step 4: Run the fetcher tests**
 
-Run: `pnpm --filter @kaneo/web test -- fetchers/meeting`
+Run: `pnpm --filter @kaneo/web test fetchers/meeting`
 Expected: PASS. `url.test.ts` and `index.test.ts` also call `listMeetings`; they pass a single argument, which still type-checks and still hits the collection endpoint, so they should be green unchanged. If either asserted an array response, update it to `{ items, nextCursor }`.
 
 - [ ] **Step 5: Commit**
@@ -1153,7 +1153,7 @@ export function useAdoptCandidates(workspaceId: string, q?: string) {
 
 - [ ] **Step 3: Verify the invalidation test still passes**
 
-Run: `pnpm --filter @kaneo/web test -- invalidations`
+Run: `pnpm --filter @kaneo/web test invalidations`
 Expected: PASS unchanged — prefix matching still covers both new keys.
 
 - [ ] **Step 4: Commit**
@@ -1257,7 +1257,7 @@ describe("MeetingCard", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm --filter @kaneo/web test -- meeting-card`
+Run: `pnpm --filter @kaneo/web test meeting-card`
 Expected: FAIL — cannot resolve `./meeting-card`.
 
 - [ ] **Step 3: Implement the card**
@@ -1324,7 +1324,7 @@ export function MeetingCard({
 
 - [ ] **Step 4: Run the card tests**
 
-Run: `pnpm --filter @kaneo/web test -- meeting-card`
+Run: `pnpm --filter @kaneo/web test meeting-card`
 Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Write the failing manager tests**
@@ -1419,7 +1419,7 @@ Keep the existing error-state and loading-state cases untouched — they are the
 
 - [ ] **Step 6: Run to verify they fail**
 
-Run: `pnpm --filter @kaneo/web test -- minutes-manager`
+Run: `pnpm --filter @kaneo/web test minutes-manager`
 Expected: FAIL — no searchbox, no load-more control, and the component still reads `meetings.map`.
 
 - [ ] **Step 7: Rewrite the manager's list section**
@@ -1578,7 +1578,7 @@ Widen the container from `max-w-3xl` to `max-w-5xl` — a four-column grid insid
 
 - [ ] **Step 8: Run the manager tests**
 
-Run: `pnpm --filter @kaneo/web test -- minutes-manager`
+Run: `pnpm --filter @kaneo/web test minutes-manager`
 Expected: PASS.
 
 - [ ] **Step 9: Commit**
@@ -1636,7 +1636,7 @@ Keep the existing case at line ~461 that asserts the control reports an error ra
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm --filter @kaneo/web test -- meeting-detail-dialog`
+Run: `pnpm --filter @kaneo/web test meeting-detail-dialog`
 Expected: FAIL — the component still imports `useMeetings` and there is no searchbox.
 
 - [ ] **Step 3: Implement**
@@ -1681,7 +1681,7 @@ Keep the empty and error copy that already exists. Add one line to the empty cas
 
 - [ ] **Step 4: Run the tests**
 
-Run: `pnpm --filter @kaneo/web test -- meeting-detail-dialog`
+Run: `pnpm --filter @kaneo/web test meeting-detail-dialog`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**

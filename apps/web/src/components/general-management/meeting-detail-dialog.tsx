@@ -37,9 +37,9 @@ import type {
   MeetingDetail,
   MeetingMinuteItem,
 } from "@/fetchers/meeting";
+import { useAdoptCandidates } from "@/hooks/queries/meeting/use-adopt-candidates";
 import { useMeeting } from "@/hooks/queries/meeting/use-meeting";
 import { useMeetingMutations } from "@/hooks/queries/meeting/use-meeting-mutations";
-import { useMeetings } from "@/hooks/queries/meeting/use-meetings";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
@@ -130,8 +130,16 @@ function Body({
   const m = useMeetingMutations(workspaceId, meeting.id);
   const { data: usersData } = useGetActiveWorkspaceUsers(workspaceId);
   const users = usersData?.members ?? [];
-  const { data: meetings = [], isError: isMeetingsError } =
-    useMeetings(workspaceId);
+  const [adoptSearch, setAdoptSearch] = useState("");
+  const { data: adoptPage, isError: isMeetingsError } = useAdoptCandidates(
+    workspaceId,
+    adoptSearch.trim(),
+  );
+  const meetings = adoptPage?.items ?? [];
+  // The picker deliberately shows one bounded page. A non-null cursor means
+  // the server had more to give, so an older meeting really is unselectable
+  // — say so rather than leaving the user hunting for it.
+  const isTruncated = Boolean(adoptPage?.nextCursor);
 
   return (
     <>
@@ -192,6 +200,9 @@ function Body({
             m={m}
             meetings={meetings}
             isMeetingsError={isMeetingsError}
+            isTruncated={isTruncated}
+            adoptSearch={adoptSearch}
+            setAdoptSearch={setAdoptSearch}
           />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="attendees">
@@ -213,11 +224,17 @@ function OverviewSection({
   m,
   meetings,
   isMeetingsError,
+  isTruncated,
+  adoptSearch,
+  setAdoptSearch,
 }: {
   meeting: MeetingDetail;
   m: Mutations;
   meetings: Meeting[];
   isMeetingsError: boolean;
+  isTruncated: boolean;
+  adoptSearch: string;
+  setAdoptSearch: (v: string) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -278,6 +295,9 @@ function OverviewSection({
           m={m}
           meetings={meetings}
           isMeetingsError={isMeetingsError}
+          isTruncated={isTruncated}
+          adoptSearch={adoptSearch}
+          setAdoptSearch={setAdoptSearch}
         />
       )}
     </div>
@@ -289,11 +309,17 @@ function AdoptControl({
   m,
   meetings,
   isMeetingsError,
+  isTruncated,
+  adoptSearch,
+  setAdoptSearch,
 }: {
   meeting: MeetingDetail;
   m: Mutations;
   meetings: Meeting[];
   isMeetingsError: boolean;
+  isTruncated: boolean;
+  adoptSearch: string;
+  setAdoptSearch: (v: string) => void;
 }) {
   const [adoptedByMeetingId, setAdoptedByMeetingId] = useState("");
   const candidates = meetings.filter((other) => other.id !== meeting.id);
@@ -305,6 +331,14 @@ function AdoptControl({
         Record which later meeting confirmed and adopted this meeting's Meeting
         Minutes. Once adopted, its attendees and agenda become read-only.
       </p>
+      <Input
+        type="search"
+        value={adoptSearch}
+        onChange={(e) => setAdoptSearch(e.target.value)}
+        placeholder="Search meetings"
+        aria-label="Search meetings to adopt from"
+        className="mb-2"
+      />
       <div className="flex flex-wrap items-end gap-2">
         <Select
           value={adoptedByMeetingId}
@@ -341,6 +375,11 @@ function AdoptControl({
           Adopt
         </Button>
       </div>
+      {!isMeetingsError && isTruncated && (
+        <p className="text-muted-foreground text-xs">
+          Showing the most recent meetings only — search to find an older one.
+        </p>
+      )}
       {isMeetingsError ? (
         <p className="text-destructive text-xs" role="alert">
           Couldn't load other meetings to adopt from — try reopening this
@@ -349,7 +388,9 @@ function AdoptControl({
       ) : (
         candidates.length === 0 && (
           <p className="text-muted-foreground text-xs">
-            No other meetings yet to record as the adopting meeting.
+            {adoptSearch.trim()
+              ? "No meetings matched that search."
+              : "No other meetings yet to record as the adopting meeting."}
           </p>
         )
       )}

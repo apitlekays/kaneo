@@ -11,13 +11,15 @@ import { MeetingDetailDialog } from "./meeting-detail-dialog";
 
 const state = vi.hoisted(() => ({
   meeting: null as MeetingDetail | null,
-  meetings: [] as Meeting[],
+  adoptCandidates: [] as Meeting[],
+  adoptNextCursor: null as string | null,
   meetingIsLoading: false,
   meetingIsError: false,
-  meetingsIsError: false,
+  isMeetingsError: false,
 }));
 
 const refetchMeeting = vi.hoisted(() => vi.fn());
+const useAdoptCandidatesMock = vi.hoisted(() => vi.fn());
 
 const mutations = vi.hoisted(() => ({
   addAttendee: { mutate: vi.fn(), isPending: false },
@@ -39,12 +41,17 @@ vi.mock("@/hooks/queries/meeting/use-meeting", () => ({
   }),
 }));
 
-vi.mock("@/hooks/queries/meeting/use-meetings", () => ({
-  useMeetings: () => ({
-    data: state.meetings,
-    isLoading: false,
-    isError: state.meetingsIsError,
-  }),
+vi.mock("@/hooks/queries/meeting/use-adopt-candidates", () => ({
+  useAdoptCandidates: (...args: unknown[]) => {
+    useAdoptCandidatesMock(...args);
+    return {
+      data: {
+        items: state.adoptCandidates,
+        nextCursor: state.adoptNextCursor,
+      },
+      isError: state.isMeetingsError,
+    };
+  },
 }));
 
 vi.mock("@/hooks/queries/meeting/use-meeting-mutations", () => ({
@@ -123,11 +130,13 @@ async function pickOption(
 
 afterEach(() => {
   state.meeting = null;
-  state.meetings = [];
+  state.adoptCandidates = [];
+  state.adoptNextCursor = null;
   state.meetingIsLoading = false;
   state.meetingIsError = false;
-  state.meetingsIsError = false;
+  state.isMeetingsError = false;
   refetchMeeting.mockClear();
+  useAdoptCandidatesMock.mockClear();
   for (const m of Object.values(mutations)) {
     m.mutate.mockClear();
     m.isPending = false;
@@ -351,7 +360,7 @@ describe("MeetingDetailDialog", () => {
   it("6. adopting calls the adopt mutation with the chosen adopting meeting's id", async () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting({ status: "draft" });
-    state.meetings = [
+    state.adoptCandidates = [
       {
         id: "meeting-1",
         workspaceId: "ws-1",
@@ -447,8 +456,8 @@ describe("MeetingDetailDialog", () => {
 
   it("9. AdoptControl distinguishes a failed candidate-meetings load from a genuinely empty one", async () => {
     state.meeting = makeMeeting({ status: "draft" });
-    state.meetings = [];
-    state.meetingsIsError = true;
+    state.adoptCandidates = [];
+    state.isMeetingsError = true;
 
     render(
       <MeetingDetailDialog
@@ -465,5 +474,87 @@ describe("MeetingDetailDialog", () => {
       screen.queryByText(/no other meetings yet/i),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/couldn't load other meetings/i)).toBeVisible();
+  });
+
+  it("lets the user search for the adopting meeting", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({ status: "draft" });
+    state.adoptCandidates = [
+      makeMeeting({ id: "other-1", title: "November committee meeting" }),
+    ];
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const search = screen.getByRole("searchbox", { name: /search meetings/i });
+    await user.type(search, "november");
+
+    expect(search).toHaveValue("november");
+
+    // Confirms the typed term actually reaches the hook — the mock is
+    // zero-arg-shaped by default, so without capturing its call args this
+    // test would stay green even if the component silently dropped the
+    // search term (the exact regression this task exists to prevent).
+    expect(useAdoptCandidatesMock).toHaveBeenCalledWith("ws-1", "november");
+
+    // The candidate meeting is rendered as a Select option, which this Select
+    // implementation only mounts once the trigger is opened — so open it
+    // before asserting the option is there.
+    const trigger = screen
+      .getByText("Select adopting meeting")
+      .closest('[role="combobox"]');
+    if (!trigger) throw new Error("No adopting-meeting combobox found");
+    await user.click(trigger);
+
+    expect(
+      await screen.findByRole("option", { name: "November committee meeting" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says the candidate list is truncated when the server had more to give", async () => {
+    // The picker asks for one bounded page of 50. Showing only that page in
+    // silence is the very failure the hook's own comment rejects — an older
+    // meeting is unselectable with nothing on screen to say why — so a
+    // non-null nextCursor has to become visible copy.
+    state.meeting = makeMeeting({ status: "draft" });
+    state.adoptCandidates = [
+      makeMeeting({ id: "other-1", title: "November committee meeting" }),
+    ];
+    state.adoptNextCursor = "cursor-token";
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/most recent meetings only/i)).toBeVisible();
+  });
+
+  it("says nothing about truncation when the whole list came back", async () => {
+    state.meeting = makeMeeting({ status: "draft" });
+    state.adoptCandidates = [
+      makeMeeting({ id: "other-1", title: "November committee meeting" }),
+    ];
+    state.adoptNextCursor = null;
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/most recent meetings only/i),
+    ).not.toBeInTheDocument();
   });
 });
