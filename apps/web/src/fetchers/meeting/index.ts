@@ -5,7 +5,19 @@ async function jsonOrThrow<T>(response: Response): Promise<T> {
   return response.json();
 }
 const jsonHeaders = { "Content-Type": "application/json" };
-const url = (path: string) => getApiUrl(`meeting/${path}`);
+/**
+ * Hono routes strictly: `/api/meeting` and `/api/meeting/` are different
+ * paths, and only the first is registered — a trailing slash 404s. The
+ * collection endpoints pass either an empty path (create) or a bare query
+ * string (list), so join the segment only when there actually is one.
+ *
+ * Every integration test calls `/api/meeting` directly, so nothing exercised
+ * this construction until it 404'd in the browser.
+ */
+const url = (path: string) =>
+  getApiUrl(
+    `meeting${path === "" || path.startsWith("?") ? path : `/${path}`}`,
+  );
 
 // Naming: this is the organisation-level meeting-minutes module
 // (`meeting_*` tables). Two other unrelated features are also colloquially
