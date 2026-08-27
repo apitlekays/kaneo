@@ -8,11 +8,12 @@ import { meetingAttendeeTable, meetingTable } from "../database/schema";
  * on its shape.
  *
  * The two timestamps are Postgres timestamp TEXT — `2026-01-01 00:00:00` or
- * `2026-01-01 00:00:00.123456` — read straight out of the row with `::text`
- * and bound straight back with `::timestamp`. They are deliberately NOT ISO
- * strings produced from a JS `Date`: a `Date` holds milliseconds, the column
- * holds microseconds, and a cursor coarser than the ORDER BY loses rows
- * (see `keysetCondition`). Nothing on this path may construct a `Date`.
+ * `2026-01-01 00:00:00.123456` — rendered with `to_char(col, 'YYYY-MM-DD
+ * HH24:MI:SS.US')` (not `::text`, which renders per the server's `DateStyle`
+ * setting) and bound straight back with `::timestamp`. They are deliberately
+ * NOT ISO strings produced from a JS `Date`: a `Date` holds milliseconds, the
+ * column holds microseconds, and a cursor coarser than the ORDER BY loses
+ * rows (see `keysetCondition`). Nothing on this path may construct a `Date`.
  */
 export type MeetingCursor = {
   scheduledAt: string | null;
@@ -27,8 +28,59 @@ export type MeetingCursor = {
  * `Date.parse`, which both rejects nothing useful (it accepts "2026" and
  * much else) and would read these local-timezone-less values as LOCAL time
  * in V8.
+ *
+ * Shape-only, though: it checks digit grouping, not calendar validity, so a
+ * hand-crafted cursor carrying e.g. "9999-13-45 99:99:99" still matches. See
+ * `isValidCalendarTimestamp` for the check that rejects it.
  */
 const PG_TIMESTAMP = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?$/;
+
+/** Field capture for `isValidCalendarTimestamp` — matched only after `PG_TIMESTAMP` already passed. */
+const PG_TIMESTAMP_FIELDS =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?$/;
+
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+function daysInMonth(year: number, month: number): number {
+  return month === 2 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[month - 1];
+}
+
+/**
+ * Rejects a calendar-impossible value that nonetheless matches
+ * `PG_TIMESTAMP`'s shape — an impossible month, day, hour, minute or second
+ * (e.g. "9999-13-45 99:99:99"). Without this, such a value passed straight
+ * to `keysetCondition`'s `::timestamp` cast, and Postgres raised a
+ * date/time-out-of-range error the route has no try/catch for: an
+ * unhandled 500 where the route promises 400 for any bad cursor.
+ *
+ * Deliberately NOT `Date.parse` / `new Date(string)`: V8 parses a
+ * space-separated (or fractional-seconds) timestamp as LOCAL time, so
+ * whether a borderline value looked valid would depend on the process's
+ * timezone — exactly the class of bug this module is trying to eliminate.
+ * This checks each field's numeric range directly against the matched
+ * digits; no `Date` is constructed at all, so the value bound to SQL stays
+ * the original text and this function influences nothing but true/false.
+ */
+function isValidCalendarTimestamp(value: string): boolean {
+  const m = value.match(PG_TIMESTAMP_FIELDS);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  const second = Number(m[6]);
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > daysInMonth(year, month)) return false;
+  if (hour > 23) return false;
+  if (minute > 59) return false;
+  if (second > 59) return false;
+  return true;
+}
 
 export function encodeCursor(c: MeetingCursor): string {
   return Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
@@ -46,8 +98,16 @@ export function decodeCursor(raw: string): MeetingCursor | null {
     // cursor) must not reach keysetCondition, where it is cast with
     // `::timestamp` — Postgres would raise a syntax error and the route
     // would answer 500 rather than the 400 it promises for a bad cursor.
+    // Shape AND calendar validity both matter: a shape-only check still lets
+    // an impossible value like "9999-13-45 99:99:99" through to the same
+    // `::timestamp` cast, and Postgres rejects that with the same
+    // unhandled-500 failure mode.
     if (!PG_TIMESTAMP.test(createdAt)) return null;
-    if (scheduledAt !== null && !PG_TIMESTAMP.test(scheduledAt)) return null;
+    if (!isValidCalendarTimestamp(createdAt)) return null;
+    if (scheduledAt !== null) {
+      if (!PG_TIMESTAMP.test(scheduledAt)) return null;
+      if (!isValidCalendarTimestamp(scheduledAt)) return null;
+    }
     return { scheduledAt, createdAt, id };
   } catch {
     return null;
@@ -126,8 +186,9 @@ export function visibilityCondition(
  *    earlier page either: they become unreachable through pagination
  *    entirely — gone from the grid, still live behind a direct link, with
  *    nothing on screen to say so. Hence the cursor carries Postgres
- *    timestamp TEXT (selected with `::text`) and binds it back with
- *    `::timestamp`.
+ *    timestamp TEXT (rendered with `to_char(col, 'YYYY-MM-DD
+ *    HH24:MI:SS.US')`, not `::text` — see the route for why) and binds it
+ *    back with `::timestamp`.
  *
  * 2. TIMEZONE. No `Date` may reach the binding path. Interpolating one
  *    hands it to the driver, which (for a `timestamp without time zone`

@@ -331,10 +331,20 @@ app.get(
         // keys are read as Postgres timestamp text so the cursor carries
         // them at the column's full microsecond precision; a JS `Date`
         // holds milliseconds and silently loses rows (see the invariants
-        // above `keysetCondition`). `::text` on a NULL column yields null,
-        // which is exactly the undated cursor case.
-        createdAtText: sql<string>`${meetingTable.createdAt}::text`,
-        scheduledAtText: sql<string | null>`${meetingTable.scheduledAt}::text`,
+        // above `keysetCondition`). Rendered with `to_char(..., 'YYYY-MM-DD
+        // HH24:MI:SS.US')` rather than `::text`: the latter renders per the
+        // server's `DateStyle` setting, so an operator who has configured a
+        // non-ISO `DateStyle` would get cursors `decodeCursor` rejects,
+        // breaking pagination — fails safe (400, not lost rows) but is an
+        // avoidable coupling to server config. `to_char` always emits a
+        // fixed-width six-digit fraction (`.000000` for a zero fraction,
+        // where `::text` would have dropped it), which `PG_TIMESTAMP`
+        // accepts, and returns NULL for a NULL input, which is exactly the
+        // undated cursor case.
+        createdAtText: sql<string>`to_char(${meetingTable.createdAt}, 'YYYY-MM-DD HH24:MI:SS.US')`,
+        scheduledAtText: sql<
+          string | null
+        >`to_char(${meetingTable.scheduledAt}, 'YYYY-MM-DD HH24:MI:SS.US')`,
       })
       .from(meetingTable)
       .leftJoin(

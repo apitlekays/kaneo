@@ -206,6 +206,38 @@ describe("GET /meeting", () => {
     expect(new Set(ids).size).toBe(created.length);
   });
 
+  it("pins the exact cursor text format rendered by to_char", async () => {
+    // The cursor is rendered with `to_char(col, 'YYYY-MM-DD
+    // HH24:MI:SS.US')` rather than `::text`, specifically so its shape does
+    // not depend on the server's `DateStyle` setting. `to_char` always
+    // emits a fixed six-digit fraction (unlike `::text`, which strips
+    // trailing zeros), so pin that here — a future edit back to `::text`,
+    // or to a different format string, should fail a test rather than only
+    // break pagination on an instance with a non-default `DateStyle`.
+    const owner = await seedOwner();
+    const app = appAs(owner);
+    const ws = owner.workspace.id;
+
+    await seedAt(ws, "newer", "2026-01-01 00:00:00.500000");
+    await seedAt(ws, "older", "2026-01-01 00:00:00.123456");
+
+    const first = (await (
+      await list(app, ws, "&limit=1")
+    ).json()) as ListResponse;
+    expect(first.items).toHaveLength(1);
+    expect(first.nextCursor).not.toBeNull();
+
+    const decoded = JSON.parse(
+      Buffer.from(first.nextCursor as string, "base64url").toString("utf8"),
+    ) as { scheduledAt: string | null; createdAt: string; id: string };
+
+    expect(decoded.createdAt).toBe("2026-01-01 00:00:00.500000");
+    // scheduled_at is unset for both seeded rows, so `to_char` on NULL must
+    // still come through as `null`, not the string "null" or an empty
+    // string.
+    expect(decoded.scheduledAt).toBeNull();
+  });
+
   it("orders newest first, with undated meetings last", async () => {
     const owner = await seedOwner();
     const app = appAs(owner);
@@ -610,6 +642,30 @@ describe("GET /meeting", () => {
       JSON.stringify({
         scheduledAt: null,
         createdAt: "nonsense",
+        id: "does-not-matter",
+      }),
+    ).toString("base64url");
+    const res = await list(
+      app,
+      owner.workspace.id,
+      `&cursor=${encodeURIComponent(cursor)}`,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a calendar-invalid but shape-valid cursor with 400, not 500", async () => {
+    // "9999-13-45 99:99:99" matches decodeCursor's shape regex (digit
+    // grouping only) but is calendar-impossible. Without calendar
+    // validation, this reaches keysetCondition's `::timestamp` cast, and
+    // Postgres raises a date/time-out-of-range error the route has no
+    // try/catch for — an unhandled 500 where the route promises 400 for any
+    // bad cursor.
+    const owner = await seedOwner();
+    const app = appAs(owner);
+    const cursor = Buffer.from(
+      JSON.stringify({
+        scheduledAt: null,
+        createdAt: "9999-13-45 99:99:99",
         id: "does-not-matter",
       }),
     ).toString("base64url");

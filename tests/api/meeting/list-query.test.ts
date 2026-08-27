@@ -105,6 +105,54 @@ describe("cursor codec", () => {
       ),
     ).toBeNull();
   });
+
+  it("returns null for a calendar-invalid but shape-valid createdAt", () => {
+    // PG_TIMESTAMP is a shape check only: it matches digit grouping, not
+    // calendar validity, so a hand-crafted cursor carrying an impossible
+    // date/time passes it and would otherwise reach keysetCondition's
+    // `::timestamp` cast — Postgres raises a date/time-out-of-range error
+    // there, and the route has no try/catch, so it would answer an
+    // unhandled 500 instead of the 400 it promises for a bad cursor.
+    for (const value of [
+      "9999-13-45 99:99:99", // impossible month, day, hour, minute, second all at once
+      "2026-13-01 00:00:00", // impossible month
+      "2026-01-32 00:00:00", // impossible day
+      "2026-02-30 00:00:00", // impossible day for February
+      "2027-02-29 00:00:00", // Feb 29 in a non-leap year
+      "2026-01-01 24:00:00", // impossible hour
+      "2026-01-01 00:60:00", // impossible minute
+      "2026-01-01 00:00:60", // impossible second
+      "2026-00-01 00:00:00", // month zero
+      "2026-01-00 00:00:00", // day zero
+    ]) {
+      expect(
+        decodeCursor(raw({ scheduledAt: null, createdAt: value, id: "m" })),
+      ).toBeNull();
+    }
+  });
+
+  it("returns null for a calendar-invalid scheduledAt", () => {
+    expect(
+      decodeCursor(
+        raw({
+          scheduledAt: "2026-02-30 00:00:00",
+          createdAt: "2026-01-01 00:00:00",
+          id: "meeting-5",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("still accepts a legitimate leap day", () => {
+    // Over-strict validation that rejects a real timestamp would be a worse
+    // bug than the one this fixes — 2028 is a genuine leap year.
+    const c = {
+      scheduledAt: null,
+      createdAt: "2028-02-29 12:00:00",
+      id: "meeting-leap",
+    };
+    expect(decodeCursor(encodeCursor(c))).toEqual(c);
+  });
 });
 
 describe("escapeLikePattern", () => {
