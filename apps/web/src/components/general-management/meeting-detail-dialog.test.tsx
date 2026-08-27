@@ -11,10 +11,10 @@ import { MeetingDetailDialog } from "./meeting-detail-dialog";
 
 const state = vi.hoisted(() => ({
   meeting: null as MeetingDetail | null,
-  meetings: [] as Meeting[],
+  adoptCandidates: [] as Meeting[],
   meetingIsLoading: false,
   meetingIsError: false,
-  meetingsIsError: false,
+  isMeetingsError: false,
 }));
 
 const refetchMeeting = vi.hoisted(() => vi.fn());
@@ -39,11 +39,10 @@ vi.mock("@/hooks/queries/meeting/use-meeting", () => ({
   }),
 }));
 
-vi.mock("@/hooks/queries/meeting/use-meetings", () => ({
-  useMeetings: () => ({
-    data: state.meetings,
-    isLoading: false,
-    isError: state.meetingsIsError,
+vi.mock("@/hooks/queries/meeting/use-adopt-candidates", () => ({
+  useAdoptCandidates: () => ({
+    data: { items: state.adoptCandidates, nextCursor: null },
+    isError: state.isMeetingsError,
   }),
 }));
 
@@ -123,10 +122,10 @@ async function pickOption(
 
 afterEach(() => {
   state.meeting = null;
-  state.meetings = [];
+  state.adoptCandidates = [];
   state.meetingIsLoading = false;
   state.meetingIsError = false;
-  state.meetingsIsError = false;
+  state.isMeetingsError = false;
   refetchMeeting.mockClear();
   for (const m of Object.values(mutations)) {
     m.mutate.mockClear();
@@ -351,7 +350,7 @@ describe("MeetingDetailDialog", () => {
   it("6. adopting calls the adopt mutation with the chosen adopting meeting's id", async () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting({ status: "draft" });
-    state.meetings = [
+    state.adoptCandidates = [
       {
         id: "meeting-1",
         workspaceId: "ws-1",
@@ -447,8 +446,8 @@ describe("MeetingDetailDialog", () => {
 
   it("9. AdoptControl distinguishes a failed candidate-meetings load from a genuinely empty one", async () => {
     state.meeting = makeMeeting({ status: "draft" });
-    state.meetings = [];
-    state.meetingsIsError = true;
+    state.adoptCandidates = [];
+    state.isMeetingsError = true;
 
     render(
       <MeetingDetailDialog
@@ -465,5 +464,39 @@ describe("MeetingDetailDialog", () => {
       screen.queryByText(/no other meetings yet/i),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/couldn't load other meetings/i)).toBeVisible();
+  });
+
+  it("lets the user search for the adopting meeting", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({ status: "draft" });
+    state.adoptCandidates = [
+      makeMeeting({ id: "other-1", title: "November committee meeting" }),
+    ];
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const search = screen.getByRole("searchbox", { name: /search meetings/i });
+    await user.type(search, "november");
+
+    expect(search).toHaveValue("november");
+
+    // The candidate meeting is rendered as a Select option, which this Select
+    // implementation only mounts once the trigger is opened — so open it
+    // before asserting the option is there.
+    const trigger = screen
+      .getByText("Select adopting meeting")
+      .closest('[role="combobox"]');
+    if (!trigger) throw new Error("No adopting-meeting combobox found");
+    await user.click(trigger);
+
+    expect(
+      await screen.findByRole("option", { name: "November committee meeting" }),
+    ).toBeInTheDocument();
   });
 });
