@@ -167,7 +167,10 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
           {hasNextPage && (
             <div className="flex justify-center py-2">
               {isFetchingNextPage ? (
-                <span className="flex items-center gap-2 text-muted-foreground text-sm">
+                <span
+                  role="status"
+                  className="flex items-center gap-2 text-muted-foreground text-sm"
+                >
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading more…
                 </span>

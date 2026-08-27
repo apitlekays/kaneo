@@ -237,12 +237,23 @@ describe("MinutesManager", () => {
     expect(search).toHaveValue("");
   });
 
-  it("loads the next page exactly once when asked", async () => {
+  it("requests the next page when the load-more control is used", async () => {
     state.pages = [{ items: [makeMeeting()], nextCursor: "next" }];
     state.hasNextPage = true;
     render(<MinutesManager workspaceId="ws-1" />);
     await userEvent.click(screen.getByRole("button", { name: /load more/i }));
     expect(fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces the load-more control with the loading indicator while a page is in flight, so it cannot be clicked twice", () => {
+    state.pages = [{ items: [makeMeeting()], nextCursor: "next" }];
+    state.hasNextPage = true;
+    state.isFetchingNextPage = true;
+    render(<MinutesManager workspaceId="ws-1" />);
+    expect(
+      screen.queryByRole("button", { name: /load more/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/loading more/i)).toBeInTheDocument();
   });
 
   it("hides the load-more control on the last page", () => {
@@ -279,5 +290,6 @@ describe("MinutesManager", () => {
     render(<MinutesManager workspaceId="ws-1" />);
     expect(screen.getByText("Already loaded")).toBeInTheDocument();
     expect(screen.getByText(/loading more/i)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/loading more/i);
   });
 });
