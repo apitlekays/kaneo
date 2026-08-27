@@ -165,3 +165,42 @@ shortcodes to email HTML.)
 new tables** — a `meeting_action_update`-style append-only thread, no edit or
 delete route, PDF attachments tagged to the update. No refactor of the live
 Correspondence module.
+
+## Design answers — round 2 (2026-08-27)
+
+**Q5 — OCR/extraction runtime.** ANSWER: **async on the server after upload.**
+Upload returns immediately; extraction + OCR run in the background and the
+document becomes searchable shortly after. **Requires a visible "indexing"
+state** in the UI so a not-yet-searchable document does not read as broken
+search. Note this repo already has `trackBackgroundWork`
+(`apps/api/src/utils/background-work.ts`) for making fire-and-forget work
+awaitable in tests — any async indexing MUST register there, or the
+integration harness will truncate underneath it and deadlock (this exact
+class of bug has bitten twice).
+
+**Q6 — PDF compression.** ANSWER: **keep the original AND a compressed copy.**
+Serve the compressed version; retain the original as the archival record.
+Minutes are legal records, so fidelity wins over disk. Disk grows rather than
+shrinks — monitor it (VPS at ~9% of 96 GB today).
+
+**Q7 — Rich-text editor.** ANSWER: **reuse the repo's existing editor.** The
+app already ships a comment editor (~773 KB chunk, `comment-editor` in the
+build output). Confirm it can emit email-safe HTML before committing to it;
+if it cannot, report that rather than silently adding a second editor.
+
+**Q8 — Send record.** ANSWER: **full record** — who sent it, to whom, when,
+the CC list, AND the rendered body. Governance correspondence must be
+auditable, and the record prevents duplicate memoranda.
+
+## Design decisions still to make during spec-writing (not user questions)
+
+- Exact shortcode vocabulary (e.g. meeting name, numbering, topic, status,
+  date, recipient, and the one-row table). Must be documented in the popup.
+- Whether `meeting_minute_item.agenda` is renamed to `topic` (requirement 4
+  says "topic (renamed from agenda)") — a column rename is a migration on a
+  live table; consider keeping the column and renaming only the UI/CSV label,
+  and state the choice explicitly.
+- Whether the memorandum email path composes `canReadMeeting` — it must, and
+  a confidential meeting's title must not reach a recipient who cannot read
+  it. This has leaked three times through notification subjects.
+- Lazy loading: cursor pagination vs offset, and how it interacts with search.
