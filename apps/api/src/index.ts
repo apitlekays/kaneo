@@ -123,7 +123,7 @@ type ApiVariables = {
   };
 };
 
-function buildContentDisposition(filename: string) {
+export function buildContentDisposition(filename: string) {
   const normalized = filename
     .normalize("NFC")
     .replace(/[\r\n"]/g, "")
@@ -134,7 +134,7 @@ function buildContentDisposition(filename: string) {
       .normalize("NFKD")
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[\\/]/g, "-")
-      .replace(/[^\x20-\u7E]+/g, "_")
+      .replace(/[^\x20-\x7E]+/g, "_")
       .replace(/\s+/g, " ")
       .trim() || "file";
   const encodedFilename = encodeURIComponent(safeFilename).replace(
