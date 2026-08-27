@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
 }));
 
 const refetchMeeting = vi.hoisted(() => vi.fn());
+const useAdoptCandidatesMock = vi.hoisted(() => vi.fn());
 
 const mutations = vi.hoisted(() => ({
   addAttendee: { mutate: vi.fn(), isPending: false },
@@ -40,10 +41,13 @@ vi.mock("@/hooks/queries/meeting/use-meeting", () => ({
 }));
 
 vi.mock("@/hooks/queries/meeting/use-adopt-candidates", () => ({
-  useAdoptCandidates: () => ({
-    data: { items: state.adoptCandidates, nextCursor: null },
-    isError: state.isMeetingsError,
-  }),
+  useAdoptCandidates: (...args: unknown[]) => {
+    useAdoptCandidatesMock(...args);
+    return {
+      data: { items: state.adoptCandidates, nextCursor: null },
+      isError: state.isMeetingsError,
+    };
+  },
 }));
 
 vi.mock("@/hooks/queries/meeting/use-meeting-mutations", () => ({
@@ -127,6 +131,7 @@ afterEach(() => {
   state.meetingIsError = false;
   state.isMeetingsError = false;
   refetchMeeting.mockClear();
+  useAdoptCandidatesMock.mockClear();
   for (const m of Object.values(mutations)) {
     m.mutate.mockClear();
     m.isPending = false;
@@ -485,6 +490,12 @@ describe("MeetingDetailDialog", () => {
     await user.type(search, "november");
 
     expect(search).toHaveValue("november");
+
+    // Confirms the typed term actually reaches the hook — the mock is
+    // zero-arg-shaped by default, so without capturing its call args this
+    // test would stay green even if the component silently dropped the
+    // search term (the exact regression this task exists to prevent).
+    expect(useAdoptCandidatesMock).toHaveBeenCalledWith("ws-1", "november");
 
     // The candidate meeting is rendered as a Select option, which this Select
     // implementation only mounts once the trigger is opened — so open it
