@@ -204,3 +204,40 @@ auditable, and the record prevents duplicate memoranda.
   a confidential meeting's title must not reach a recipient who cannot read
   it. This has leaked three times through notification subjects.
 - Lazy loading: cursor pagination vs offset, and how it interacts with search.
+
+---
+
+## THE SPLIT (decided 2026-08-27) — four specs, in this order
+
+Each is separately shippable and separately useful. Ordering is driven by
+dependency, then by risk (heaviest infrastructure last).
+
+**Spec A — Meetings library** (requirements 1, 2)
+Document-card rendering with clipped titles and metadata, lazy loading, and
+the omni search bar over meeting metadata (title, date, type, body).
+No new infrastructure. Ships visible value immediately.
+File: `2026-08-27-meetings-library-design.md`
+
+**Spec B — Minute item bulk import** (requirement 4)
+CSV/Excel template, columns `numbering, topic, details, status, action`,
+rows marked `/` auto-extracted into Actions. Adds `numbering` to minute
+items — which Spec C's email title depends on, so this comes first.
+File: `2026-08-27-minute-item-bulk-import-design.md`
+
+**Spec C — Action follow-through** (requirements 5, 6)
+Append-only reply threads with PDF attachments on each action (copying the
+Letter Minutes pattern), plus the Configure popup: WYSIWYG memorandum with
+shortcodes, CC list, send, and a full send record.
+Depends on B for `numbering`.
+File: `2026-08-27-action-follow-through-design.md`
+
+**Spec D — Archival documents and full-text search** (requirement 3)
+PDF upload for transcripts and historical minute documents, original plus
+compressed copy, async extraction with OCR fallback, Postgres full-text
+search, and an "indexing" state. Extends Spec A's omni bar to search PDF
+text. Heaviest infrastructure and highest risk — deliberately last.
+File: `2026-08-27-archival-documents-search-design.md`
+
+Rationale for the order: A ships value with no new infra; B unblocks C by
+introducing `numbering`; C is self-contained once numbering exists; D adds
+OCR and a search index and should not block the rest.
