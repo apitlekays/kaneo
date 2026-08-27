@@ -6,12 +6,29 @@ import { meetingAttendeeTable, meetingTable } from "../database/schema";
  * The sort tuple identifying the last row of a page. Opaque to the client:
  * it is base64url JSON precisely so nobody builds one by hand and depends
  * on its shape.
+ *
+ * The two timestamps are Postgres timestamp TEXT — `2026-01-01 00:00:00` or
+ * `2026-01-01 00:00:00.123456` — read straight out of the row with `::text`
+ * and bound straight back with `::timestamp`. They are deliberately NOT ISO
+ * strings produced from a JS `Date`: a `Date` holds milliseconds, the column
+ * holds microseconds, and a cursor coarser than the ORDER BY loses rows
+ * (see `keysetCondition`). Nothing on this path may construct a `Date`.
  */
 export type MeetingCursor = {
   scheduledAt: string | null;
   createdAt: string;
   id: string;
 };
+
+/**
+ * `YYYY-MM-DD`, a space or `T`, `HH:MM:SS`, and an optional fractional part
+ * of one to six digits — exactly what Postgres renders for a `timestamp`
+ * and exactly what it will accept back. A shape check rather than
+ * `Date.parse`, which both rejects nothing useful (it accepts "2026" and
+ * much else) and would read these local-timezone-less values as LOCAL time
+ * in V8.
+ */
+const PG_TIMESTAMP = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?$/;
 
 export function encodeCursor(c: MeetingCursor): string {
   return Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
@@ -25,15 +42,12 @@ export function decodeCursor(raw: string): MeetingCursor | null {
     const { scheduledAt, createdAt, id } = parsed as Record<string, unknown>;
     if (typeof createdAt !== "string" || typeof id !== "string") return null;
     if (scheduledAt !== null && typeof scheduledAt !== "string") return null;
-    // A structurally valid but non-date string (e.g. a hand-crafted
-    // cursor) must not reach keysetCondition: drizzle's mapToDriverValue
-    // calls .toISOString() on `new Date(createdAt)`, which throws
-    // RangeError: Invalid time value for an unparseable string — an
-    // unhandled 500 rather than the 400 this route promises for a bad
-    // cursor.
-    if (Number.isNaN(Date.parse(createdAt))) return null;
-    if (scheduledAt !== null && Number.isNaN(Date.parse(scheduledAt)))
-      return null;
+    // A structurally valid but non-timestamp string (e.g. a hand-crafted
+    // cursor) must not reach keysetCondition, where it is cast with
+    // `::timestamp` — Postgres would raise a syntax error and the route
+    // would answer 500 rather than the 400 it promises for a bad cursor.
+    if (!PG_TIMESTAMP.test(createdAt)) return null;
+    if (scheduledAt !== null && !PG_TIMESTAMP.test(scheduledAt)) return null;
     return { scheduledAt, createdAt, id };
   } catch {
     return null;
@@ -99,20 +113,36 @@ export function visibilityCondition(
  * block must still admit the whole undated block, while a cursor already in
  * the undated block must admit only undated rows.
  *
- * Built from Drizzle's typed column operators (`lt`/`eq`/`and`/`or`/
- * `isNull`) rather than a raw `sql` template with interpolated `Date`
- * objects. A raw template hands the `Date` straight to the driver, which
- * (for a `timestamp without time zone` column) serializes it using the
- * *client process's* local timezone rather than UTC — so the same cursor
- * produces a different, wrong comparison value depending on what timezone
- * the API happens to be running in, while the column's own genuinely-UTC
- * `now()`-generated values never move. Going through the typed operators
- * routes the value through the column's `mapToDriverValue`, which formats
- * it explicitly rather than deferring to the driver's ambient-timezone
- * default, so the predicate is correct regardless of the process timezone.
+ * TWO invariants govern the comparison values, and both were bugs here
+ * once:
+ *
+ * 1. PRECISION. The cursor must carry each sort key at exactly the
+ *    precision the ORDER BY compares at. Both columns are
+ *    `timestamp` — MICROSECONDS — and `created_at` defaults to `now()`,
+ *    which really does populate them. A JS `Date` holds only milliseconds,
+ *    so a cursor built from one truncates the boundary key DOWNWARDS, and
+ *    every row in `[T.mmm000, T.mmmXYZ)` then satisfies neither `< T` nor
+ *    `= T`. Those rows sorted *after* the boundary, so they were not on an
+ *    earlier page either: they become unreachable through pagination
+ *    entirely — gone from the grid, still live behind a direct link, with
+ *    nothing on screen to say so. Hence the cursor carries Postgres
+ *    timestamp TEXT (selected with `::text`) and binds it back with
+ *    `::timestamp`.
+ *
+ * 2. TIMEZONE. No `Date` may reach the binding path. Interpolating one
+ *    hands it to the driver, which (for a `timestamp without time zone`
+ *    column) serializes it in the *client process's* local timezone rather
+ *    than UTC — so the same cursor produces a different, wrong comparison
+ *    value depending on what timezone the API happens to be running in,
+ *    while the column's own genuinely-UTC `now()` values never move.
+ *
+ * Binding the text with an explicit `::timestamp` cast satisfies both: the
+ * value never round-trips through a `Date`, so it can neither lose
+ * microseconds nor acquire an ambient offset. Drizzle's `lt`/`eq` take an
+ * SQL right-hand side, so the logical structure below is unchanged.
  */
 export function keysetCondition(cursor: MeetingCursor): SQL {
-  const createdAt = new Date(cursor.createdAt);
+  const createdAt = sql`${cursor.createdAt}::timestamp`;
   // Tie-break by id whenever createdAt doesn't distinguish the rows —
   // needed both for the undated branch below and nested inside the dated
   // branch's own equality case.
@@ -125,7 +155,7 @@ export function keysetCondition(cursor: MeetingCursor): SQL {
     return and(isNull(meetingTable.scheduledAt), beforeCreatedAt) as SQL;
   }
 
-  const scheduledAt = new Date(cursor.scheduledAt);
+  const scheduledAt = sql`${cursor.scheduledAt}::timestamp`;
   return or(
     isNull(meetingTable.scheduledAt),
     lt(meetingTable.scheduledAt, scheduledAt),

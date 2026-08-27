@@ -136,6 +136,10 @@ function Body({
     adoptSearch.trim(),
   );
   const meetings = adoptPage?.items ?? [];
+  // The picker deliberately shows one bounded page. A non-null cursor means
+  // the server had more to give, so an older meeting really is unselectable
+  // — say so rather than leaving the user hunting for it.
+  const isTruncated = Boolean(adoptPage?.nextCursor);
 
   return (
     <>
@@ -196,6 +200,7 @@ function Body({
             m={m}
             meetings={meetings}
             isMeetingsError={isMeetingsError}
+            isTruncated={isTruncated}
             adoptSearch={adoptSearch}
             setAdoptSearch={setAdoptSearch}
           />
@@ -219,6 +224,7 @@ function OverviewSection({
   m,
   meetings,
   isMeetingsError,
+  isTruncated,
   adoptSearch,
   setAdoptSearch,
 }: {
@@ -226,6 +232,7 @@ function OverviewSection({
   m: Mutations;
   meetings: Meeting[];
   isMeetingsError: boolean;
+  isTruncated: boolean;
   adoptSearch: string;
   setAdoptSearch: (v: string) => void;
 }) {
@@ -288,6 +295,7 @@ function OverviewSection({
           m={m}
           meetings={meetings}
           isMeetingsError={isMeetingsError}
+          isTruncated={isTruncated}
           adoptSearch={adoptSearch}
           setAdoptSearch={setAdoptSearch}
         />
@@ -301,6 +309,7 @@ function AdoptControl({
   m,
   meetings,
   isMeetingsError,
+  isTruncated,
   adoptSearch,
   setAdoptSearch,
 }: {
@@ -308,6 +317,7 @@ function AdoptControl({
   m: Mutations;
   meetings: Meeting[];
   isMeetingsError: boolean;
+  isTruncated: boolean;
   adoptSearch: string;
   setAdoptSearch: (v: string) => void;
 }) {
@@ -365,6 +375,11 @@ function AdoptControl({
           Adopt
         </Button>
       </div>
+      {!isMeetingsError && isTruncated && (
+        <p className="text-muted-foreground text-xs">
+          Showing the most recent meetings only — search to find an older one.
+        </p>
+      )}
       {isMeetingsError ? (
         <p className="text-destructive text-xs" role="alert">
           Couldn't load other meetings to adopt from — try reopening this

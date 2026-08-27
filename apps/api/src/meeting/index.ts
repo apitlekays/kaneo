@@ -327,6 +327,14 @@ app.get(
         updatedAt: meetingTable.updatedAt,
         meetingTypeLabel: meetingTypeTable.label,
         bodyName: meetingBodyTable.name,
+        // Cursor material ONLY — stripped from the response below. Both sort
+        // keys are read as Postgres timestamp text so the cursor carries
+        // them at the column's full microsecond precision; a JS `Date`
+        // holds milliseconds and silently loses rows (see the invariants
+        // above `keysetCondition`). `::text` on a NULL column yields null,
+        // which is exactly the undated cursor case.
+        createdAtText: sql<string>`${meetingTable.createdAt}::text`,
+        scheduledAtText: sql<string | null>`${meetingTable.scheduledAt}::text`,
       })
       .from(meetingTable)
       .leftJoin(
@@ -343,18 +351,27 @@ app.get(
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
-    const last = items.at(-1);
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
     const nextCursor =
       hasMore && last
         ? encodeCursor({
-            scheduledAt: last.scheduledAt
-              ? last.scheduledAt.toISOString()
-              : null,
-            createdAt: last.createdAt.toISOString(),
+            scheduledAt: last.scheduledAtText,
+            createdAt: last.createdAtText,
             id: last.id,
           })
         : null;
+
+    // The two `*Text` columns exist for the cursor alone; leaving them on
+    // the items would change the response shape the web types are built
+    // against.
+    const items = page.map(
+      ({
+        createdAtText: _createdAtText,
+        scheduledAtText: _scheduledAtText,
+        ...item
+      }) => item,
+    );
 
     return c.json({ items, nextCursor });
   },

@@ -12,6 +12,7 @@ import { MeetingDetailDialog } from "./meeting-detail-dialog";
 const state = vi.hoisted(() => ({
   meeting: null as MeetingDetail | null,
   adoptCandidates: [] as Meeting[],
+  adoptNextCursor: null as string | null,
   meetingIsLoading: false,
   meetingIsError: false,
   isMeetingsError: false,
@@ -44,7 +45,10 @@ vi.mock("@/hooks/queries/meeting/use-adopt-candidates", () => ({
   useAdoptCandidates: (...args: unknown[]) => {
     useAdoptCandidatesMock(...args);
     return {
-      data: { items: state.adoptCandidates, nextCursor: null },
+      data: {
+        items: state.adoptCandidates,
+        nextCursor: state.adoptNextCursor,
+      },
       isError: state.isMeetingsError,
     };
   },
@@ -127,6 +131,7 @@ async function pickOption(
 afterEach(() => {
   state.meeting = null;
   state.adoptCandidates = [];
+  state.adoptNextCursor = null;
   state.meetingIsLoading = false;
   state.meetingIsError = false;
   state.isMeetingsError = false;
@@ -509,5 +514,47 @@ describe("MeetingDetailDialog", () => {
     expect(
       await screen.findByRole("option", { name: "November committee meeting" }),
     ).toBeInTheDocument();
+  });
+
+  it("says the candidate list is truncated when the server had more to give", async () => {
+    // The picker asks for one bounded page of 50. Showing only that page in
+    // silence is the very failure the hook's own comment rejects — an older
+    // meeting is unselectable with nothing on screen to say why — so a
+    // non-null nextCursor has to become visible copy.
+    state.meeting = makeMeeting({ status: "draft" });
+    state.adoptCandidates = [
+      makeMeeting({ id: "other-1", title: "November committee meeting" }),
+    ];
+    state.adoptNextCursor = "cursor-token";
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/most recent meetings only/i)).toBeVisible();
+  });
+
+  it("says nothing about truncation when the whole list came back", async () => {
+    state.meeting = makeMeeting({ status: "draft" });
+    state.adoptCandidates = [
+      makeMeeting({ id: "other-1", title: "November committee meeting" }),
+    ];
+    state.adoptNextCursor = null;
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/most recent meetings only/i),
+    ).not.toBeInTheDocument();
   });
 });

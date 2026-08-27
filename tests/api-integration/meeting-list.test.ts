@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import db, { schema } from "../../apps/api/src/database";
 import { createApp } from "../../apps/api/src/index";
@@ -80,6 +81,29 @@ async function drain(app: App, workspaceId: string, query = "") {
   return ids;
 }
 
+/**
+ * Seed a meeting with an EXPLICIT `created_at`, written as SQL text so the
+ * value lands in the column at full microsecond precision — a JS `Date`
+ * cannot carry one, which is the whole point of the tests below. Insert
+ * first, then stamp the column: drizzle's insert path would coerce a Date
+ * and truncate.
+ */
+async function seedAt(
+  workspaceId: string,
+  title: string,
+  createdAt: string,
+  scheduledAt: Date | null = null,
+): Promise<string> {
+  const [row] = await db
+    .insert(schema.meetingTable)
+    .values({ workspaceId, title, scheduledAt })
+    .returning();
+  await db.execute(
+    sql`update "meeting" set "created_at" = ${createdAt}::timestamp where "id" = ${row.id}`,
+  );
+  return row.id;
+}
+
 describe("GET /meeting", () => {
   beforeEach(async () => {
     await resetTestDatabase();
@@ -90,27 +114,96 @@ describe("GET /meeting", () => {
     const app = appAs(owner);
     const ws = owner.workspace.id;
 
+    // `created_at` is seeded EXPLICITLY rather than left to insert order.
+    // Back-to-back inserts land in the same millisecond often enough that a
+    // cursor carrying only millisecond precision made this test fail perhaps
+    // one run in five — which reads as random CI noise rather than the real
+    // bug. Pinning the values makes the outcome a property of the code.
     const tied = new Date("2026-03-01T00:00:00.000Z");
     const rows = [
-      { title: "A", scheduledAt: tied },
-      { title: "B", scheduledAt: tied },
-      { title: "C", scheduledAt: new Date("2026-04-01T00:00:00.000Z") },
-      { title: "D", scheduledAt: null },
-      { title: "E", scheduledAt: null },
+      { title: "A", scheduledAt: tied, createdAt: "2026-01-01 00:00:01" },
+      { title: "B", scheduledAt: tied, createdAt: "2026-01-01 00:00:02" },
+      {
+        title: "C",
+        scheduledAt: new Date("2026-04-01T00:00:00.000Z"),
+        createdAt: "2026-01-01 00:00:03",
+      },
+      { title: "D", scheduledAt: null, createdAt: "2026-01-01 00:00:04" },
+      { title: "E", scheduledAt: null, createdAt: "2026-01-01 00:00:05" },
     ];
     const created: string[] = [];
     for (const r of rows) {
-      const [row] = await db
-        .insert(schema.meetingTable)
-        .values({ workspaceId: ws, title: r.title, scheduledAt: r.scheduledAt })
-        .returning();
-      created.push(row.id);
+      created.push(await seedAt(ws, r.title, r.createdAt, r.scheduledAt));
     }
 
     const ids = await drain(app, ws, "&limit=2");
     expect(ids).toHaveLength(created.length);
     expect(new Set(ids).size).toBe(created.length);
     expect([...ids].sort()).toEqual([...created].sort());
+  });
+
+  it("does not lose a row whose created_at differs from the page boundary only in microseconds", async () => {
+    // `created_at` is `timestamp default now()`, and Postgres `now()` has
+    // MICROSECOND precision. A cursor that carries only milliseconds
+    // truncates the boundary row's key downwards, so the keyset predicate
+    // `created_at < T OR (created_at = T AND id < cursorId)` excludes every
+    // row in [T.mmm000, T.mmmXYZ) — rows that sorted *after* the boundary
+    // and so never appeared on an earlier page either. They become
+    // unreachable through pagination entirely: absent from the grid, still
+    // live behind a direct link, with nothing on screen to say so.
+    //
+    // Seeded with explicit values so the boundary falls in a fixed place;
+    // nothing here depends on insert timing.
+    const owner = await seedOwner();
+    const app = appAs(owner);
+    const ws = owner.workspace.id;
+
+    const created = [
+      await seedAt(ws, "newest", "2026-01-01 00:00:02"),
+      // Ends page two, so its key becomes the cursor.
+      await seedAt(ws, "boundary", "2026-01-01 00:00:00.123456"),
+      // Strictly between the boundary's truncated key (.123000) and its
+      // true key (.123456) — satisfies neither branch of a truncated
+      // predicate.
+      await seedAt(ws, "microsecond-sibling", "2026-01-01 00:00:00.123400"),
+      await seedAt(ws, "oldest", "2026-01-01 00:00:00.000001"),
+    ];
+
+    const ids = await drain(app, ws, "&limit=1");
+    expect([...ids].sort()).toEqual([...created].sort());
+    expect(new Set(ids).size).toBe(created.length);
+  });
+
+  it("does not lose a row whose scheduled_at differs from the page boundary only in microseconds", async () => {
+    // `scheduled_at` is only written from JS Dates today, so it carries no
+    // sub-millisecond tail — but that is a property of the current write
+    // path, not of the column. A bulk import or a direct insert reintroduces
+    // the same silent disappearance, so the cursor must carry this key at
+    // full precision too.
+    const owner = await seedOwner();
+    const app = appAs(owner);
+    const ws = owner.workspace.id;
+
+    const created: string[] = [];
+    for (const [title, scheduledAt] of [
+      ["newest", "2026-05-01 09:00:02"],
+      ["boundary", "2026-05-01 09:00:00.123456"],
+      ["microsecond-sibling", "2026-05-01 09:00:00.123400"],
+      ["oldest", "2026-05-01 09:00:00.000001"],
+    ] as const) {
+      const [row] = await db
+        .insert(schema.meetingTable)
+        .values({ workspaceId: ws, title })
+        .returning();
+      await db.execute(
+        sql`update "meeting" set "scheduled_at" = ${scheduledAt}::timestamp where "id" = ${row.id}`,
+      );
+      created.push(row.id);
+    }
+
+    const ids = await drain(app, ws, "&limit=1");
+    expect([...ids].sort()).toEqual([...created].sort());
+    expect(new Set(ids).size).toBe(created.length);
   });
 
   it("orders newest first, with undated meetings last", async () => {
@@ -472,7 +565,14 @@ describe("GET /meeting", () => {
     expect(page.items[0].bodyName).toBe("Majlis Syura");
   });
 
-  it("clamps a limit above the cap instead of honouring it", async () => {
+  it("accepts an absurd limit rather than erroring on it", async () => {
+    // Renamed from "clamps a limit above the cap": with only 3 rows seeded,
+    // asserting 3 items back passes with no cap at all, so the old name
+    // promised a guarantee the body never checked. The cap itself has real
+    // coverage in the unit tests (`clampLimit("100000") === MAX_LIMIT`);
+    // what this case is actually worth is that the route answers 200 to a
+    // limit no client should send, instead of a validation error or an
+    // out-of-memory query.
     const owner = await seedOwner();
     const app = appAs(owner);
     const ws = owner.workspace.id;
@@ -499,12 +599,11 @@ describe("GET /meeting", () => {
     expect(res.status).toBe(400);
   });
 
-  it("rejects a structurally valid cursor with a non-date value with 400, not 500", async () => {
-    // decodeCursor's shape check alone lets a string like "nonsense" through
-    // as createdAt; keysetCondition then hands it to drizzle's
-    // mapToDriverValue, which calls .toISOString() on `new Date("nonsense")`
-    // and throws RangeError: Invalid time value. The route promises 400 for
-    // any bad cursor, not an unhandled 500.
+  it("rejects a structurally valid cursor with a non-timestamp value with 400, not 500", async () => {
+    // Without decodeCursor's shape check, a string like "nonsense" reaches
+    // keysetCondition, which binds it with an explicit `::timestamp` cast —
+    // Postgres raises, and the route answers an unhandled 500 rather than
+    // the 400 it promises for any bad cursor.
     const owner = await seedOwner();
     const app = appAs(owner);
     const cursor = Buffer.from(

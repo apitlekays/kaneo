@@ -235,6 +235,12 @@ describe("MinutesManager", () => {
       await screen.findByRole("button", { name: /clear search/i }),
     );
     expect(search).toHaveValue("");
+    // The empty-state copy keys off the DEBOUNCED term, so clearing only the
+    // raw input left "Nothing in this workspace matches “zzz”" on screen for
+    // the 300ms until the debounce caught up — a message quoting a search the
+    // user just cancelled. No timer advance here: that is the point.
+    expect(screen.queryByText(/zzz/)).not.toBeInTheDocument();
+    expect(screen.getByText("No Meeting Minutes yet")).toBeInTheDocument();
   });
 
   it("requests the next page when the load-more control is used", async () => {

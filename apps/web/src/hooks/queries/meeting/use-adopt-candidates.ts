@@ -10,6 +10,11 @@ import * as api from "@/fetchers/meeting";
  * gets a search box instead, and this hook re-queries the server as the
  * user types.
  *
+ * The bound is a real one: only the first 50 come back. The caller must
+ * therefore surface `nextCursor` being non-null as "this list is truncated,
+ * search to narrow it" — otherwise the hook commits the very silence the
+ * paragraph above rejects, just at 50 instead of 24.
+ *
  * The key keeps the ["meetings", workspaceId] prefix so the existing
  * mutation invalidation refreshes it too.
  */

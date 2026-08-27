@@ -138,7 +138,17 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
             <p className="text-muted-foreground text-sm">
               Nothing in this workspace matches “{debounced}”.
             </p>
-            <Button variant="outline" size="sm" onClick={() => setSearch("")}>
+            <Button
+              variant="outline"
+              size="sm"
+              // Clear BOTH: the copy above keys off `debounced`, so clearing
+              // only the raw input left "matched “…”" quoting the old term
+              // for the 300ms until the debounce caught up.
+              onClick={() => {
+                setSearch("");
+                setDebounced("");
+              }}
+            >
               <X className="h-3.5 w-3.5" />
               Clear search
             </Button>
