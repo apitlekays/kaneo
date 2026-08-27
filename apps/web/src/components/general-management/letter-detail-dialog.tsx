@@ -36,6 +36,7 @@ import {
   DialogSidebarPanel,
 } from "@/components/ui/dialog-sidebar";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -1231,7 +1232,7 @@ function AttachmentsSection({
   );
 }
 
-function DraftSection({
+export function DraftSection({
   letter,
   m,
   userName,
@@ -1309,10 +1310,6 @@ function ApprovalsSection({
   const isDrafter = letter.createdBy === currentUserId;
   const approval = letter.approval;
   const currentStep = approval?.steps.find((s) => s.status === "pending");
-
-  const Label2 = ({ children }: { children: React.ReactNode }) => (
-    <Label className="text-xs">{children}</Label>
-  );
 
   return (
     <div className="space-y-4">
@@ -1402,7 +1399,7 @@ function ApprovalsSection({
                 letter.status === "approving" &&
                 !isDrafter && (
                   <div className="space-y-2 border-border border-t pt-2">
-                    <Label2>Your decision</Label2>
+                    <Label className="text-xs">Your decision</Label>
                     <Textarea
                       value={comment}
                       placeholder="Comment (optional)"

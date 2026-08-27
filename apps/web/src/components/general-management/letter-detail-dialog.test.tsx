@@ -7,7 +7,11 @@ import type {
   LetterDetail,
   LetterMinute,
 } from "@/fetchers/correspondence/letters";
-import { MinutesSection, type Mutations } from "./letter-detail-dialog";
+import {
+  DraftSection,
+  MinutesSection,
+  type Mutations,
+} from "./letter-detail-dialog";
 
 // MinuteThread (rendered inside MinutesSection) calls the real
 // useQueryClient() to refresh the letter after a minute-update attachment
@@ -323,5 +327,31 @@ describe("MinutesSection", () => {
     expect(
       screen.getByRole("button", { name: /mark done/i }),
     ).toBeInTheDocument();
+  });
+});
+
+// Regression test for a bug where <Label> was rendered without being
+// imported (ReferenceError: Label is not defined at runtime, invisible to
+// esbuild's type-unchecked build). DraftSection is the smallest unit that
+// renders it, so a render here fails immediately if the import regresses.
+describe("DraftSection", () => {
+  it("renders the draft-body and version-history labels", () => {
+    renderWithClient(
+      <DraftSection
+        letter={makeLetter([])}
+        m={
+          {
+            saveDraft: { mutate: vi.fn(), isPending: false },
+            submitReview: { mutate: vi.fn(), isPending: false },
+          } as unknown as Mutations
+        }
+        userName={userName}
+      />,
+    );
+
+    expect(screen.getByText("Draft body")).toBeVisible();
+    expect(
+      screen.getByPlaceholderText(/compose the outgoing letter/i),
+    ).toBeVisible();
   });
 });
