@@ -1,7 +1,7 @@
 # Minutes Manager Refinements — Captured Requirements (verbatim)
 
 **Captured:** 2026-08-27. Source: user feedback message.
-**Status:** requirements captured; design questions outstanding.
+**Status:** requirements captured; all four specs written (A-D). Next: plans.
 **Module:** organisation-level Meeting Minutes (`meeting_*` tables). NOT
 `task_mom` (Project Minutes) and NOT `letter_minute` (Letter Minutes).
 

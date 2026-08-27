@@ -39,9 +39,10 @@ find only inserts and selects against this table.
 
 Reuse the existing attachment machinery rather than a second store. The
 letter precedent tags an attachment to a thread update via a nullable
-`minuteUpdateId` on `letter_attachment`; do the same here with a
-`meeting_document` row (Spec D introduces that table) or a nullable
-`actionUpdateId`, whichever Spec D's shape makes coherent.
+`minuteUpdateId` on `letter_attachment`. **Spec D decides the shape**: a
+`meeting_document` row with a nullable `actionUpdateId` and a not-null
+`meetingId`. If C ships first, create that table with those columns; D then
+extends it with its storage and indexing fields.
 
 **This is the one hard ordering dependency between C and D.** If C ships
 first, define the attachment link in C and let D extend it; if D ships
