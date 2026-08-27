@@ -249,6 +249,27 @@ Rules:
 - In UI copy, always use the full two-word name — "Meeting Minutes", not
   "Minutes" — anywhere the three could be confused.
 
+### Meeting Minutes refinements — the build order (decided 2026-08-27)
+
+Six refinements to the organisation-level Meeting Minutes module were split
+into **four specs, built in this order**. The order is not arbitrary and
+should not be reshuffled for convenience:
+
+| # | Spec | Covers | Why here |
+|---|---|---|---|
+| **A** | `2026-08-27-meetings-library-design.md` | document cards, lazy loading, omni search | no new infrastructure; ships visible value first |
+| **B** | `2026-08-27-minute-item-bulk-import-design.md` | CSV import, `/`-marked rows become Actions | introduces `numbering`, which **C depends on** |
+| **C** | `2026-08-27-action-follow-through-design.md` | action reply threads, Configure → memorandum email | self-contained once `numbering` exists |
+| **D** | `2026-08-27-archival-documents-search-design.md` | PDF archive, OCR, full-text search | heaviest infrastructure and highest risk — last, so it blocks nothing |
+
+The two hard dependencies: **B before C** (`numbering` is rendered in the
+memorandum's subject line and table), and **A before D** (D extends A's
+single `q` search parameter rather than adding a second search box).
+
+Requirements, both rounds of answers, and the rationale for the split live
+in `docs/superpowers/specs/2026-08-27-minutes-manager-refinements-REQUIREMENTS.md`
+— read it before designing or implementing any of the four.
+
 ## Important Notes
 
 - **Package Manager**: This project uses **pnpm** (pinned to `10.32.1` via `packageManager` field), not npm or yarn. Requires Node `>=18`
