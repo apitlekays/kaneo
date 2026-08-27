@@ -170,17 +170,23 @@ describe("GET /meeting", () => {
     const ws = owner.workspace.id;
     const viewer = await seedMember(ws);
 
+    // Confidential rows are seeded AFTER the open ones (and thus sort
+    // first, newest-created-first) so they occupy the head of page one.
+    // Seeding them first (as an earlier version of this test did) put them
+    // at the TAIL of the order instead, where a filter-after-fetch
+    // implementation would still return a full, correct-looking first page
+    // — the very bug this test exists to catch would have gone undetected.
+    for (let i = 0; i < 4; i += 1) {
+      await db
+        .insert(schema.meetingTable)
+        .values({ workspaceId: ws, title: `Open ${i}` });
+    }
     for (let i = 0; i < 3; i += 1) {
       await db.insert(schema.meetingTable).values({
         workspaceId: ws,
         title: `Secret ${i}`,
         confidential: true,
       });
-    }
-    for (let i = 0; i < 4; i += 1) {
-      await db
-        .insert(schema.meetingTable)
-        .values({ workspaceId: ws, title: `Open ${i}` });
     }
 
     const app = appAs(viewer);
@@ -350,6 +356,70 @@ describe("GET /meeting", () => {
     }
   });
 
+  it("never surfaces a confidential meeting's title through q", async () => {
+    // The search predicate is ANDed with the visibility clause today, so
+    // this passes — it exists to catch a future edit that moves the search
+    // `or(...)` to the wrong side of that `and`. A confidential meeting's
+    // title has escaped this module three times in production, each
+    // through a path nobody had thought to guard; assert on the field that
+    // actually carries the leak (the raw response text), the way the
+    // existing leak test does, not just on the parsed item list.
+    const owner = await seedOwner();
+    const ws = owner.workspace.id;
+    const viewer = await seedMember(ws);
+
+    await db.insert(schema.meetingTable).values({
+      workspaceId: ws,
+      title: "Disciplinary hearing for Ahmad",
+      confidential: true,
+    });
+
+    const res = await list(
+      appAs(viewer),
+      ws,
+      `&q=${encodeURIComponent("disciplinary")}`,
+    );
+    expect(res.status).toBe(200);
+    const raw = await res.text();
+    expect(raw).not.toContain("Disciplinary hearing for Ahmad");
+    const body = JSON.parse(raw) as ListResponse;
+    expect(body.items).toEqual([]);
+  });
+
+  it("combines cursor and q", async () => {
+    const owner = await seedOwner();
+    const app = appAs(owner);
+    const ws = owner.workspace.id;
+
+    for (const title of [
+      "Budget review 1",
+      "Budget review 2",
+      "Budget review 3",
+      "Site visit",
+    ]) {
+      await db.insert(schema.meetingTable).values({ workspaceId: ws, title });
+    }
+
+    const first = (await (
+      await list(app, ws, `&q=${encodeURIComponent("budget")}&limit=2`)
+    ).json()) as ListResponse;
+    expect(first.items).toHaveLength(2);
+    expect(first.nextCursor).not.toBeNull();
+
+    const second = (await (
+      await list(
+        app,
+        ws,
+        `&q=${encodeURIComponent("budget")}&limit=2&cursor=${encodeURIComponent(
+          first.nextCursor as string,
+        )}`,
+      )
+    ).json()) as ListResponse;
+    expect(second.items).toHaveLength(1);
+    expect(second.items[0].title).toBe("Budget review 1");
+    expect(second.nextCursor).toBeNull();
+  });
+
   it("returns an empty page with a null cursor when nothing matches", async () => {
     const owner = await seedOwner();
     const app = appAs(owner);
@@ -425,6 +495,29 @@ describe("GET /meeting", () => {
       app,
       owner.workspace.id,
       "&cursor=obviously-not-a-cursor",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a structurally valid cursor with a non-date value with 400, not 500", async () => {
+    // decodeCursor's shape check alone lets a string like "nonsense" through
+    // as createdAt; keysetCondition then hands it to drizzle's
+    // mapToDriverValue, which calls .toISOString() on `new Date("nonsense")`
+    // and throws RangeError: Invalid time value. The route promises 400 for
+    // any bad cursor, not an unhandled 500.
+    const owner = await seedOwner();
+    const app = appAs(owner);
+    const cursor = Buffer.from(
+      JSON.stringify({
+        scheduledAt: null,
+        createdAt: "nonsense",
+        id: "does-not-matter",
+      }),
+    ).toString("base64url");
+    const res = await list(
+      app,
+      owner.workspace.id,
+      `&cursor=${encodeURIComponent(cursor)}`,
     );
     expect(res.status).toBe(400);
   });

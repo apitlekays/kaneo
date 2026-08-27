@@ -25,6 +25,15 @@ export function decodeCursor(raw: string): MeetingCursor | null {
     const { scheduledAt, createdAt, id } = parsed as Record<string, unknown>;
     if (typeof createdAt !== "string" || typeof id !== "string") return null;
     if (scheduledAt !== null && typeof scheduledAt !== "string") return null;
+    // A structurally valid but non-date string (e.g. a hand-crafted
+    // cursor) must not reach keysetCondition: drizzle's mapToDriverValue
+    // calls .toISOString() on `new Date(createdAt)`, which throws
+    // RangeError: Invalid time value for an unparseable string — an
+    // unhandled 500 rather than the 400 this route promises for a bad
+    // cursor.
+    if (Number.isNaN(Date.parse(createdAt))) return null;
+    if (scheduledAt !== null && Number.isNaN(Date.parse(scheduledAt)))
+      return null;
     return { scheduledAt, createdAt, id };
   } catch {
     return null;

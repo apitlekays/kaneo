@@ -35,6 +35,31 @@ describe("cursor codec", () => {
       decodeCursor(Buffer.from('{"nope":1}').toString("base64url")),
     ).toBeNull();
   });
+
+  it("returns null for a structurally valid cursor with a non-date createdAt", () => {
+    // A crafted cursor like this used to reach keysetCondition, where
+    // drizzle's mapToDriverValue calls .toISOString() on an invalid Date
+    // and throws — an unhandled 500 instead of the 400 this route promises.
+    const raw = Buffer.from(
+      JSON.stringify({
+        scheduledAt: null,
+        createdAt: "nonsense",
+        id: "meeting-3",
+      }),
+    ).toString("base64url");
+    expect(decodeCursor(raw)).toBeNull();
+  });
+
+  it("returns null for a structurally valid cursor with a non-date scheduledAt", () => {
+    const raw = Buffer.from(
+      JSON.stringify({
+        scheduledAt: "also-nonsense",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        id: "meeting-4",
+      }),
+    ).toString("base64url");
+    expect(decodeCursor(raw)).toBeNull();
+  });
 });
 
 describe("escapeLikePattern", () => {
