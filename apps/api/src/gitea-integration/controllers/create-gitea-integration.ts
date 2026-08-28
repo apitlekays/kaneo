@@ -26,14 +26,18 @@ const CONTENTFUL_STATUS_CODES = new Set<number>([
 /**
  * `GiteaApiError#status` is a plain `number` sourced from an upstream HTTP
  * response, so it can be any value — not necessarily one of the specific
- * literals Hono's `HTTPException` accepts. Falls back to 400 for anything
- * outside that set; the membership check just above is what makes the cast
- * to `ContentfulStatusCode` provably safe.
+ * literals Hono's `HTTPException` accepts. Every status Gitea itself emits
+ * (401/403/404/408/409/422/500/502/503/504) is in the set above and passes
+ * through unchanged. For anything outside that set, a `5xx` (e.g. a 499, or
+ * a Cloudflare 520-527/530 in front of a self-hosted Gitea) falls back to
+ * 502 so an upstream failure is reported as an upstream failure rather than
+ * misattributed to the caller; anything else falls back to 400.
  */
 function toContentfulStatus(status: number): ContentfulStatusCode {
-  return CONTENTFUL_STATUS_CODES.has(status)
-    ? (status as ContentfulStatusCode)
-    : 400;
+  if (CONTENTFUL_STATUS_CODES.has(status)) {
+    return status as ContentfulStatusCode;
+  }
+  return status >= 500 ? 502 : 400;
 }
 
 async function createGiteaIntegration({
