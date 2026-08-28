@@ -15,7 +15,13 @@ import { addAttendee, createMeeting, listMeetings } from "./index";
  * could catch it. This is the seam where the client's URL is decided.
  */
 function stubFetch() {
-  const spy = vi.fn(async () => new Response("[]", { status: 200 }));
+  // Typed with fetch's own parameters (even though the stub body ignores
+  // them) so `spy.mock.calls[0]` carries the actual call arguments instead
+  // of inferring an empty tuple from a zero-arg stub.
+  const spy = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response("[]", { status: 200 }),
+  );
   vi.stubGlobal("fetch", spy);
   return spy;
 }

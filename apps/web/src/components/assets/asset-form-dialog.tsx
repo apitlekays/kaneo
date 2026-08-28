@@ -109,7 +109,7 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
         .filter((r) => r.key.trim())
         .map((r) => [r.key.trim(), r.value]),
     );
-    const data: AssetInput = {
+    const data: AssetInput & { name: string } = {
       name: name.trim(),
       category,
       status,
@@ -172,7 +172,10 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
 
           <div className="space-y-1.5">
             <Label>Category</Label>
-            <Select value={category} onValueChange={setCategory}>
+            <Select
+              value={category}
+              onValueChange={(value) => value !== null && setCategory(value)}
+            >
               <SelectTrigger>
                 <SelectValue>{labelOf(ASSET_CATEGORIES, category)}</SelectValue>
               </SelectTrigger>
@@ -188,7 +191,10 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
 
           <div className="space-y-1.5">
             <Label>Status</Label>
-            <Select value={status} onValueChange={setStatus}>
+            <Select
+              value={status}
+              onValueChange={(value) => value !== null && setStatus(value)}
+            >
               <SelectTrigger>
                 <SelectValue>{labelOf(ASSET_STATUSES, status)}</SelectValue>
               </SelectTrigger>

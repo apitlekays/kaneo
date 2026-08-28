@@ -3,13 +3,16 @@ import type { InferRequestType } from "hono/client";
 
 export type GetProjectRequest = InferRequestType<
   (typeof client)["project"][":id"]["$get"]
->["param"] &
-  InferRequestType<(typeof client)["project"][":id"]["$get"]>["query"];
+>["param"] & {
+  // The API derives the workspace from the project id itself (see
+  // `workspaceAccess.fromProject()`), so it no longer takes `workspaceId` as
+  // a query param. Callers still pass it through for their own cache keys.
+  workspaceId: string;
+};
 
-async function getProject({ id, workspaceId }: GetProjectRequest) {
+async function getProject({ id }: GetProjectRequest) {
   const response = await client.project[":id"].$get({
     param: { id },
-    query: { workspaceId },
   });
 
   if (!response.ok) {
