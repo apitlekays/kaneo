@@ -466,8 +466,9 @@ export function createApp() {
     const authHeader = c.req.header("Authorization");
     const apiKeyHeader = c.req.header("x-api-key");
     const bearerMatch = authHeader?.match(/^Bearer\s+(\S+)$/i);
+    const bearerToken = bearerMatch?.[1];
 
-    if (bearerMatch && !apiKeyHeader) {
+    if (bearerToken && !apiKeyHeader) {
       const session = await auth.api.getSession({
         headers: c.req.raw.headers,
       });
@@ -480,7 +481,7 @@ export function createApp() {
       const headers = new Headers(c.req.raw.headers);
 
       // Better Auth API key plugin validates from x-api-key by default.
-      headers.set("x-api-key", bearerMatch[1]);
+      headers.set("x-api-key", bearerToken);
 
       return auth.handler(
         new Request(c.req.raw, {
@@ -648,6 +649,9 @@ export function createApp() {
     "/ws/workspace/:workspaceId",
     upgradeWebSocket(async (c) => {
       const workspaceId = c.req.param("workspaceId");
+      if (!workspaceId) {
+        throw new HTTPException(400, { message: "Workspace id is required" });
+      }
 
       try {
         await authenticateApiRequest(c);
@@ -885,9 +889,10 @@ const {
   oauthApi,
 } = createdApp;
 
+const mainScriptPath = process.argv[1];
 const isMainModule =
-  Boolean(process.argv[1]) &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
+  mainScriptPath !== undefined &&
+  import.meta.url === pathToFileURL(mainScriptPath).href;
 
 if (isMainModule) {
   void startServer(injectWebSocket);

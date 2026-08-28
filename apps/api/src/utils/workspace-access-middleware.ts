@@ -53,14 +53,14 @@ export function workspaceAccessMiddleware(
         workspaceId = c.req.query(source.key) || null;
       } else if (source.type === "body") {
         const body = await readJsonObjectBody(c);
-        workspaceId =
-          typeof body[source.key] === "string" ? body[source.key] : null;
+        const bodyValue = body[source.key];
+        workspaceId = typeof bodyValue === "string" ? bodyValue : null;
       } else if (source.type === "param") {
         workspaceId = c.req.param(source.key) || null;
       } else if (source.type === "lookup") {
         const body = await readJsonObjectBody(c);
-        const idFromBody =
-          typeof body[source.idKey] === "string" ? body[source.idKey] : null;
+        const bodyIdValue = body[source.idKey];
+        const idFromBody = typeof bodyIdValue === "string" ? bodyIdValue : null;
         const id =
           c.req.param(source.idKey) || c.req.query(source.idKey) || idFromBody;
         if (id) {

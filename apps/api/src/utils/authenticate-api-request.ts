@@ -23,12 +23,13 @@ function parseBearerToken(authHeader: string | undefined): {
   }
 
   const match = authHeader.match(/^Bearer\s+(\S+)$/i);
-  if (!match) {
+  const captured = match?.[1];
+  if (!captured) {
     return { token: null, malformed: true };
   }
 
   return {
-    token: match[1],
+    token: captured,
     malformed: false,
   };
 }
