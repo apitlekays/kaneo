@@ -69,6 +69,7 @@ import { compressionLabel } from "@/lib/compression-label";
 import { formatDateMedium } from "@/lib/format";
 import { isPdfUpload } from "@/lib/is-pdf-upload";
 import { letterReference } from "@/lib/letter-reference";
+import { onSelectValueChange } from "@/lib/select-value";
 import { toast } from "@/lib/toast";
 import { urgencyBadge } from "@/lib/urgency";
 import { AttachmentRow } from "./attachment-row";
@@ -523,7 +524,7 @@ function OverviewSection({
             value={
               statusOptions.includes(letter.status) ? letter.status : undefined
             }
-            onValueChange={(v) => m.setStatus.mutate(v)}
+            onValueChange={(v) => v !== null && m.setStatus.mutate(v)}
           >
             <SelectTrigger className="w-48">
               <SelectValue placeholder={`Status: ${letter.status}`}>
@@ -631,7 +632,10 @@ function OverviewSection({
         <div className="space-y-2 rounded-xl border border-border p-4">
           <h4 className="font-medium text-sm">Classification</h4>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Select value={categoryId} onValueChange={setCategoryId}>
+            <Select
+              value={categoryId}
+              onValueChange={onSelectValueChange(setCategoryId)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {(categories.find((c) => c.id === categoryId)
@@ -646,7 +650,10 @@ function OverviewSection({
                 ))}
               </SelectContent>
             </Select>
-            <Select value={securityLabelId} onValueChange={setSecurityLabelId}>
+            <Select
+              value={securityLabelId}
+              onValueChange={onSelectValueChange(setSecurityLabelId)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {(securityLabels.find((s) => s.id === securityLabelId)
@@ -818,7 +825,10 @@ export function MinutesSection({
             onChange={(e) => setBody(e.target.value)}
           />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Select value={assigneeId} onValueChange={setAssigneeId}>
+            <Select
+              value={assigneeId}
+              onValueChange={onSelectValueChange(setAssigneeId)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {assigneeId
@@ -922,7 +932,10 @@ function RoutingSection({
       <div className="space-y-3 rounded-xl border border-border p-4">
         <h4 className="font-medium text-sm">Assign / route</h4>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Select value={toUserId} onValueChange={setToUserId}>
+          <Select
+            value={toUserId}
+            onValueChange={onSelectValueChange(setToUserId)}
+          >
             <SelectTrigger>
               <SelectValue>
                 {users.find((u) => u.userId === toUserId)?.user?.name ??
@@ -1784,7 +1797,10 @@ function RetentionSection({
       <div className="space-y-2 rounded-xl border border-border p-4">
         <h4 className="font-medium text-sm">Retention</h4>
         <div className="flex flex-wrap items-end gap-2">
-          <Select value={classId} onValueChange={setClassId}>
+          <Select
+            value={classId}
+            onValueChange={onSelectValueChange(setClassId)}
+          >
             <SelectTrigger className="w-56">
               <SelectValue>
                 {(classes.find((cl) => cl.id === classId)?.name as string) ??

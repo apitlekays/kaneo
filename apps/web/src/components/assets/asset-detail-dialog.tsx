@@ -689,7 +689,10 @@ function RenewalsTab({
       title="Renewals & expiry"
       form={
         <div className="grid gap-2 sm:grid-cols-2">
-          <Select value={type} onValueChange={setType}>
+          <Select
+            value={type}
+            onValueChange={(value) => value !== null && setType(value)}
+          >
             <SelectTrigger>
               <SelectValue>{labelOf(RENEWAL_TYPES, type)}</SelectValue>
             </SelectTrigger>
@@ -1018,7 +1021,10 @@ function PmSchedulesSection({ data, m }: { data: AssetDetail; m: Mutations }) {
             value={intervalValue}
             onChange={(e) => setIntervalValue(e.target.value)}
           />
-          <Select value={intervalType} onValueChange={setIntervalType}>
+          <Select
+            value={intervalType}
+            onValueChange={(value) => value !== null && setIntervalType(value)}
+          >
             <SelectTrigger className="w-28">
               <SelectValue>{intervalType}</SelectValue>
             </SelectTrigger>
@@ -1094,7 +1100,10 @@ function CostsTab({
       form={
         <div className="grid gap-2 sm:grid-cols-2">
           <DateField value={date} onChange={setDate} placeholder="Date *" />
-          <Select value={category} onValueChange={setCategory}>
+          <Select
+            value={category}
+            onValueChange={(value) => value !== null && setCategory(value)}
+          >
             <SelectTrigger>
               <SelectValue>{labelOf(COST_CATEGORIES, category)}</SelectValue>
             </SelectTrigger>
@@ -1485,7 +1494,10 @@ function FinancialsTab({
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label className="text-xs">Method</Label>
-            <Select value={method} onValueChange={setMethod}>
+            <Select
+              value={method}
+              onValueChange={(value) => value !== null && setMethod(value)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {method === "straight-line" ? "Straight-line" : "None"}
@@ -1631,7 +1643,10 @@ function FinancialsTab({
               onChange={setDDate}
               placeholder="Disposal date *"
             />
-            <Select value={dMethod} onValueChange={setDMethod}>
+            <Select
+              value={dMethod}
+              onValueChange={(value) => value !== null && setDMethod(value)}
+            >
               <SelectTrigger>
                 <SelectValue>{labelOf(DISPOSAL_METHODS, dMethod)}</SelectValue>
               </SelectTrigger>
@@ -1791,7 +1806,10 @@ function FleetTab({
               value={mValue}
               onChange={(e) => setMValue(e.target.value)}
             />
-            <Select value={mUnit} onValueChange={setMUnit}>
+            <Select
+              value={mUnit}
+              onValueChange={(value) => value !== null && setMUnit(value)}
+            >
               <SelectTrigger className="w-24">
                 <SelectValue>{mUnit}</SelectValue>
               </SelectTrigger>

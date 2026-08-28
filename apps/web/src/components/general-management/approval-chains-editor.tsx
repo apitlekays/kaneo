@@ -32,6 +32,7 @@ import {
   approvalChains,
 } from "@/fetchers/correspondence";
 import { cn } from "@/lib/cn";
+import { onSelectValueChange } from "@/lib/select-value";
 import { toast } from "@/lib/toast";
 
 type Option = { value: string; label: string };
@@ -273,7 +274,10 @@ export function ApprovalChainsEditor({
               </div>
               <div className="space-y-1.5">
                 <Label>Applies to letter type</Label>
-                <Select value={letterType} onValueChange={setLetterType}>
+                <Select
+                  value={letterType}
+                  onValueChange={onSelectValueChange(setLetterType)}
+                >
                   <SelectTrigger>
                     <SelectValue>
                       {letterType === "any" || !letterType
