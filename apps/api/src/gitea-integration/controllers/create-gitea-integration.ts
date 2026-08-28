@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import db from "../../database";
 import { integrationTable, projectTable } from "../../database/schema";
 import {
@@ -14,6 +15,30 @@ import {
   GiteaApiError,
   verifyGiteaToken,
 } from "../../plugins/gitea/utils/gitea-api";
+
+/** HTTP status codes Hono's `HTTPException` accepts for a body-carrying response. */
+const CONTENTFUL_STATUS_CODES = new Set<number>([
+  400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414,
+  415, 416, 417, 418, 421, 422, 423, 424, 425, 426, 428, 429, 431, 451, 500,
+  501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
+]);
+
+/**
+ * `GiteaApiError#status` is a plain `number` sourced from an upstream HTTP
+ * response, so it can be any value — not necessarily one of the specific
+ * literals Hono's `HTTPException` accepts. Every status Gitea itself emits
+ * (401/403/404/408/409/422/500/502/503/504) is in the set above and passes
+ * through unchanged. For anything outside that set, a `5xx` (e.g. a 499, or
+ * a Cloudflare 520-527/530 in front of a self-hosted Gitea) falls back to
+ * 502 so an upstream failure is reported as an upstream failure rather than
+ * misattributed to the caller; anything else falls back to 400.
+ */
+function toContentfulStatus(status: number): ContentfulStatusCode {
+  if (CONTENTFUL_STATUS_CODES.has(status)) {
+    return status as ContentfulStatusCode;
+  }
+  return status >= 500 ? 502 : 400;
+}
 
 async function createGiteaIntegration({
   projectId,
@@ -74,7 +99,9 @@ async function createGiteaIntegration({
     await client.getRepo(repositoryOwner, repositoryName);
   } catch (error) {
     if (error instanceof GiteaApiError) {
-      throw new HTTPException(error.status || 400, { message: error.message });
+      throw new HTTPException(toContentfulStatus(error.status || 400), {
+        message: error.message,
+      });
     }
     throw error;
   }

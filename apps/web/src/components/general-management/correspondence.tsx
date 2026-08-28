@@ -33,6 +33,7 @@ import {
   nextSortDirection,
 } from "@/lib/letter-grouping";
 import { letterReference, referenceHeader } from "@/lib/letter-reference";
+import { onSelectValueChange } from "@/lib/select-value";
 import { urgencyBadge } from "@/lib/urgency";
 import { LetterCaptureDialog } from "./letter-capture-dialog";
 import { LetterDetailDialog } from "./letter-detail-dialog";
@@ -137,7 +138,10 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
           />
         </div>
         {!showDisposed && !showAwaiting && (
-          <Select value={status} onValueChange={setStatus}>
+          <Select
+            value={status}
+            onValueChange={onSelectValueChange(setStatus, "all")}
+          >
             <SelectTrigger className="w-44">
               <SelectValue>
                 {STATUS_OPTIONS.find((s) => s.value === status)?.label}

@@ -76,6 +76,7 @@ describe("MyCorrespondence", () => {
           subject: "Surat siasatan",
           direction: "in",
           status: "assigned",
+          urgency: "normal",
           receivedAt: null,
           createdAt: "2026-08-18T01:00:00.000Z",
         },

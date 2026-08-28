@@ -1,5 +1,6 @@
 import { client } from "@kaneo/libs";
 import type { InferRequestType } from "hono/client";
+import type { TaskPriority } from "@/lib/task-priority";
 
 export type CreateTaskRequest = InferRequestType<
   (typeof client)["task"][":projectId"]["$post"]
@@ -14,7 +15,7 @@ async function createTask(
   status: string,
   startDate: Date | undefined,
   dueDate: Date | undefined,
-  priority: string,
+  priority: TaskPriority,
 ) {
   if (!projectId) {
     throw new Error("No project selected for task creation");

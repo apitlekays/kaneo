@@ -11,6 +11,7 @@
     "i18n:report:fix": "node ./scripts/i18n/report.mjs --fix",
     "i18n:schema": "node ./scripts/i18n/schema.mjs",
     "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
     "test": "turbo test",
     "test:integration": "turbo test:integration",
     "prepare": "husky"

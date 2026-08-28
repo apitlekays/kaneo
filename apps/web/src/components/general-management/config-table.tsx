@@ -241,7 +241,7 @@ export function ConfigTable({
                   {f.type === "select" ? (
                     <Select
                       value={String(form[f.key] ?? "")}
-                      onValueChange={(v) => set(f.key, v)}
+                      onValueChange={(v) => set(f.key, v ?? "")}
                     >
                       <SelectTrigger>
                         <SelectValue>

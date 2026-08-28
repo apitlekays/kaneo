@@ -28,7 +28,7 @@ function setup() {
   return { result, invalidate };
 }
 
-function invalidatedKeys(invalidate: ReturnType<typeof vi.spyOn>) {
+function invalidatedKeys(invalidate: ReturnType<typeof setup>["invalidate"]) {
   return invalidate.mock.calls.map(
     (call) => (call[0] as { queryKey?: unknown[] } | undefined)?.queryKey,
   );

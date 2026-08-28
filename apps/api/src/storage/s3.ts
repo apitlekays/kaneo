@@ -3,6 +3,8 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
+  type PutObjectCommandInput,
+  type PutObjectCommandOutput,
   S3Client,
   type S3ClientConfig,
 } from "@aws-sdk/client-s3";
@@ -162,6 +164,52 @@ function getClient(config: StorageConfig) {
   return client;
 }
 
+/**
+ * `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` currently resolve
+ * to two different (structurally identical) copies of `@smithy/types` in the
+ * dependency tree, so `getSignedUrl`'s `Client`/`Command` parameter types and
+ * our `S3Client`/`PutObjectCommand` are seen as incompatible even though
+ * they're the same runtime objects. This is a type-only duplicate-package
+ * artifact — fixing it for real means deduping the lockfile, which is out of
+ * scope here. Every presigned URL in this file is for a `PutObjectCommand`,
+ * so the generics are pinned explicitly to that command's input/output
+ * rather than left to (broken) inference, and only the client/command
+ * arguments need the cast to bridge the duplicate types.
+ */
+function presignPutObjectUrl(
+  client: S3Client,
+  command: PutObjectCommand,
+  options: Parameters<
+    typeof getSignedUrl<
+      PutObjectCommandInput,
+      PutObjectCommandInput,
+      PutObjectCommandOutput
+    >
+  >[2],
+) {
+  return getSignedUrl<
+    PutObjectCommandInput,
+    PutObjectCommandInput,
+    PutObjectCommandOutput
+  >(
+    client as unknown as Parameters<
+      typeof getSignedUrl<
+        PutObjectCommandInput,
+        PutObjectCommandInput,
+        PutObjectCommandOutput
+      >
+    >[0],
+    command as unknown as Parameters<
+      typeof getSignedUrl<
+        PutObjectCommandInput,
+        PutObjectCommandInput,
+        PutObjectCommandOutput
+      >
+    >[1],
+    options,
+  );
+}
+
 export function sanitizePathSegment(value: string) {
   return (
     value
@@ -256,7 +304,7 @@ export async function createTaskImageUploadUrl(
     ContentType: context.contentType,
   });
 
-  const uploadUrl = await getSignedUrl(client, command, {
+  const uploadUrl = await presignPutObjectUrl(client, command, {
     expiresIn: config.presignTtlSeconds,
   });
 
@@ -301,7 +349,7 @@ export async function createAvatarUploadUrl(context: {
     ContentType: context.contentType,
   });
 
-  const uploadUrl = await getSignedUrl(client, command, {
+  const uploadUrl = await presignPutObjectUrl(client, command, {
     expiresIn: config.presignTtlSeconds,
   });
 
@@ -386,7 +434,7 @@ export async function createAssetFileUploadUrl(
     ContentType: context.contentType,
   });
 
-  const uploadUrl = await getSignedUrl(client, command, {
+  const uploadUrl = await presignPutObjectUrl(client, command, {
     expiresIn: config.presignTtlSeconds,
   });
 
@@ -448,7 +496,7 @@ export async function createLetterFileUploadUrl(
     Key: key,
     ContentType: context.contentType,
   });
-  const uploadUrl = await getSignedUrl(client, command, {
+  const uploadUrl = await presignPutObjectUrl(client, command, {
     expiresIn: config.presignTtlSeconds,
   });
   return {

@@ -43,6 +43,7 @@ import { useMeetingMutations } from "@/hooks/queries/meeting/use-meeting-mutatio
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
+import { onSelectValueChange } from "@/lib/select-value";
 
 type Mutations = ReturnType<typeof useMeetingMutations>;
 type WorkspaceUser = { userId: string; user?: { name?: string } };
@@ -342,7 +343,7 @@ function AdoptControl({
       <div className="flex flex-wrap items-end gap-2">
         <Select
           value={adoptedByMeetingId}
-          onValueChange={setAdoptedByMeetingId}
+          onValueChange={onSelectValueChange(setAdoptedByMeetingId)}
         >
           <SelectTrigger className="w-64">
             <SelectValue>
@@ -518,7 +519,7 @@ function AddAttendeeForm({
         </button>
       </div>
       {mode === "user" ? (
-        <Select value={userId} onValueChange={setUserId}>
+        <Select value={userId} onValueChange={onSelectValueChange(setUserId)}>
           <SelectTrigger>
             <SelectValue>
               {userId
@@ -850,7 +851,10 @@ function AddActionForm({
         onChange={(e) => setDescription(e.target.value)}
       />
       <div className="grid gap-3 sm:grid-cols-2">
-        <Select value={minuteItemId} onValueChange={setMinuteItemId}>
+        <Select
+          value={minuteItemId}
+          onValueChange={onSelectValueChange(setMinuteItemId)}
+        >
           <SelectTrigger>
             <SelectValue>
               {minuteItemId
@@ -867,7 +871,10 @@ function AddActionForm({
             ))}
           </SelectContent>
         </Select>
-        <Select value={assigneeId} onValueChange={setAssigneeId}>
+        <Select
+          value={assigneeId}
+          onValueChange={onSelectValueChange(setAssigneeId)}
+        >
           <SelectTrigger>
             <SelectValue>
               {assigneeId

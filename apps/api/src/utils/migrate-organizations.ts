@@ -28,6 +28,10 @@ async function migrateOrganizations() {
     // now we need to migrate the members
     for (const member of members) {
       await auth.api.addTeamMember({
+        // Offline migration script with no inbound request — there's no
+        // real request headers to forward, so pass an empty Headers to
+        // satisfy the API's required shape.
+        headers: new Headers(),
         body: {
           teamId: data?.id || "",
           userId: member.userId,

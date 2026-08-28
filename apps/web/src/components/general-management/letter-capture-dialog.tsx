@@ -28,6 +28,7 @@ import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-
 import { usePdfCompression } from "@/hooks/use-pdf-compression";
 import { compressionLabel } from "@/lib/compression-label";
 import { isPdfUpload } from "@/lib/is-pdf-upload";
+import { onSelectValueChange } from "@/lib/select-value";
 import { toast } from "@/lib/toast";
 import { LetterLinkPicker, type PendingLink } from "./letter-link-picker";
 
@@ -386,7 +387,10 @@ export function LetterCaptureDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Type</Label>
-            <Select value={type} onValueChange={setType}>
+            <Select
+              value={type}
+              onValueChange={(value) => value !== null && setType(value)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {TYPES.find((t) => t.value === type)?.label}
@@ -403,7 +407,10 @@ export function LetterCaptureDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Medium</Label>
-            <Select value={medium} onValueChange={setMedium}>
+            <Select
+              value={medium}
+              onValueChange={(value) => value !== null && setMedium(value)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {MEDIUMS.find((mm) => mm.value === medium)?.label}
@@ -424,7 +431,10 @@ export function LetterCaptureDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Urgency</Label>
-            <Select value={urgency} onValueChange={setUrgency}>
+            <Select
+              value={urgency}
+              onValueChange={(value) => value !== null && setUrgency(value)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {urgency === "urgent" ? "Urgent" : "Normal"}
@@ -490,7 +500,10 @@ export function LetterCaptureDialog({
             <Label>
               Owning organisation <span className="text-destructive">*</span>
             </Label>
-            <Select value={organisationId} onValueChange={setOrganisationId}>
+            <Select
+              value={organisationId}
+              onValueChange={onSelectValueChange(setOrganisationId)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {(organisations.find((org) => org.id === organisationId)
@@ -508,7 +521,10 @@ export function LetterCaptureDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Category</Label>
-            <Select value={categoryId} onValueChange={setCategoryId}>
+            <Select
+              value={categoryId}
+              onValueChange={onSelectValueChange(setCategoryId)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {(categories.find((cat) => cat.id === categoryId)
@@ -526,7 +542,10 @@ export function LetterCaptureDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Security</Label>
-            <Select value={securityLabelId} onValueChange={setSecurityLabelId}>
+            <Select
+              value={securityLabelId}
+              onValueChange={onSelectValueChange(setSecurityLabelId)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {(securityLabels.find((s) => s.id === securityLabelId)
@@ -544,7 +563,10 @@ export function LetterCaptureDialog({
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Assign to (Main User)</Label>
-            <Select value={assigneeId} onValueChange={setAssigneeId}>
+            <Select
+              value={assigneeId}
+              onValueChange={onSelectValueChange(setAssigneeId)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {users.find((u) => u.userId === assigneeId)?.user?.name ??

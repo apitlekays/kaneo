@@ -59,7 +59,10 @@ export function DialogSidebar({
     >
       {/* Mobile: section selector */}
       <div className="border-b px-4 py-2.5 sm:hidden">
-        <Select value={value} onValueChange={onValueChange}>
+        <Select
+          value={value}
+          onValueChange={(next) => next !== null && onValueChange(next)}
+        >
           <SelectTrigger className="w-full">
             <SelectValue>
               <span className="flex items-center gap-2">

@@ -22,7 +22,9 @@ export async function collectPendingDecisions(
       items.push(...result.value);
       return;
     }
-    const source = providers[index].source;
+    // `settled` is a 1:1 map over `providers`, so `providers[index]` always
+    // exists; noUncheckedIndexedAccess can't see that from here.
+    const source = providers[index]?.source ?? "unknown";
     failedSources.push(source);
     console.error(
       `pending-decision: provider "${source}" failed`,

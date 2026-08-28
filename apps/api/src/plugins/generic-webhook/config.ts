@@ -9,6 +9,11 @@ function isDisallowedIpv4(ip: string): boolean {
   }
 
   const [a, b] = parts;
+  if (a === undefined || b === undefined) {
+    // Unreachable: the length/NaN check above guarantees four numeric
+    // octets, but noUncheckedIndexedAccess can't see that from here.
+    return true;
+  }
 
   return (
     a === 0 ||

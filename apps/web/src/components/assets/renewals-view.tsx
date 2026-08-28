@@ -12,6 +12,7 @@ import { labelOf, RENEWAL_TYPES } from "@/lib/asset-constants";
 import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
 import { formatMoney } from "@/lib/format-currency";
+import { onSelectValueChange } from "@/lib/select-value";
 
 export function RenewalsView({
   workspaceId,
@@ -41,7 +42,10 @@ export function RenewalsView({
             Every renewable item across all assets, by due date.
           </p>
         </div>
-        <Select value={filter} onValueChange={setFilter}>
+        <Select
+          value={filter}
+          onValueChange={onSelectValueChange(setFilter, "all")}
+        >
           <SelectTrigger className="w-48">
             <SelectValue>
               {filter === "all" ? "All types" : labelOf(RENEWAL_TYPES, filter)}

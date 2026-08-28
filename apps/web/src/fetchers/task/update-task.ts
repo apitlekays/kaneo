@@ -1,4 +1,5 @@
 import { client } from "@kaneo/libs";
+import { toTaskPriority } from "@/lib/task-priority";
 import type Task from "@/types/task";
 
 async function updateTask(taskId: string, task: Task) {
@@ -9,7 +10,7 @@ async function updateTask(taskId: string, task: Task) {
       title: task.title,
       description: task.description || "",
       status: task.status,
-      priority: task.priority || "",
+      priority: toTaskPriority(task.priority),
       startDate: task.startDate?.toString(),
       dueDate: task.dueDate?.toString(),
       position: task.position ?? 0,

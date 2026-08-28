@@ -92,7 +92,10 @@ export function LocationsManager({ workspaceId }: { workspaceId: string }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Select value={type} onValueChange={setType}>
+        <Select
+          value={type}
+          onValueChange={(value) => value !== null && setType(value)}
+        >
           <SelectTrigger>
             <SelectValue>{type}</SelectValue>
           </SelectTrigger>

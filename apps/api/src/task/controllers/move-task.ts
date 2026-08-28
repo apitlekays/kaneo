@@ -54,7 +54,16 @@ async function resolveDestinationStatus(
     (column) => column.slug === currentStatus,
   );
 
-  return requestedColumn ?? matchingCurrentColumn ?? destinationColumns[0];
+  const firstColumn = destinationColumns[0];
+  if (!firstColumn) {
+    // Unreachable: the length check above guarantees at least one column,
+    // but noUncheckedIndexedAccess can't see that from here.
+    throw new HTTPException(400, {
+      message: "Destination project does not have a workflow",
+    });
+  }
+
+  return requestedColumn ?? matchingCurrentColumn ?? firstColumn;
 }
 
 async function getNextTaskPosition(

@@ -27,7 +27,8 @@ export function useAssetMutations(workspaceId: string, assetId?: string) {
 
   return {
     create: useMutation({
-      mutationFn: (data: api.AssetInput) => api.createAsset(workspaceId, data),
+      mutationFn: (data: api.AssetInput & { name: string }) =>
+        api.createAsset(workspaceId, data),
       onSuccess: () => {
         invalidate();
         toast.success("Asset registered");

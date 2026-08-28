@@ -31,6 +31,7 @@ import {
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
+import { onSelectValueChange } from "@/lib/select-value";
 import { toast } from "@/lib/toast";
 
 type Member = { userId: string; user?: { name?: string | null } | null };
@@ -257,7 +258,10 @@ function NewWorkOrderDialog({ workspaceId }: { workspaceId: string }) {
           <DialogTitle>New work order</DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 px-6 pb-4">
-          <Select value={assetId} onValueChange={setAssetId}>
+          <Select
+            value={assetId}
+            onValueChange={onSelectValueChange(setAssetId)}
+          >
             <SelectTrigger>
               <SelectValue>
                 {assets.find((a) => a.id === assetId)?.name ?? "Select asset *"}
@@ -277,7 +281,10 @@ function NewWorkOrderDialog({ workspaceId }: { workspaceId: string }) {
             onChange={(e) => setTitle(e.target.value)}
           />
           <div className="grid grid-cols-2 gap-3">
-            <Select value={priority} onValueChange={setPriority}>
+            <Select
+              value={priority}
+              onValueChange={(value) => value !== null && setPriority(value)}
+            >
               <SelectTrigger>
                 <SelectValue>
                   {PRIORITIES.find((p) => p.value === priority)?.label}

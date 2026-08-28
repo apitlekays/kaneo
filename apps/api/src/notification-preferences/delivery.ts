@@ -505,7 +505,11 @@ export async function deliverNotification(
     },
   };
 
-  const deliveries: Array<Promise<void>> = [];
+  // Only fulfilled/rejected status is inspected below, not the resolved
+  // value, so the array only needs to hold promises, not agree on a value
+  // type — sendNotificationEmail resolves with an EmailResult, the others
+  // with void.
+  const deliveries: Array<Promise<unknown>> = [];
 
   if (decryptedPreference.emailEnabled && rule.emailEnabled && user.email) {
     deliveries.push(

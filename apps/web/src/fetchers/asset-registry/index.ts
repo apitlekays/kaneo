@@ -349,14 +349,19 @@ export async function getAsset(
   );
 }
 
+// `name` is optional here (matching the API's update schema, which allows
+// partial updates); `createAsset` below requires it explicitly since the
+// create endpoint does. `locationId` mirrors the API's separate FK-based
+// location field alongside the legacy free-text `location`.
 export type AssetInput = {
-  name: string;
+  name?: string;
   category?: string;
   status?: string;
   assetTag?: string | null;
   manufacturer?: string | null;
   model?: string | null;
   location?: string | null;
+  locationId?: string | null;
   assignedTo?: string | null;
   registrationNumber?: string | null;
   purchaseDate?: string | null;
@@ -373,7 +378,7 @@ export type AssetInput = {
 
 export async function createAsset(
   workspaceId: string,
-  data: AssetInput,
+  data: AssetInput & { name: string },
 ): Promise<Asset> {
   return jsonOrThrow(
     await fetch(api(""), {

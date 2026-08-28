@@ -18,5 +18,8 @@ export const telegramPlugin: IntegrationPlugin = {
   onTaskTitleChanged: handleTaskTitleChanged,
   onTaskDescriptionChanged: handleTaskDescriptionChanged,
   onTaskCommentCreated: handleTaskCommentCreated,
-  validateConfig: validateTelegramConfig,
+  // validateTelegramConfig is synchronous and used synchronously elsewhere
+  // (telegram-integration/index.ts, plugins/telegram/events.ts); wrap it here
+  // rather than making it async, which is what IntegrationPlugin requires.
+  validateConfig: async (config) => validateTelegramConfig(config),
 };
