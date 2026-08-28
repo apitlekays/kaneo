@@ -631,6 +631,9 @@ const assetRegistry = new Hono<{
         })
         .where(eq(workOrderTable.id, woId))
         .returning();
+      if (!updated) {
+        throw new HTTPException(404, { message: "Work order not found" });
+      }
 
       if (body.assigneeId && body.assigneeId !== wo.assigneeId) {
         await createNotification({
@@ -768,6 +771,11 @@ const assetRegistry = new Hono<{
           set: { ...values, updatedAt: new Date() },
         })
         .returning();
+      if (!row) {
+        throw new HTTPException(500, {
+          message: "Failed to save driver profile",
+        });
+      }
       // Re-arm licence-expiry reminders for the new cycle (mirror renewals).
       await db
         .delete(assetReminderSentTable)
@@ -1351,6 +1359,10 @@ const assetRegistry = new Hono<{
               createdBy: userId,
             })
             .returning();
+          if (!asset) {
+            lastError = new Error("Insert returned no row");
+            continue;
+          }
           await recordActivity(asset.id, "created", userId, {
             name: asset.name,
           });

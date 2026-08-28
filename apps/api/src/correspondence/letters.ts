@@ -415,6 +415,11 @@ async function decideAssignment(
   note: string | null,
 ) {
   const { id, aid } = c.req.param();
+  if (!id || !aid) {
+    throw new HTTPException(400, {
+      message: "Missing letter or assignment id",
+    });
+  }
   const updated = await decideLetterAssignment({
     workspaceId: c.get("workspaceId") as string,
     userId: c.get("userId") as string,
