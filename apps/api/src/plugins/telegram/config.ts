@@ -16,7 +16,7 @@ export const telegramEventsSchema = v.object(
     telegramEventKeys.map((key) => [key, v.optional(v.boolean())]),
   ) as Record<
     TelegramEventKey,
-    v.OptionalSchema<v.BooleanSchema<undefined>, never>
+    v.OptionalSchema<v.BooleanSchema<undefined>, undefined>
   >,
 );
 
