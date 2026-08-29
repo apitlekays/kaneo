@@ -102,8 +102,10 @@ export type MeetingMinuteItem = {
   id: string;
   meetingId: string;
   position: number;
-  agenda: string;
+  numbering: string | null;
+  topic: string;
   discussion: string | null;
+  status: string | null;
   decision: string | null;
   createdAt: string;
 };
@@ -169,7 +171,9 @@ export type AddAttendeeInput = {
 };
 
 export type AddMinuteItemInput = {
-  agenda: string;
+  topic: string;
+  numbering?: string;
+  status?: string;
   discussion?: string;
   decision?: string;
   position?: number;

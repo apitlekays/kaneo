@@ -157,8 +157,8 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
           <div className="mx-auto max-w-md space-y-2 py-12 text-center">
             <h3 className="font-medium text-sm">No Meeting Minutes yet</h3>
             <p className="text-muted-foreground text-sm">
-              Create a meeting to start recording its agenda, attendance and
-              decisions.
+              Create a meeting to start recording its minute items, attendance
+              and decisions.
             </p>
           </div>
         )

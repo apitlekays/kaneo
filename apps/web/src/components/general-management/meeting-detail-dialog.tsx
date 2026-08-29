@@ -330,7 +330,7 @@ function AdoptControl({
       <h4 className="font-medium text-sm">Adopt these Meeting Minutes</h4>
       <p className="text-muted-foreground text-xs">
         Record which later meeting confirmed and adopted this meeting's Meeting
-        Minutes. Once adopted, its attendees and agenda become read-only.
+        Minutes. Once adopted, its attendees and minute items become read-only.
       </p>
       <Input
         type="search"
@@ -611,12 +611,12 @@ function MinuteItemRow({
   editable: boolean;
 }) {
   const [editing, setEditing] = useState(false);
-  const [agenda, setAgenda] = useState(item.agenda);
+  const [topic, setTopic] = useState(item.topic);
   const [discussion, setDiscussion] = useState(item.discussion ?? "");
   const [decision, setDecision] = useState(item.decision ?? "");
 
   const cancel = () => {
-    setAgenda(item.agenda);
+    setTopic(item.topic);
     setDiscussion(item.discussion ?? "");
     setDecision(item.decision ?? "");
     setEditing(false);
@@ -626,7 +626,12 @@ function MinuteItemRow({
     return (
       <div className="space-y-1 rounded-md border border-border px-3 py-2 text-sm">
         <div className="flex items-start justify-between gap-2">
-          <div className="font-medium">{item.agenda}</div>
+          <div className="font-medium">
+            {item.numbering && (
+              <span className="text-muted-foreground">{item.numbering} </span>
+            )}
+            {item.topic}
+          </div>
           {editable && (
             <Button
               size="sm"
@@ -657,9 +662,9 @@ function MinuteItemRow({
   return (
     <div className="space-y-2 rounded-md border border-border px-3 py-2 text-sm">
       <Input
-        value={agenda}
-        placeholder="Agenda"
-        onChange={(e) => setAgenda(e.target.value)}
+        value={topic}
+        placeholder="Topic"
+        onChange={(e) => setTopic(e.target.value)}
       />
       <Textarea
         value={discussion}
@@ -677,13 +682,13 @@ function MinuteItemRow({
         </Button>
         <Button
           size="sm"
-          disabled={!agenda.trim() || m.updateMinuteItem.isPending}
+          disabled={!topic.trim() || m.updateMinuteItem.isPending}
           onClick={() =>
             m.updateMinuteItem.mutate(
               {
                 itemId: item.id,
                 body: {
-                  agenda: agenda.trim(),
+                  topic: topic.trim(),
                   discussion: discussion.trim() || undefined,
                   decision: decision.trim() || undefined,
                 },
@@ -700,12 +705,12 @@ function MinuteItemRow({
 }
 
 function AddMinuteItemForm({ m }: { m: Mutations }) {
-  const [agenda, setAgenda] = useState("");
+  const [topic, setTopic] = useState("");
   const [discussion, setDiscussion] = useState("");
   const [decision, setDecision] = useState("");
 
   const reset = () => {
-    setAgenda("");
+    setTopic("");
     setDiscussion("");
     setDecision("");
   };
@@ -713,7 +718,7 @@ function AddMinuteItemForm({ m }: { m: Mutations }) {
   const submit = () => {
     m.addMinuteItem.mutate(
       {
-        agenda: agenda.trim(),
+        topic: topic.trim(),
         discussion: discussion.trim() || undefined,
         decision: decision.trim() || undefined,
       },
@@ -723,11 +728,11 @@ function AddMinuteItemForm({ m }: { m: Mutations }) {
 
   return (
     <div className="space-y-3 rounded-xl border border-border p-4">
-      <h4 className="font-medium text-sm">Add agenda item</h4>
+      <h4 className="font-medium text-sm">Add minute item</h4>
       <Input
-        value={agenda}
-        placeholder="Agenda"
-        onChange={(e) => setAgenda(e.target.value)}
+        value={topic}
+        placeholder="Topic"
+        onChange={(e) => setTopic(e.target.value)}
       />
       <Textarea
         value={discussion}
@@ -741,7 +746,7 @@ function AddMinuteItemForm({ m }: { m: Mutations }) {
       />
       <Button
         size="sm"
-        disabled={!agenda.trim() || m.addMinuteItem.isPending}
+        disabled={!topic.trim() || m.addMinuteItem.isPending}
         onClick={submit}
       >
         {m.addMinuteItem.isPending && (
@@ -859,14 +864,14 @@ function AddActionForm({
             <SelectValue>
               {minuteItemId
                 ? (meeting.minuteItems.find((i) => i.id === minuteItemId)
-                    ?.agenda ?? minuteItemId)
-                : "No agenda item (optional)"}
+                    ?.topic ?? minuteItemId)
+                : "No minute item (optional)"}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {meeting.minuteItems.map((item) => (
               <SelectItem key={item.id} value={item.id}>
-                {item.agenda}
+                {item.topic}
               </SelectItem>
             ))}
           </SelectContent>

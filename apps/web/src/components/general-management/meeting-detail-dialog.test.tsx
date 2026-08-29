@@ -94,8 +94,10 @@ function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
         id: "item-1",
         meetingId: "meeting-1",
         position: 0,
-        agenda: "Approve the annual budget",
+        numbering: null,
+        topic: "Approve the annual budget",
         discussion: null,
+        status: null,
         decision: null,
         createdAt: "2026-01-01T00:00:00.000Z",
       },
@@ -218,7 +220,7 @@ describe("MeetingDetailDialog", () => {
     expect(body).not.toHaveProperty("userId");
   });
 
-  it("3. adding a minute item calls addMinuteItem with the entered agenda text", async () => {
+  it("3. adding a minute item calls addMinuteItem with the entered topic text", async () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting({ minuteItems: [] });
 
@@ -232,14 +234,14 @@ describe("MeetingDetailDialog", () => {
 
     await openTab(user, "Minute Items");
     await user.type(
-      screen.getByPlaceholderText(/^agenda$/i),
+      screen.getByPlaceholderText(/^topic$/i),
       "Approve the annual budget",
     );
     await user.click(screen.getByRole("button", { name: /add item/i }));
 
     expect(mutations.addMinuteItem.mutate).toHaveBeenCalledWith(
       {
-        agenda: "Approve the annual budget",
+        topic: "Approve the annual budget",
         discussion: undefined,
         decision: undefined,
       },
@@ -313,7 +315,7 @@ describe("MeetingDetailDialog", () => {
 
     await openTab(user, "Minute Items");
     expect(
-      screen.queryByRole("heading", { name: /add agenda item/i }),
+      screen.queryByRole("heading", { name: /add minute item/i }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /^edit$/i }),
@@ -352,7 +354,7 @@ describe("MeetingDetailDialog", () => {
 
     await openTab(user, "Minute Items");
     expect(
-      screen.getByRole("heading", { name: /add agenda item/i }),
+      screen.getByRole("heading", { name: /add minute item/i }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeVisible();
   });

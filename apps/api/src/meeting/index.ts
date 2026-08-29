@@ -976,14 +976,16 @@ app.post(
   describeRoute({
     operationId: "addMeetingMinuteItem",
     tags: ["Meeting"],
-    description: "Add an agenda/minute item",
+    description: "Add a minute item",
   }),
   validator("param", v.object({ id: v.string() })),
   validator(
     "json",
     v.object({
       workspaceId: v.string(),
-      agenda: v.string(),
+      topic: v.string(),
+      numbering: optStr,
+      status: optStr,
       discussion: optStr,
       decision: optStr,
       position: optNum,
@@ -1001,13 +1003,15 @@ app.post(
     // Authorization before resource state (F7).
     await assertMeetingWriteAccess(callerId, ws, meeting);
     assertMeetingEditable(meeting);
-    const agenda = b.agenda.trim();
-    if (!agenda) throw new HTTPException(400, { message: "Agenda required" });
+    const topic = b.topic.trim();
+    if (!topic) throw new HTTPException(400, { message: "Topic required" });
     const [row] = await db
       .insert(meetingMinuteItemTable)
       .values({
         meetingId: id,
-        agenda,
+        topic,
+        numbering: b.numbering ?? null,
+        status: b.status ?? null,
         discussion: b.discussion ?? null,
         decision: b.decision ?? null,
         position: b.position ?? 0,
@@ -1022,14 +1026,16 @@ app.put(
   describeRoute({
     operationId: "updateMeetingMinuteItem",
     tags: ["Meeting"],
-    description: "Edit an agenda/minute item (refused once adopted)",
+    description: "Edit a minute item (refused once adopted)",
   }),
   validator("param", v.object({ id: v.string(), itemId: v.string() })),
   validator(
     "json",
     v.object({
       workspaceId: v.string(),
-      agenda: optStr,
+      topic: optStr,
+      numbering: optStr,
+      status: optStr,
       discussion: optStr,
       decision: optStr,
       position: optNum,
@@ -1059,11 +1065,13 @@ app.put(
       .limit(1);
     if (!existing) throw new HTTPException(404, { message: "Not found" });
     const p = patch<typeof meetingMinuteItemTable.$inferInsert>(b, [
+      "numbering",
+      "status",
       "discussion",
       "decision",
       "position",
     ]);
-    if (b.agenda !== undefined) p.agenda = b.agenda.trim();
+    if (b.topic !== undefined) p.topic = b.topic.trim();
     const [row] = await db
       .update(meetingMinuteItemTable)
       .set(p)

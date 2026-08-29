@@ -81,7 +81,7 @@ function updateMeeting(
 function addMinuteItem(
   app: App,
   meetingId: string,
-  body: { workspaceId: string; agenda: string },
+  body: { workspaceId: string; topic: string },
 ) {
   return app.request(`/api/meeting/${meetingId}/minute-items`, {
     method: "POST",
@@ -94,7 +94,7 @@ function updateMinuteItem(
   app: App,
   meetingId: string,
   itemId: string,
-  body: { workspaceId: string; agenda?: string; decision?: string },
+  body: { workspaceId: string; topic?: string; decision?: string },
 ) {
   return app.request(`/api/meeting/${meetingId}/minute-items/${itemId}`, {
     method: "PUT",
@@ -170,7 +170,7 @@ describe("API integration: meeting CRUD", () => {
 
     const minuteItem = await addMinuteItem(app, meeting.id, {
       workspaceId: admin.workspace.id,
-      agenda: "Approve last quarter's budget",
+      topic: "Approve last quarter's budget",
     });
     expect(minuteItem.status).toBe(201);
 
@@ -179,7 +179,7 @@ describe("API integration: meeting CRUD", () => {
     const detailBody = await detail.json();
     expect(detailBody.attendees).toHaveLength(2);
     expect(detailBody.minuteItems).toHaveLength(1);
-    expect(detailBody.minuteItems[0].agenda).toBe(
+    expect(detailBody.minuteItems[0].topic).toBe(
       "Approve last quarter's budget",
     );
   });
@@ -205,7 +205,7 @@ describe("API integration: meeting CRUD", () => {
 
     const minuteItem = await addMinuteItem(app, meeting.id, {
       workspaceId: admin.workspace.id,
-      agenda: "Discuss office relocation",
+      topic: "Discuss office relocation",
     });
     expect(minuteItem.status).toBe(201);
 
@@ -507,7 +507,7 @@ describe("API integration: meeting CRUD", () => {
 
     const minuteItemRes = await addMinuteItem(app, meeting.id, {
       workspaceId: admin.workspace.id,
-      agenda: "Original agenda text",
+      topic: "Original agenda text",
     });
     const minuteItem = await minuteItemRes.json();
 
@@ -525,7 +525,7 @@ describe("API integration: meeting CRUD", () => {
 
     const editAttempt = await updateMinuteItem(app, meeting.id, minuteItem.id, {
       workspaceId: admin.workspace.id,
-      agenda: "Trying to rewrite history",
+      topic: "Trying to rewrite history",
     });
     expect(editAttempt.status).toBe(409);
 
@@ -533,7 +533,7 @@ describe("API integration: meeting CRUD", () => {
       .select()
       .from(schema.meetingMinuteItemTable)
       .where(eq(schema.meetingMinuteItemTable.id, minuteItem.id));
-    expect(row.agenda).toBe("Original agenda text");
+    expect(row.topic).toBe("Original agenda text");
   });
 
   it("8. adopting with a meeting id from another workspace is refused (400)", async () => {
@@ -878,7 +878,7 @@ describe("API integration: meeting CRUD", () => {
 
     const minuteItemAttempt = await addMinuteItem(app, meeting.id, {
       workspaceId: admin.workspace.id,
-      agenda: "New item after adoption",
+      topic: "New item after adoption",
     });
     expect(minuteItemAttempt.status).toBe(409);
   });
