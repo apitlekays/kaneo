@@ -34,6 +34,7 @@ import {
   keysetCondition,
   visibilityCondition,
 } from "./list-query";
+import { validateImportRows } from "./minute-item-import";
 
 // Context variables populated by the auth + workspace-access middleware.
 type MeetingEnv = { Variables: { userId: string; workspaceId?: string } };
@@ -1018,6 +1019,130 @@ app.post(
       })
       .returning();
     return c.json(row, 201);
+  },
+);
+
+// Registered BEFORE "/:id/minute-items/:itemId": Hono matches literal
+// segments against parameterised ones in registration order, so a route
+// declared after it would be swallowed with itemId = "import" (same trap as
+// "/bodies" vs "/:id" above).
+app.post(
+  "/:id/minute-items/import",
+  describeRoute({
+    operationId: "importMeetingMinuteItems",
+    tags: ["Meeting"],
+    description:
+      "Bulk-import minute items from the spreadsheet template, extracting rows marked / as actions",
+  }),
+  validator("param", v.object({ id: v.string() })),
+  validator(
+    "json",
+    v.object({
+      workspaceId: v.string(),
+      rows: v.array(
+        v.object({
+          numbering: optStr,
+          topic: optStr,
+          details: optStr,
+          status: optStr,
+          action: optStr,
+        }),
+      ),
+    }),
+  ),
+  workspaceAccess.fromBody("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const callerId = c.get("userId") as string;
+    const { id } = c.req.valid("param");
+    const { rows } = c.req.valid("json");
+
+    const meeting = await loadMeeting(ws, id);
+    if (!meeting) throw new HTTPException(404, { message: "Not found" });
+    // Authorization before resource state, and write access proves read
+    // access first — bulk import must not be a weaker door into a
+    // confidential meeting than adding a single item is.
+    await assertMeetingWriteAccess(callerId, ws, meeting);
+    assertMeetingEditable(meeting);
+
+    const { items, errors } = validateImportRows(rows);
+
+    // Numbering already on this meeting is a conflict too: this is what makes
+    // an accidental double-import safe rather than duplicating everything.
+    // Blank numbering must never collide with itself: `optStr` accepts an
+    // empty string, and the single-item route's `b.numbering ?? null` maps
+    // only `undefined`, so a minute item can already hold "" rather than
+    // NULL. Normalise "" to null on the existing side too — `validateImportRows`
+    // already nulls blanks on the incoming side.
+    const existing = await db
+      .select({
+        numbering: meetingMinuteItemTable.numbering,
+        position: meetingMinuteItemTable.position,
+      })
+      .from(meetingMinuteItemTable)
+      .where(eq(meetingMinuteItemTable.meetingId, id));
+    const taken = new Set(
+      existing
+        .map((e) => (e.numbering ? e.numbering.trim() : ""))
+        .filter((n) => n !== ""),
+    );
+    items.forEach((item, index) => {
+      if (item.numbering && taken.has(item.numbering))
+        errors.push({
+          row: index + 2,
+          message: `numbering "${item.numbering}" already exists on this meeting`,
+        });
+    });
+
+    if (errors.length > 0) return c.json({ errors }, 400);
+
+    const startPosition =
+      existing.reduce((max, e) => Math.max(max, e.position), -1) + 1;
+
+    // All-or-nothing, in one transaction. A half-imported minute is worse
+    // than a rejected one: the user cannot tell which rows landed, and
+    // re-running duplicates the ones that did.
+    const result = await db.transaction(async (tx) => {
+      let actionsCreated = 0;
+      for (const [index, item] of items.entries()) {
+        const [row] = await tx
+          .insert(meetingMinuteItemTable)
+          .values({
+            meetingId: id,
+            position: startPosition + index,
+            numbering: item.numbering,
+            topic: item.topic,
+            status: item.status,
+            discussion: item.details,
+          })
+          .returning();
+        if (!row)
+          throw new HTTPException(500, {
+            message: "Failed to create minute item",
+          });
+        if (item.isAction) {
+          // The action must read on its own in the Actions tab, where the
+          // parent item is not on screen.
+          const description = item.details
+            ? `${item.topic} — ${item.details}`
+            : item.topic;
+          // assigneeId stays null: the CSV carries no assignee and inventing
+          // one would be wrong — an unassigned action reaches nobody until
+          // it is delegated, so the Actions tab must show that.
+          await tx.insert(meetingActionTable).values({
+            meetingId: id,
+            minuteItemId: row.id,
+            description,
+            fromUserId: callerId,
+          });
+          actionsCreated += 1;
+        }
+      }
+      return { itemsCreated: items.length, actionsCreated };
+    });
+
+    return c.json(result, 201);
   },
 );
 
