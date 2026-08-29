@@ -647,7 +647,7 @@ function MinuteItemRow({
         {item.status && (
           <Badge
             variant="outline"
-            className="max-w-full whitespace-normal break-words text-left"
+            className="h-auto max-w-full whitespace-normal break-words py-1 text-left sm:h-auto"
           >
             {item.status}
           </Badge>

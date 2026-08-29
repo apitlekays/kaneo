@@ -923,6 +923,7 @@ describe("API integration: meeting CRUD", () => {
 
     const updated = await updateMinuteItem(app, meeting.id, minuteItem.id, {
       workspaceId: admin.workspace.id,
+      numbering: "3.2",
       status: "Selesai",
     });
     expect(updated.status).toBe(200);
@@ -931,7 +932,7 @@ describe("API integration: meeting CRUD", () => {
       .select()
       .from(schema.meetingMinuteItemTable)
       .where(eq(schema.meetingMinuteItemTable.id, minuteItem.id));
-    expect(row.numbering).toBe("2.1.4");
+    expect(row.numbering).toBe("3.2");
     expect(row.status).toBe("Selesai");
   });
 });

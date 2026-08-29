@@ -249,8 +249,10 @@ describe("MeetingDetailDialog", () => {
     );
   });
 
-  it("3b. a minute item's numbering and status render on its row", async () => {
+  it("3b. a minute item's numbering and status render on its row, and a long status grows instead of overlapping", async () => {
     const user = userEvent.setup();
+    const longStatus =
+      "Dalam tindakan oleh Jawatankuasa Induk dan menunggu pengesahan";
     state.meeting = makeMeeting({
       minuteItems: [
         {
@@ -261,6 +263,17 @@ describe("MeetingDetailDialog", () => {
           topic: "Approve the annual budget",
           discussion: null,
           status: "Dalam tindakan",
+          decision: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "item-2",
+          meetingId: "meeting-1",
+          position: 1,
+          numbering: null,
+          topic: "Review the vendor contract",
+          discussion: "Legal flagged clause 4.2 for redrafting.",
+          status: longStatus,
           decision: null,
           createdAt: "2026-01-01T00:00:00.000Z",
         },
@@ -279,6 +292,25 @@ describe("MeetingDetailDialog", () => {
 
     expect(screen.getByText("2.1.4")).toBeVisible();
     expect(screen.getByText("Dalam tindakan")).toBeVisible();
+
+    // The long status must actually be allowed to wrap and grow the badge —
+    // not just be present in the DOM. A `whitespace-nowrap`/fixed-height
+    // badge would still pass a bare getByText assertion while visually
+    // overlapping the discussion text rendered right below it.
+    const longStatusBadge = screen.getByText(longStatus);
+    expect(longStatusBadge).toBeVisible();
+    expect(longStatusBadge.className).toMatch(/\bwhitespace-normal\b/);
+    expect(longStatusBadge.className).not.toMatch(/\bwhitespace-nowrap\b/);
+    expect(longStatusBadge.className).toMatch(/\bh-auto\b/);
+
+    // The discussion text for that same item must still render as its own
+    // visible, distinct node — the failure mode this guards against is the
+    // wrapped status painting over exactly this element.
+    const discussion = screen.getByText(
+      "Legal flagged clause 4.2 for redrafting.",
+    );
+    expect(discussion).toBeVisible();
+    expect(discussion).not.toBe(longStatusBadge);
   });
 
   it("4. creating an action calls addAction with its description and assignee", async () => {
