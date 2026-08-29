@@ -1095,7 +1095,15 @@ app.post(
         });
     });
 
-    if (errors.length > 0) return c.json({ errors }, 400);
+    if (errors.length > 0) {
+      // The conflict errors above were appended after `validateImportRows`
+      // already populated the array, so a row-validation error later in the
+      // file (e.g. row 5) would otherwise print before a conflict earlier in
+      // it (e.g. row 2). Task 5 renders this list in order; row order is
+      // what makes it usable rather than confusing.
+      errors.sort((a, b) => a.row - b.row);
+      return c.json({ errors }, 400);
+    }
 
     const startPosition =
       existing.reduce((max, e) => Math.max(max, e.position), -1) + 1;
@@ -1130,11 +1138,22 @@ app.post(
           // assigneeId stays null: the CSV carries no assignee and inventing
           // one would be wrong — an unassigned action reaches nobody until
           // it is delegated, so the Actions tab must show that.
+          //
+          // acceptance is "accepted", not the table's "pending" default:
+          // `POST /:id/actions` already treats "no assignee" as
+          // "accepted" (`assigneeId && assigneeId !== callerId ? "pending" :
+          // "accepted"`), and that convention has to hold here too. Left at
+          // "pending" with no assignee, the action would be undecidable
+          // (`assertCanDecideAction` 403s with no assignee to decide it),
+          // uncompletable (`.../complete` requires "accepted"), and
+          // un-delegable (no route sets `assigneeId` on an existing action)
+          // — permanently stuck.
           await tx.insert(meetingActionTable).values({
             meetingId: id,
             minuteItemId: row.id,
             description,
             fromUserId: callerId,
+            acceptance: "accepted",
           });
           actionsCreated += 1;
         }
