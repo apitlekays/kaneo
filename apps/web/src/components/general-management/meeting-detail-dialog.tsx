@@ -7,8 +7,9 @@ import {
   Pencil,
   Trash2,
   Users,
+  UserX,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-
 import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
 import { onSelectValueChange } from "@/lib/select-value";
+import { MinuteItemImport } from "./minute-item-import";
 
 type Mutations = ReturnType<typeof useMeetingMutations>;
 type WorkspaceUser = { userId: string; user?: { name?: string } };
@@ -210,7 +212,11 @@ function Body({
           <AttendeesSection meeting={meeting} m={m} users={users} />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="minutes">
-          <MinuteItemsSection meeting={meeting} m={m} />
+          <MinuteItemsSection
+            workspaceId={workspaceId}
+            meeting={meeting}
+            m={m}
+          />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="actions">
           <ActionsSection meeting={meeting} m={m} users={users} />
@@ -572,9 +578,11 @@ function AddAttendeeForm({
 }
 
 function MinuteItemsSection({
+  workspaceId,
   meeting,
   m,
 }: {
+  workspaceId: string;
   meeting: MeetingDetail;
   m: Mutations;
 }) {
@@ -596,7 +604,12 @@ function MinuteItemsSection({
           />
         ))}
       </div>
-      {!isAdopted && <AddMinuteItemForm m={m} />}
+      {!isAdopted && (
+        <>
+          <MinuteItemImport workspaceId={workspaceId} meetingId={meeting.id} />
+          <AddMinuteItemForm m={m} />
+        </>
+      )}
     </div>
   );
 }
@@ -777,6 +790,29 @@ function ActionsSection({
 }) {
   const userName = (id: string | null) =>
     id ? (users.find((u) => u.userId === id)?.user?.name ?? id) : null;
+  // A bulk-imported action carries no assignee (the CSV has no assignee
+  // column) — it reaches nobody until someone delegates it. There is no
+  // route to set assigneeId on an existing action (see the server's
+  // comment in apps/api/src/meeting/index.ts), so "delegating" it means
+  // recording a new, assigned action against the same minute item via the
+  // form below. `prefill` pre-fills that form with this minute item and
+  // remounts it (via `seq`) so its internal state actually picks the value
+  // up, then scrolls it into view — making the existing assign control
+  // reachable for this specific unassigned action rather than merely
+  // present somewhere on the page.
+  const [prefill, setPrefill] = useState<{
+    minuteItemId: string;
+    seq: number;
+  } | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  const delegate = (minuteItemId: string | null) => {
+    setPrefill({ minuteItemId: minuteItemId ?? "", seq: Date.now() });
+    // Optional-called, not just optional-accessed: jsdom's HTMLElement has
+    // no scrollIntoView at all (unlike a real browser), so this would throw
+    // in every test that exercises Delegate otherwise.
+    formRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="space-y-4">
@@ -791,10 +827,33 @@ function ActionsSection({
             key={action.id}
             className="space-y-1.5 rounded-md border border-border px-3 py-2 text-sm"
           >
-            <p>{action.description}</p>
+            {/* Clamped: an imported action's description can be
+                `topic — details`, and `details` may be a whole paragraph —
+                without a clamp that paragraph becomes the entire card. */}
+            <p className="line-clamp-3 whitespace-pre-wrap">
+              {action.description}
+            </p>
             <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
-              {action.assigneeId && (
+              {action.assigneeId ? (
                 <span>Assigned to {userName(action.assigneeId)}</span>
+              ) : (
+                <>
+                  <Badge
+                    variant="warning"
+                    className="flex items-center gap-1 text-xs"
+                  >
+                    <UserX className="h-3 w-3" />
+                    Unassigned — needs delegating
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-1.5"
+                    onClick={() => delegate(action.minuteItemId)}
+                  >
+                    Delegate
+                  </Button>
+                </>
               )}
               {action.dueAt && (
                 <span>Due {formatDateMedium(action.dueAt)}</span>
@@ -805,7 +864,12 @@ function ActionsSection({
               >
                 {action.status}
               </Badge>
-              {action.acceptance !== "accepted" && (
+              {/* An unassigned action is created with acceptance "accepted"
+                  by convention (there's no assignee to accept anything), so
+                  this must only ever render for an assigned action — showing
+                  it here would misleadingly read as "awaiting someone" when
+                  nothing is. */}
+              {action.assigneeId && action.acceptance !== "accepted" && (
                 <Badge variant="outline" className="text-xs">
                   {action.acceptance}
                 </Badge>
@@ -817,7 +881,15 @@ function ActionsSection({
       {/* Actions stay editable even on an adopted meeting — accepting and
           completing delegated actions is the work adoption sets in motion,
           so this form is never gated on meeting.status. */}
-      <AddActionForm meeting={meeting} m={m} users={users} />
+      <div ref={formRef}>
+        <AddActionForm
+          key={prefill?.seq ?? "default"}
+          meeting={meeting}
+          m={m}
+          users={users}
+          initialMinuteItemId={prefill?.minuteItemId}
+        />
+      </div>
     </div>
   );
 }
@@ -826,13 +898,20 @@ function AddActionForm({
   meeting,
   m,
   users,
+  initialMinuteItemId,
 }: {
   meeting: MeetingDetail;
   m: Mutations;
   users: WorkspaceUser[];
+  /**
+   * Set when "Delegate" was clicked on an unassigned action — the parent
+   * remounts this form (via a changing `key`) whenever it changes, so this
+   * only needs to seed initial state, not react to later prop updates.
+   */
+  initialMinuteItemId?: string;
 }) {
   const [description, setDescription] = useState("");
-  const [minuteItemId, setMinuteItemId] = useState("");
+  const [minuteItemId, setMinuteItemId] = useState(initialMinuteItemId ?? "");
   const [assigneeId, setAssigneeId] = useState("");
   const [dueAt, setDueAt] = useState<Date | null>(null);
 

@@ -1,5 +1,7 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Meeting, MeetingDetail } from "@/fetchers/meeting";
 import { MeetingDetailDialog } from "./meeting-detail-dialog";
@@ -108,6 +110,19 @@ function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
   };
 }
 
+// MinuteItemImport (rendered inside the Minute Items tab) calls the real
+// useMutation/useQueryClient, unlike every other mutation here (mocked via
+// useMeetingMutations above) — so every render needs a real QueryClient in
+// context, the same pattern minute-thread.test.tsx uses for the same reason.
+function renderDialog(ui: ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+  );
+}
+
 async function openTab(user: ReturnType<typeof userEvent.setup>, name: string) {
   await user.click(
     await screen.findByRole("tab", { name: new RegExp(name, "i") }),
@@ -150,7 +165,7 @@ describe("MeetingDetailDialog", () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting();
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -172,7 +187,7 @@ describe("MeetingDetailDialog", () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting();
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -195,7 +210,7 @@ describe("MeetingDetailDialog", () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting();
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -224,7 +239,7 @@ describe("MeetingDetailDialog", () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting({ minuteItems: [] });
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -280,7 +295,7 @@ describe("MeetingDetailDialog", () => {
       ],
     });
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -317,7 +332,7 @@ describe("MeetingDetailDialog", () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting();
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -344,6 +359,56 @@ describe("MeetingDetailDialog", () => {
     );
   });
 
+  it("4b. an unassigned action is marked distinct, and Delegate pre-fills the same minute item into the existing assign control", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({
+      actions: [
+        {
+          id: "action-1",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: null,
+          fromUserId: "user-1",
+          description: "Circulate the approved budget",
+          dueAt: null,
+          // Imported actions are created with acceptance "accepted" even
+          // with no assignee (this module's convention for an unassigned
+          // action — see minute-item-import's server contract).
+          acceptance: "accepted",
+          rejectionReason: null,
+          status: "open",
+          completedAt: null,
+          completedBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    renderDialog(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await openTab(user, "Actions");
+
+    expect(screen.getByText(/unassigned.*needs delegating/i)).toBeVisible();
+    // acceptance is "accepted" here, not "pending" — rendering an
+    // "accepted" badge on top of that would misleadingly read as "awaiting
+    // someone" when nothing is.
+    expect(screen.queryByText(/^accepted$/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /delegate/i }));
+
+    // The existing assign control — the same "record a follow-up action"
+    // form used to create any action — must become reachable for this
+    // specific unassigned action: pre-filled with its minute item.
+    const matches = screen.getAllByText("Approve the annual budget");
+    expect(matches.some((el) => el.closest('[role="combobox"]'))).toBe(true);
+  });
+
   it("5. an adopted meeting offers no attendee or minute-item editing controls, while a draft one does", async () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting({
@@ -361,7 +426,7 @@ describe("MeetingDetailDialog", () => {
       ],
     });
 
-    const { unmount } = render(
+    const { unmount } = renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -384,6 +449,14 @@ describe("MeetingDetailDialog", () => {
     expect(
       screen.queryByRole("button", { name: /^edit$/i }),
     ).not.toBeInTheDocument();
+    // The bulk-import UI is gated the same way as AddMinuteItemForm: an
+    // adopted meeting's minute items are read-only.
+    expect(
+      screen.queryByRole("button", { name: /download template/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /import meeting minutes items/i }),
+    ).not.toBeInTheDocument();
 
     unmount();
 
@@ -402,7 +475,7 @@ describe("MeetingDetailDialog", () => {
       ],
     });
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -421,6 +494,12 @@ describe("MeetingDetailDialog", () => {
       screen.getByRole("heading", { name: /add minute item/i }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /download template/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /import meeting minutes items/i }),
+    ).toBeVisible();
   });
 
   it("6. adopting calls the adopt mutation with the chosen adopting meeting's id", async () => {
@@ -461,7 +540,7 @@ describe("MeetingDetailDialog", () => {
       },
     ];
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -485,7 +564,7 @@ describe("MeetingDetailDialog", () => {
     state.meetingIsLoading = false;
     state.meetingIsError = true;
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -509,7 +588,7 @@ describe("MeetingDetailDialog", () => {
     state.meeting = null;
     state.meetingIsLoading = true;
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -525,7 +604,7 @@ describe("MeetingDetailDialog", () => {
     state.adoptCandidates = [];
     state.isMeetingsError = true;
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -549,7 +628,7 @@ describe("MeetingDetailDialog", () => {
       makeMeeting({ id: "other-1", title: "November committee meeting" }),
     ];
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -593,7 +672,7 @@ describe("MeetingDetailDialog", () => {
     ];
     state.adoptNextCursor = "cursor-token";
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -611,7 +690,7 @@ describe("MeetingDetailDialog", () => {
     ];
     state.adoptNextCursor = null;
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
