@@ -35,6 +35,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type {
   AddAttendeeInput,
   Meeting,
+  MeetingAction,
   MeetingDetail,
   MeetingMinuteItem,
 } from "@/fetchers/meeting";
@@ -794,20 +795,25 @@ function ActionsSection({
   // column) — it reaches nobody until someone delegates it. There is no
   // route to set assigneeId on an existing action (see the server's
   // comment in apps/api/src/meeting/index.ts), so "delegating" it means
-  // recording a new, assigned action against the same minute item via the
-  // form below. `prefill` pre-fills that form with this minute item and
-  // remounts it (via `seq`) so its internal state actually picks the value
-  // up, then scrolls it into view — making the existing assign control
-  // reachable for this specific unassigned action rather than merely
-  // present somewhere on the page.
+  // recording a new, assigned action against the same minute item (and with
+  // the same description, so it doesn't have to be retyped) via the form
+  // below. `prefill` pre-fills that form and remounts it (via `seq`) so its
+  // internal state actually picks the values up, then scrolls it into view —
+  // making the existing assign control reachable for this specific
+  // unassigned action rather than merely present somewhere on the page.
   const [prefill, setPrefill] = useState<{
     minuteItemId: string;
+    description: string;
     seq: number;
   } | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
 
-  const delegate = (minuteItemId: string | null) => {
-    setPrefill({ minuteItemId: minuteItemId ?? "", seq: Date.now() });
+  const delegate = (action: MeetingAction) => {
+    setPrefill({
+      minuteItemId: action.minuteItemId ?? "",
+      description: action.description,
+      seq: Date.now(),
+    });
     // Optional-called, not just optional-accessed: jsdom's HTMLElement has
     // no scrollIntoView at all (unlike a real browser), so this would throw
     // in every test that exercises Delegate otherwise.
@@ -822,61 +828,94 @@ function ActionsSection({
             No follow-up actions recorded.
           </p>
         )}
-        {meeting.actions.map((action) => (
-          <div
-            key={action.id}
-            className="space-y-1.5 rounded-md border border-border px-3 py-2 text-sm"
-          >
-            {/* Clamped: an imported action's description can be
-                `topic — details`, and `details` may be a whole paragraph —
-                without a clamp that paragraph becomes the entire card. */}
-            <p className="line-clamp-3 whitespace-pre-wrap">
-              {action.description}
-            </p>
-            <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
-              {action.assigneeId ? (
-                <span>Assigned to {userName(action.assigneeId)}</span>
-              ) : (
-                <>
-                  <Badge
-                    variant="warning"
-                    className="flex items-center gap-1 text-xs"
-                  >
-                    <UserX className="h-3 w-3" />
-                    Unassigned — needs delegating
+        {meeting.actions.map((action) => {
+          const isUnassigned = !action.assigneeId;
+          const isDone = action.status === "done";
+          return (
+            <div
+              key={action.id}
+              className="space-y-1.5 rounded-md border border-border px-3 py-2 text-sm"
+            >
+              {/* Clamped: an imported action's description can be
+                  `topic — details`, and `details` may be a whole paragraph —
+                  without a clamp that paragraph becomes the entire card. */}
+              <p className="line-clamp-3 whitespace-pre-wrap">
+                {action.description}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+                {action.assigneeId ? (
+                  <span>Assigned to {userName(action.assigneeId)}</span>
+                ) : (
+                  // Once done, there's nothing left needing delegation — the
+                  // marker and its Delegate button would be a stale prompt
+                  // for work that's already closed out.
+                  !isDone && (
+                    <>
+                      <Badge
+                        variant="warning"
+                        className="flex items-center gap-1 text-xs"
+                      >
+                        <UserX className="h-3 w-3" />
+                        Unassigned — needs delegating
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-1.5"
+                        onClick={() => delegate(action)}
+                      >
+                        Delegate
+                      </Button>
+                    </>
+                  )
+                )}
+                {action.dueAt && (
+                  <span>Due {formatDateMedium(action.dueAt)}</span>
+                )}
+                <Badge
+                  variant={isDone ? "success" : "outline"}
+                  className="text-xs"
+                >
+                  {action.status}
+                </Badge>
+                {/* An unassigned action is created with acceptance
+                    "accepted" by convention (there's no assignee to accept
+                    anything), so this must only ever render for an assigned
+                    action — showing it here would misleadingly read as
+                    "awaiting someone" when nothing is. */}
+                {action.assigneeId && action.acceptance !== "accepted" && (
+                  <Badge variant="outline" className="text-xs">
+                    {action.acceptance}
                   </Badge>
+                )}
+                {/* There was previously no way at all, anywhere in the web
+                    app, to complete a meeting action — the API route has
+                    always existed and is integration-tested, but had zero
+                    web callers. Without this, a delegated unassigned action
+                    is a permanent card: Delegate mints a new one every click
+                    and nothing ever closes the original out. */}
+                {!isDone && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-6 px-1.5"
-                    onClick={() => delegate(action.minuteItemId)}
+                    className="ml-auto h-6 px-1.5"
+                    disabled={m.completeAction.isPending}
+                    onClick={() => m.completeAction.mutate(action.id)}
                   >
-                    Delegate
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Mark done
                   </Button>
-                </>
-              )}
-              {action.dueAt && (
-                <span>Due {formatDateMedium(action.dueAt)}</span>
-              )}
-              <Badge
-                variant={action.status === "done" ? "success" : "outline"}
-                className="text-xs"
-              >
-                {action.status}
-              </Badge>
-              {/* An unassigned action is created with acceptance "accepted"
-                  by convention (there's no assignee to accept anything), so
-                  this must only ever render for an assigned action — showing
-                  it here would misleadingly read as "awaiting someone" when
-                  nothing is. */}
-              {action.assigneeId && action.acceptance !== "accepted" && (
-                <Badge variant="outline" className="text-xs">
-                  {action.acceptance}
-                </Badge>
+                )}
+              </div>
+              {isUnassigned && !isDone && (
+                <p className="text-muted-foreground text-xs">
+                  Delegate records a new, assigned action for this item — once
+                  that's recorded, mark this placeholder done.
+                </p>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {/* Actions stay editable even on an adopted meeting — accepting and
           completing delegated actions is the work adoption sets in motion,
@@ -888,6 +927,7 @@ function ActionsSection({
           m={m}
           users={users}
           initialMinuteItemId={prefill?.minuteItemId}
+          initialDescription={prefill?.description}
         />
       </div>
     </div>
@@ -899,6 +939,7 @@ function AddActionForm({
   m,
   users,
   initialMinuteItemId,
+  initialDescription,
 }: {
   meeting: MeetingDetail;
   m: Mutations;
@@ -909,8 +950,14 @@ function AddActionForm({
    * only needs to seed initial state, not react to later prop updates.
    */
   initialMinuteItemId?: string;
+  /**
+   * Also seeded from Delegate, so the imported text doesn't have to be
+   * retyped verbatim — submit is disabled while `description` is empty, so
+   * without this the user's first step would always be typing it back in.
+   */
+  initialDescription?: string;
 }) {
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(initialDescription ?? "");
   const [minuteItemId, setMinuteItemId] = useState(initialMinuteItemId ?? "");
   const [assigneeId, setAssigneeId] = useState("");
   const [dueAt, setDueAt] = useState<Date | null>(null);

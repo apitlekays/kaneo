@@ -29,6 +29,7 @@ const mutations = vi.hoisted(() => ({
   addMinuteItem: { mutate: vi.fn(), isPending: false },
   updateMinuteItem: { mutate: vi.fn(), isPending: false },
   addAction: { mutate: vi.fn(), isPending: false },
+  completeAction: { mutate: vi.fn(), isPending: false },
   adopt: { mutate: vi.fn(), isPending: false },
   create: { mutate: vi.fn(), isPending: false },
   update: { mutate: vi.fn(), isPending: false },
@@ -407,6 +408,73 @@ describe("MeetingDetailDialog", () => {
     // specific unassigned action: pre-filled with its minute item.
     const matches = screen.getAllByText("Approve the annual budget");
     expect(matches.some((el) => el.closest('[role="combobox"]'))).toBe(true);
+
+    // ...and its description, so the imported text doesn't have to be
+    // retyped verbatim (the form's submit is disabled while empty).
+    expect(screen.getByPlaceholderText(/what needs to be done/i)).toHaveValue(
+      "Circulate the approved budget",
+    );
+  });
+
+  it("4c. Mark done calls completeAction with the action's id, and disappears once an action is already done", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({
+      actions: [
+        {
+          id: "action-1",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: "user-2",
+          fromUserId: "user-1",
+          description: "Circulate the approved budget",
+          dueAt: null,
+          acceptance: "accepted",
+          rejectionReason: null,
+          status: "open",
+          completedAt: null,
+          completedBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "action-2",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: "user-2",
+          fromUserId: "user-1",
+          description: "Already finished action",
+          dueAt: null,
+          acceptance: "accepted",
+          rejectionReason: null,
+          status: "done",
+          completedAt: "2026-01-02T00:00:00.000Z",
+          completedBy: "user-2",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    renderDialog(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await openTab(user, "Actions");
+
+    // Before this fix there was no control anywhere in the web app that
+    // could ever call the (already-existing, integration-tested) complete
+    // route, so an open action — delegated or not — could never be closed
+    // out from the UI.
+    const markDoneButtons = screen.getAllByRole("button", {
+      name: /mark done/i,
+    });
+    expect(markDoneButtons).toHaveLength(1);
+
+    await user.click(markDoneButtons[0]);
+
+    expect(mutations.completeAction.mutate).toHaveBeenCalledWith("action-1");
   });
 
   it("5. an adopted meeting offers no attendee or minute-item editing controls, while a draft one does", async () => {

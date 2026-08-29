@@ -95,4 +95,30 @@ describe("importMinuteItems", () => {
 
     expect(message).toBe("Row 2: topic is required");
   });
+
+  it("attaches the full row-error list to the thrown Error, not just the first", async () => {
+    // The one-line `.message` collapses to the first issue (for a toast),
+    // but a caller that wants to show every bad row — the import preview
+    // does — needs the whole array, not just what the summary can carry.
+    stubFetch(
+      new Response(
+        JSON.stringify({
+          errors: [
+            { row: 4, message: "topic is required" },
+            { row: 7, message: 'numbering "1.1" is already used on row 3' },
+          ],
+        }),
+        { status: 400 },
+      ),
+    );
+
+    const error = (await importMinuteItems("ws-1", "meeting-1", []).catch(
+      (e) => e,
+    )) as Error & { rowErrors?: Array<{ row: number; message: string }> };
+
+    expect(error.rowErrors).toEqual([
+      { row: 4, message: "topic is required" },
+      { row: 7, message: 'numbering "1.1" is already used on row 3' },
+    ]);
+  });
 });

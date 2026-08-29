@@ -13,6 +13,7 @@ import {
 import {
   importMinuteItems,
   type MinuteItemImportRow,
+  type MinuteItemImportRowError,
 } from "@/fetchers/meeting";
 import { downloadText, parseCsv, toCsv } from "@/lib/csv";
 import { toast } from "@/lib/toast";
@@ -42,6 +43,32 @@ function isActionMarker(value: string | undefined): boolean {
   return value?.trim() === "/";
 }
 
+/**
+ * `parseCsv` (untouched, in @/lib/csv.ts) intentionally drops an all-blank
+ * line before slicing off the header — routine in a spreadsheet export as a
+ * separator or trailing `,,,,` line — while the server numbers a 400's
+ * errors as (surviving) array index + 2. Rendering `Row {index + 2}` on
+ * every previewed row, rather than trusting the file's own line numbers,
+ * keeps the preview and any later error list numbered the same way, even
+ * where both diverge from what Excel would call that line.
+ */
+function previewRowNumber(index: number): number {
+  return index + 2;
+}
+
+function extractRowErrors(error: unknown): MinuteItemImportRowError[] | null {
+  if (
+    error &&
+    typeof error === "object" &&
+    "rowErrors" in error &&
+    Array.isArray((error as { rowErrors?: unknown }).rowErrors)
+  ) {
+    const rowErrors = (error as { rowErrors: unknown[] }).rowErrors;
+    if (rowErrors.length > 0) return rowErrors as MinuteItemImportRowError[];
+  }
+  return null;
+}
+
 export function MinuteItemImport({
   workspaceId,
   meetingId,
@@ -56,6 +83,18 @@ export function MinuteItemImport({
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<MinuteItemImportRow[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // The one-line `errorMessage` (used for the toast) collapses a 400 to its
+  // first issue; when the server attached the full list (see
+  // fetchers/meeting/index.ts's `.rowErrors`), render every row's problem
+  // here instead of forcing an upload-fix-upload cycle per row.
+  const [errorRows, setErrorRows] = useState<MinuteItemImportRowError[] | null>(
+    null,
+  );
+
+  const resetError = () => {
+    setErrorMessage(null);
+    setErrorRows(null);
+  };
 
   const downloadTemplate = () => {
     downloadText(
@@ -83,37 +122,51 @@ export function MinuteItemImport({
       );
       setOpen(false);
       setRows([]);
-      setErrorMessage(null);
+      resetError();
       onImported?.();
     },
     // The import is all-or-nothing — unlike asset-registry's import, there
     // is no "N imported, M failed" outcome. On a 400, nothing was written,
-    // so keep the preview open with the row-numbered message visible rather
-    // than closing as if something had landed.
+    // so keep the preview open with the row-numbered message(s) visible
+    // rather than closing as if something had landed.
     onError: (e) => {
       const message = e instanceof Error ? e.message : "Import failed";
       setErrorMessage(message);
+      setErrorRows(extractRowErrors(e));
       toast.error(message);
     },
   });
 
   const onFile = async (file: File) => {
-    const parsed = parseCsv(await file.text());
-    const mapped: MinuteItemImportRow[] = parsed.map((r) => {
-      const lc: Record<string, string> = {};
-      for (const k of Object.keys(r)) lc[k.toLowerCase()] = r[k];
-      const g = (k: string) => lc[k] || undefined;
-      return {
-        numbering: g("numbering"),
-        topic: g("topic"),
-        details: g("details"),
-        status: g("status"),
-        action: g("action"),
-      };
-    });
-    setRows(mapped);
-    setErrorMessage(null);
-    setOpen(true);
+    // Caught here, not left as a floating rejection at the call site: a
+    // `file.text()` failure (unreadable/corrupt file, permission denial)
+    // must surface the same way a 400 does — inline, in the dialog — rather
+    // than as an unhandled promise rejection with nothing visible on screen.
+    try {
+      const parsed = parseCsv(await file.text());
+      const mapped: MinuteItemImportRow[] = parsed.map((r) => {
+        const lc: Record<string, string> = {};
+        for (const k of Object.keys(r)) lc[k.toLowerCase()] = r[k];
+        const g = (k: string) => lc[k] || undefined;
+        return {
+          numbering: g("numbering"),
+          topic: g("topic"),
+          details: g("details"),
+          status: g("status"),
+          action: g("action"),
+        };
+      });
+      setRows(mapped);
+      resetError();
+      setOpen(true);
+    } catch (err) {
+      setRows([]);
+      setErrorMessage(
+        err instanceof Error ? err.message : "Couldn't read that file",
+      );
+      setErrorRows(null);
+      setOpen(true);
+    }
   };
 
   return (
@@ -128,6 +181,9 @@ export function MinuteItemImport({
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
+          // onFile catches its own rejections internally (see its own
+          // comment) and always resolves, so there's nothing left to
+          // attach a `.catch` to here.
           if (f) onFile(f);
           if (inputRef.current) inputRef.current.value = "";
         }}
@@ -144,7 +200,7 @@ export function MinuteItemImport({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) setErrorMessage(null);
+          if (!next) resetError();
         }}
       >
         <DialogContent className="max-w-lg">
@@ -154,33 +210,45 @@ export function MinuteItemImport({
           <div className="max-h-80 space-y-2 overflow-y-auto px-6 pb-2">
             <p className="text-muted-foreground text-sm">
               {rows.length} row{rows.length === 1 ? "" : "s"} ready. This import
-              is all-or-nothing — if any row fails, nothing is created.
+              is all-or-nothing — if any row fails, nothing is created. Blank
+              lines are ignored; the row numbers below refer only to the rows
+              listed here.
             </p>
-            {errorMessage && (
-              <p
+            {(errorRows || errorMessage) && (
+              <div
                 role="alert"
-                className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-destructive text-sm"
+                className="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-destructive text-sm"
               >
-                {errorMessage}
-              </p>
+                {errorRows ? (
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {errorRows.map((rowError) => (
+                      <li key={rowError.row}>
+                        Row {rowError.row}: {rowError.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>{errorMessage}</p>
+                )}
+              </div>
             )}
             <div className="space-y-1.5">
-              {rows.map((row) => (
+              {rows.map((row, index) => (
                 <div
                   // Rows have no stable id before import (that's assigned on
                   // creation), so the key is the row's own content rather
                   // than its array position — this is a static preview
                   // rendered once per file selection, never reordered.
                   key={`${row.numbering ?? ""}-${row.topic ?? ""}-${row.details ?? ""}-${row.status ?? ""}-${row.action ?? ""}`}
+                  data-testid="minute-item-import-row"
                   className="flex items-start justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-sm"
                 >
                   <div className="min-w-0">
                     <div className="truncate font-medium">
-                      {row.numbering && (
-                        <span className="text-muted-foreground">
-                          {row.numbering}{" "}
-                        </span>
-                      )}
+                      <span className="text-muted-foreground">
+                        Row {previewRowNumber(index)}
+                        {row.numbering ? ` · ${row.numbering}` : ""}{" "}
+                      </span>
                       {row.topic || (
                         <span className="text-destructive">Missing topic</span>
                       )}

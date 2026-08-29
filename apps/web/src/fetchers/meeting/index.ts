@@ -1,57 +1,77 @@
 import { getApiUrl } from "@/fetchers/get-api-url";
 
+/** A single spreadsheet row's validation problem, as `POST
+ * /:id/minute-items/import`'s 400 body carries it: `{ errors: [{ row,
+ * message }] }`, already sorted by row (the row being the spreadsheet's,
+ * not the array's — row 1 is the header, so the first data row is 2). */
+export type MinuteItemImportRowError = { row: number; message: string };
+
+/** An Error thrown for a failed import 400 additionally carries every row's
+ * problem, not just the first — `formatErrorMessage`'s one-line summary
+ * stays the throw's `.message` (for a toast), but a caller that wants to
+ * show the whole list (this route's importer does) can read `.rowErrors`. */
+export type MeetingFetchError = Error & {
+  rowErrors?: MinuteItemImportRowError[];
+};
+
 /**
- * Reduce a failed response's body to one short, human-readable line.
+ * Reduce a failed response's body to one short, human-readable line, and —
+ * when the body is `POST /:id/minute-items/import`'s row-error shape —
+ * also surface the full row list for a caller that wants more than the
+ * first.
  *
- * Two shapes reach here: a hand-thrown `HTTPException(400, { message })`
- * (e.g. "Title required"), whose body is that plain string, and a Valibot
+ * Three shapes reach here: a hand-thrown `HTTPException(400, { message })`
+ * (e.g. "Title required"), whose body is that plain string; a Valibot
  * `validator("json"/"query", …)` middleware rejection — hit *before* the
  * route handler runs — whose body is a JSON blob like
  * `{"data":{...},"error":[{...}],"success":false}`, the entire issue tree
- * serialized. Fed straight into a toast (every mutation's `onError` in
+ * serialized; and the import route's `{ errors: [{ row, message }] }`. Fed
+ * straight into a toast (every mutation's `onError` in
  * `use-meeting-mutations.ts` does exactly that with `error.message`), the
  * second shape is an unreadable wall of JSON. This is the one seam every
  * caller goes through, so fixing it here fixes it for all of them at once
  * rather than each `onError` re-parsing the body itself.
  *
- * Not reachable from today's UI (it always sends well-typed payloads), but
- * a latent trap for the next field added to a form or any other caller.
+ * The Valibot shape is not reachable from today's UI (it always sends
+ * well-typed payloads), but is a latent trap for the next field added to a
+ * form or any other caller.
  */
-async function formatErrorMessage(response: Response): Promise<string> {
+async function parseErrorBody(
+  response: Response,
+): Promise<{ message: string; rowErrors?: MinuteItemImportRowError[] }> {
   const text = await response.text();
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return text.trim() || `Request failed (${response.status})`;
+    return { message: text.trim() || `Request failed (${response.status})` };
   }
 
   if (parsed && typeof parsed === "object") {
     const body = parsed as Record<string, unknown>;
     if (typeof body.message === "string" && body.message.trim()) {
-      return body.message;
+      return { message: body.message };
     }
-    // `POST /:id/minute-items/import`'s 400 shape: `{ errors: [{ row,
-    // message }] }`, already sorted by row (the row being the spreadsheet's,
-    // not the array's — row 1 is the header). Render the first issue with
-    // its row number, since that's what makes it actionable in Excel, and
-    // note how many more there were rather than drowning the toast in every
-    // row's message.
     if (Array.isArray(body.errors) && body.errors.length > 0) {
-      const [firstError, ...rest] = body.errors;
-      if (
-        firstError &&
-        typeof firstError === "object" &&
-        typeof (firstError as Record<string, unknown>).row === "number" &&
-        typeof (firstError as Record<string, unknown>).message === "string"
-      ) {
-        const { row, message } = firstError as {
-          row: number;
-          message: string;
+      const rowErrors = body.errors.filter(
+        (e): e is MinuteItemImportRowError =>
+          Boolean(e) &&
+          typeof e === "object" &&
+          typeof (e as Record<string, unknown>).row === "number" &&
+          typeof (e as Record<string, unknown>).message === "string",
+      );
+      if (rowErrors.length > 0) {
+        // Render the first issue with its row number, since that's what
+        // makes it actionable in Excel, and note how many more there were
+        // rather than drowning a toast in every row's message — the full
+        // list still travels on `.rowErrors` for a caller that wants it.
+        const [first, ...rest] = rowErrors;
+        return {
+          message: `Row ${first.row}: ${first.message}${
+            rest.length > 0 ? ` (and ${rest.length} more)` : ""
+          }`,
+          rowErrors,
         };
-        return `Row ${row}: ${message}${
-          rest.length > 0 ? ` (and ${rest.length} more)` : ""
-        }`;
       }
     }
     if (Array.isArray(body.error) && body.error.length > 0) {
@@ -61,16 +81,21 @@ async function formatErrorMessage(response: Response): Promise<string> {
         typeof firstIssue === "object" &&
         typeof (firstIssue as Record<string, unknown>).message === "string"
       ) {
-        return (firstIssue as { message: string }).message;
+        return { message: (firstIssue as { message: string }).message };
       }
     }
   }
 
-  return `Request failed (${response.status})`;
+  return { message: `Request failed (${response.status})` };
 }
 
 async function jsonOrThrow<T>(response: Response): Promise<T> {
-  if (!response.ok) throw new Error(await formatErrorMessage(response));
+  if (!response.ok) {
+    const { message, rowErrors } = await parseErrorBody(response);
+    throw rowErrors
+      ? Object.assign(new Error(message), { rowErrors })
+      : new Error(message);
+  }
   return response.json();
 }
 const jsonHeaders = { "Content-Type": "application/json" };
@@ -304,6 +329,18 @@ export const addAction = (
   id: string,
   body: AddActionInput,
 ) => post<MeetingAction>(`${id}/actions`, workspaceId, body);
+
+/**
+ * The API's `POST /:id/actions/:actionId/complete` route has existed since
+ * before this bulk-import feature and is integration-tested, but had no web
+ * caller at all — an imported action with no assignee had no way to ever be
+ * marked done from the UI, making its "needs delegating" state permanent.
+ */
+export const completeMeetingAction = (
+  workspaceId: string,
+  id: string,
+  actionId: string,
+) => post<MeetingAction>(`${id}/actions/${actionId}/complete`, workspaceId, {});
 
 export type MinuteItemImportRow = {
   numbering?: string;
