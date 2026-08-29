@@ -31,6 +31,29 @@ async function formatErrorMessage(response: Response): Promise<string> {
     if (typeof body.message === "string" && body.message.trim()) {
       return body.message;
     }
+    // `POST /:id/minute-items/import`'s 400 shape: `{ errors: [{ row,
+    // message }] }`, already sorted by row (the row being the spreadsheet's,
+    // not the array's — row 1 is the header). Render the first issue with
+    // its row number, since that's what makes it actionable in Excel, and
+    // note how many more there were rather than drowning the toast in every
+    // row's message.
+    if (Array.isArray(body.errors) && body.errors.length > 0) {
+      const [firstError, ...rest] = body.errors;
+      if (
+        firstError &&
+        typeof firstError === "object" &&
+        typeof (firstError as Record<string, unknown>).row === "number" &&
+        typeof (firstError as Record<string, unknown>).message === "string"
+      ) {
+        const { row, message } = firstError as {
+          row: number;
+          message: string;
+        };
+        return `Row ${row}: ${message}${
+          rest.length > 0 ? ` (and ${rest.length} more)` : ""
+        }`;
+      }
+    }
     if (Array.isArray(body.error) && body.error.length > 0) {
       const [firstIssue] = body.error;
       if (
@@ -281,3 +304,25 @@ export const addAction = (
   id: string,
   body: AddActionInput,
 ) => post<MeetingAction>(`${id}/actions`, workspaceId, body);
+
+export type MinuteItemImportRow = {
+  numbering?: string;
+  topic?: string;
+  details?: string;
+  status?: string;
+  action?: string;
+};
+
+export type MinuteItemImportResult = {
+  itemsCreated: number;
+  actionsCreated: number;
+};
+
+export const importMinuteItems = (
+  workspaceId: string,
+  id: string,
+  rows: MinuteItemImportRow[],
+) =>
+  post<MinuteItemImportResult>(`${id}/minute-items/import`, workspaceId, {
+    rows,
+  });
