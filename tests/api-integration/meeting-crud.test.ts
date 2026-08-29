@@ -81,7 +81,12 @@ function updateMeeting(
 function addMinuteItem(
   app: App,
   meetingId: string,
-  body: { workspaceId: string; topic: string },
+  body: {
+    workspaceId: string;
+    topic: string;
+    numbering?: string;
+    status?: string;
+  },
 ) {
   return app.request(`/api/meeting/${meetingId}/minute-items`, {
     method: "POST",
@@ -94,7 +99,13 @@ function updateMinuteItem(
   app: App,
   meetingId: string,
   itemId: string,
-  body: { workspaceId: string; topic?: string; decision?: string },
+  body: {
+    workspaceId: string;
+    topic?: string;
+    numbering?: string;
+    status?: string;
+    decision?: string;
+  },
 ) {
   return app.request(`/api/meeting/${meetingId}/minute-items/${itemId}`, {
     method: "PUT",
@@ -507,7 +518,7 @@ describe("API integration: meeting CRUD", () => {
 
     const minuteItemRes = await addMinuteItem(app, meeting.id, {
       workspaceId: admin.workspace.id,
-      topic: "Original agenda text",
+      topic: "Original minute item text",
     });
     const minuteItem = await minuteItemRes.json();
 
@@ -533,7 +544,7 @@ describe("API integration: meeting CRUD", () => {
       .select()
       .from(schema.meetingMinuteItemTable)
       .where(eq(schema.meetingMinuteItemTable.id, minuteItem.id));
-    expect(row.topic).toBe("Original agenda text");
+    expect(row.topic).toBe("Original minute item text");
   });
 
   it("8. adopting with a meeting id from another workspace is refused (400)", async () => {
@@ -881,5 +892,46 @@ describe("API integration: meeting CRUD", () => {
       topic: "New item after adoption",
     });
     expect(minuteItemAttempt.status).toBe(409);
+  });
+
+  it("16. a minute item's numbering and status survive creation, and can be updated", async () => {
+    const admin = await createWorkspaceMember({ role: "owner" });
+    mockAuthenticatedSession(admin.user);
+    const { app } = createApp();
+
+    const created = await createMeeting(app, {
+      workspaceId: admin.workspace.id,
+      title: "Numbering And Status Meeting",
+    });
+    const meeting = await created.json();
+
+    const minuteItemRes = await addMinuteItem(app, meeting.id, {
+      workspaceId: admin.workspace.id,
+      topic: "Approve the annual budget",
+      numbering: "2.1.4",
+      status: "Dalam tindakan",
+    });
+    expect(minuteItemRes.status).toBe(201);
+    const minuteItem = await minuteItemRes.json();
+    expect(minuteItem.numbering).toBe("2.1.4");
+    expect(minuteItem.status).toBe("Dalam tindakan");
+
+    const detail = await getMeeting(app, meeting.id, admin.workspace.id);
+    const detailBody = await detail.json();
+    expect(detailBody.minuteItems[0].numbering).toBe("2.1.4");
+    expect(detailBody.minuteItems[0].status).toBe("Dalam tindakan");
+
+    const updated = await updateMinuteItem(app, meeting.id, minuteItem.id, {
+      workspaceId: admin.workspace.id,
+      status: "Selesai",
+    });
+    expect(updated.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(schema.meetingMinuteItemTable)
+      .where(eq(schema.meetingMinuteItemTable.id, minuteItem.id));
+    expect(row.numbering).toBe("2.1.4");
+    expect(row.status).toBe("Selesai");
   });
 });

@@ -626,7 +626,7 @@ function MinuteItemRow({
     return (
       <div className="space-y-1 rounded-md border border-border px-3 py-2 text-sm">
         <div className="flex items-start justify-between gap-2">
-          <div className="font-medium">
+          <div className="min-w-0 flex-1 font-medium">
             {item.numbering && (
               <span className="text-muted-foreground">{item.numbering} </span>
             )}
@@ -644,6 +644,14 @@ function MinuteItemRow({
             </Button>
           )}
         </div>
+        {item.status && (
+          <Badge
+            variant="outline"
+            className="max-w-full whitespace-normal break-words text-left"
+          >
+            {item.status}
+          </Badge>
+        )}
         {item.discussion && (
           <p className="whitespace-pre-wrap text-muted-foreground text-xs">
             {item.discussion}

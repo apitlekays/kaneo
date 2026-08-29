@@ -249,6 +249,38 @@ describe("MeetingDetailDialog", () => {
     );
   });
 
+  it("3b. a minute item's numbering and status render on its row", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({
+      minuteItems: [
+        {
+          id: "item-1",
+          meetingId: "meeting-1",
+          position: 0,
+          numbering: "2.1.4",
+          topic: "Approve the annual budget",
+          discussion: null,
+          status: "Dalam tindakan",
+          decision: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    render(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await openTab(user, "Minute Items");
+
+    expect(screen.getByText("2.1.4")).toBeVisible();
+    expect(screen.getByText("Dalam tindakan")).toBeVisible();
+  });
+
   it("4. creating an action calls addAction with its description and assignee", async () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting();
