@@ -429,6 +429,31 @@ describe("API integration: bulk-import minute items", () => {
     expect(items).toHaveLength(0);
   });
 
+  it("8. more than the 500-row cap is rejected with a clear message, not a timeout, and writes nothing", async () => {
+    const { owner, app, meeting } = await seedMeeting();
+
+    const rows = Array.from({ length: 501 }, (_, i) => ({
+      numbering: String(i + 1),
+      topic: `Item ${i + 1}`,
+    }));
+
+    const res = await importItems(app, meeting.id, {
+      workspaceId: owner.workspace.id,
+      rows,
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(
+      body.error.some((issue: { message: string }) =>
+        issue.message.includes("At most 500 rows"),
+      ),
+    ).toBe(true);
+
+    const items = await itemsFor(meeting.id);
+    expect(items).toHaveLength(0);
+  });
+
   it("7. a caller without General Management access gets 403", async () => {
     const { owner, meeting } = await seedMeeting();
 

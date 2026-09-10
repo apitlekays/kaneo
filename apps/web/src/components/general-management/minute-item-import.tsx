@@ -236,10 +236,16 @@ export function MinuteItemImport({
               {rows.map((row, index) => (
                 <div
                   // Rows have no stable id before import (that's assigned on
-                  // creation), so the key is the row's own content rather
-                  // than its array position — this is a static preview
-                  // rendered once per file selection, never reordered.
-                  key={`${row.numbering ?? ""}-${row.topic ?? ""}-${row.details ?? ""}-${row.status ?? ""}-${row.action ?? ""}`}
+                  // creation), and two byte-identical rows (e.g. two
+                  // blank-numbered rows with the same topic — the validator
+                  // explicitly accepts this) would collide on a
+                  // content-derived key. This is a static preview rendered
+                  // once per file selection, never reordered, so the index
+                  // is safe here.
+                  key={`minute-item-import-row-${
+                    // biome-ignore lint/suspicious/noArrayIndexKey: static preview list, never reordered
+                    index
+                  }`}
                   data-testid="minute-item-import-row"
                   className="flex items-start justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-sm"
                 >

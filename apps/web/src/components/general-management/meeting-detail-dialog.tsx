@@ -831,6 +831,12 @@ function ActionsSection({
         {meeting.actions.map((action) => {
           const isUnassigned = !action.assigneeId;
           const isDone = action.status === "done";
+          // The complete route 409s on anything that isn't an open,
+          // accepted action (still-pending acceptance, a rejected/cancelled
+          // action) — offering the control before that just invites the
+          // error, so it must not render until it can actually succeed.
+          const canComplete =
+            action.status === "open" && action.acceptance === "accepted";
           return (
             <div
               key={action.id}
@@ -894,7 +900,7 @@ function ActionsSection({
                     web callers. Without this, a delegated unassigned action
                     is a permanent card: Delegate mints a new one every click
                     and nothing ever closes the original out. */}
-                {!isDone && (
+                {canComplete && (
                   <Button
                     size="sm"
                     variant="outline"

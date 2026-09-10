@@ -1039,14 +1039,21 @@ app.post(
     "json",
     v.object({
       workspaceId: v.string(),
-      rows: v.array(
-        v.object({
-          numbering: optStr,
-          topic: optStr,
-          details: optStr,
-          status: optStr,
-          action: optStr,
-        }),
+      // Capped well above any real minutes file — a meeting with more than a
+      // few hundred numbered items does not happen — so a few thousand
+      // pasted rows are rejected up front instead of holding the import
+      // transaction open for thousands of sequential single-row INSERTs.
+      rows: v.pipe(
+        v.array(
+          v.object({
+            numbering: optStr,
+            topic: optStr,
+            details: optStr,
+            status: optStr,
+            action: optStr,
+          }),
+        ),
+        v.maxLength(500, "At most 500 rows may be imported at once"),
       ),
     }),
   ),

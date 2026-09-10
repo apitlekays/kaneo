@@ -74,8 +74,8 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
         <div>
           <h2 className="font-semibold text-lg">Meeting Minutes</h2>
           <p className="text-muted-foreground text-sm">
-            Agendas, attendance, decisions and follow-up actions for
-            organisation meetings.
+            Topics, attendance, decisions and follow-up actions for organisation
+            meetings.
           </p>
         </div>
         <Button size="sm" onClick={() => setCreating(true)}>

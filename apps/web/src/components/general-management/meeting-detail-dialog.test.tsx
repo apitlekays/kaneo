@@ -477,6 +477,58 @@ describe("MeetingDetailDialog", () => {
     expect(mutations.completeAction.mutate).toHaveBeenCalledWith("action-1");
   });
 
+  it("4d. Mark done is not offered for a still-pending action or a cancelled one — the complete route 409s on both", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({
+      actions: [
+        {
+          id: "action-pending",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: "user-2",
+          fromUserId: "user-1",
+          description: "Not yet accepted by its assignee",
+          dueAt: null,
+          acceptance: "pending",
+          rejectionReason: null,
+          status: "open",
+          completedAt: null,
+          completedBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "action-cancelled",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: "user-2",
+          fromUserId: "user-1",
+          description: "Cancelled before it was ever done",
+          dueAt: null,
+          acceptance: "accepted",
+          rejectionReason: null,
+          status: "cancelled",
+          completedAt: null,
+          completedBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    renderDialog(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await openTab(user, "Actions");
+
+    expect(
+      screen.queryByRole("button", { name: /mark done/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("5. an adopted meeting offers no attendee or minute-item editing controls, while a draft one does", async () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting({
