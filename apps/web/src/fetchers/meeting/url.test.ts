@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { addAttendee, createMeeting, listMeetings } from "./index";
+import {
+  addAttendee,
+  completeMeetingAction,
+  createMeeting,
+  listMeetings,
+} from "./index";
 
 /**
  * Guards the URLs these fetchers actually request.
@@ -52,5 +57,13 @@ describe("meeting fetcher URLs", () => {
     const spy = stubFetch();
     await addAttendee("ws-1", "m-1", { name: "External auditor" });
     expect(requestedPath(spy)).toBe("/api/meeting/m-1/attendees");
+  });
+
+  it("completes an action against its own nested route", async () => {
+    const spy = stubFetch();
+    await completeMeetingAction("ws-1", "m-1", "action-1");
+    expect(requestedPath(spy)).toBe(
+      "/api/meeting/m-1/actions/action-1/complete",
+    );
   });
 });

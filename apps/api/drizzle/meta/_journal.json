@@ -428,6 +428,13 @@
       "when": 1787712692811,
       "tag": "0060_faithful_gressill",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1787968700801,
+      "tag": "0061_clumsy_sphinx",
+      "breakpoints": true
     }
   ]
 }

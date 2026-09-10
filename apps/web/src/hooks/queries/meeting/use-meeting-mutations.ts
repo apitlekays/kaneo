@@ -89,5 +89,14 @@ export function useMeetingMutations(workspaceId: string, meetingId?: string) {
       },
       onError,
     }),
+    completeAction: useMutation({
+      mutationFn: (actionId: string) =>
+        api.completeMeetingAction(workspaceId, id, actionId),
+      onSuccess: () => {
+        invalidate();
+        toast.success("Action marked done");
+      },
+      onError,
+    }),
   };
 }

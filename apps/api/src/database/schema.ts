@@ -2685,7 +2685,17 @@ export const meetingMinuteItemTable = pgTable(
       .notNull()
       .references(() => meetingTable.id, { onDelete: "cascade" }),
     position: integer("position").notNull().default(0),
-    agenda: text("agenda").notNull(),
+    // Renamed from `agenda` (see migration): every human says "topic", and
+    // this module has already spent real effort on naming precision.
+    topic: text("topic").notNull(),
+    // The minute's own numbering — "2.1.4", "3.2". Free text: numbering
+    // schemes vary by body and are not ours to validate. Nullable because
+    // items created through the single-item form have none.
+    numbering: text("numbering"),
+    // Free text, NOT an enum. These are Malay governance terms ("Selesai",
+    // "Dalam tindakan", "Makluman"); an enum would reject a legitimate
+    // minute. Nullable for the same reason as numbering.
+    status: text("status"),
     discussion: text("discussion"),
     decision: text("decision"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
@@ -2702,7 +2712,7 @@ export const meetingActionTable = pgTable(
     meetingId: text("meeting_id")
       .notNull()
       .references(() => meetingTable.id, { onDelete: "cascade" }),
-    // Null when the action arose outside any single agenda item.
+    // Null when the action arose outside any single minute item.
     minuteItemId: text("minute_item_id").references(
       () => meetingMinuteItemTable.id,
       { onDelete: "set null" },

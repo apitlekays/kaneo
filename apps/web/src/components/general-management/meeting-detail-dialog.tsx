@@ -7,8 +7,9 @@ import {
   Pencil,
   Trash2,
   Users,
+  UserX,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { DateField } from "@/components/assets/date-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type {
   AddAttendeeInput,
   Meeting,
+  MeetingAction,
   MeetingDetail,
   MeetingMinuteItem,
 } from "@/fetchers/meeting";
@@ -44,6 +46,7 @@ import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-
 import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
 import { onSelectValueChange } from "@/lib/select-value";
+import { MinuteItemImport } from "./minute-item-import";
 
 type Mutations = ReturnType<typeof useMeetingMutations>;
 type WorkspaceUser = { userId: string; user?: { name?: string } };
@@ -210,7 +213,11 @@ function Body({
           <AttendeesSection meeting={meeting} m={m} users={users} />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="minutes">
-          <MinuteItemsSection meeting={meeting} m={m} />
+          <MinuteItemsSection
+            workspaceId={workspaceId}
+            meeting={meeting}
+            m={m}
+          />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="actions">
           <ActionsSection meeting={meeting} m={m} users={users} />
@@ -330,7 +337,7 @@ function AdoptControl({
       <h4 className="font-medium text-sm">Adopt these Meeting Minutes</h4>
       <p className="text-muted-foreground text-xs">
         Record which later meeting confirmed and adopted this meeting's Meeting
-        Minutes. Once adopted, its attendees and agenda become read-only.
+        Minutes. Once adopted, its attendees and minute items become read-only.
       </p>
       <Input
         type="search"
@@ -572,9 +579,11 @@ function AddAttendeeForm({
 }
 
 function MinuteItemsSection({
+  workspaceId,
   meeting,
   m,
 }: {
+  workspaceId: string;
   meeting: MeetingDetail;
   m: Mutations;
 }) {
@@ -596,7 +605,12 @@ function MinuteItemsSection({
           />
         ))}
       </div>
-      {!isAdopted && <AddMinuteItemForm m={m} />}
+      {!isAdopted && (
+        <>
+          <MinuteItemImport workspaceId={workspaceId} meetingId={meeting.id} />
+          <AddMinuteItemForm m={m} />
+        </>
+      )}
     </div>
   );
 }
@@ -611,12 +625,12 @@ function MinuteItemRow({
   editable: boolean;
 }) {
   const [editing, setEditing] = useState(false);
-  const [agenda, setAgenda] = useState(item.agenda);
+  const [topic, setTopic] = useState(item.topic);
   const [discussion, setDiscussion] = useState(item.discussion ?? "");
   const [decision, setDecision] = useState(item.decision ?? "");
 
   const cancel = () => {
-    setAgenda(item.agenda);
+    setTopic(item.topic);
     setDiscussion(item.discussion ?? "");
     setDecision(item.decision ?? "");
     setEditing(false);
@@ -626,7 +640,12 @@ function MinuteItemRow({
     return (
       <div className="space-y-1 rounded-md border border-border px-3 py-2 text-sm">
         <div className="flex items-start justify-between gap-2">
-          <div className="font-medium">{item.agenda}</div>
+          <div className="min-w-0 flex-1 font-medium">
+            {item.numbering && (
+              <span className="text-muted-foreground">{item.numbering} </span>
+            )}
+            {item.topic}
+          </div>
           {editable && (
             <Button
               size="sm"
@@ -639,6 +658,14 @@ function MinuteItemRow({
             </Button>
           )}
         </div>
+        {item.status && (
+          <Badge
+            variant="outline"
+            className="h-auto max-w-full whitespace-normal break-words py-1 text-left sm:h-auto"
+          >
+            {item.status}
+          </Badge>
+        )}
         {item.discussion && (
           <p className="whitespace-pre-wrap text-muted-foreground text-xs">
             {item.discussion}
@@ -657,9 +684,9 @@ function MinuteItemRow({
   return (
     <div className="space-y-2 rounded-md border border-border px-3 py-2 text-sm">
       <Input
-        value={agenda}
-        placeholder="Agenda"
-        onChange={(e) => setAgenda(e.target.value)}
+        value={topic}
+        placeholder="Topic"
+        onChange={(e) => setTopic(e.target.value)}
       />
       <Textarea
         value={discussion}
@@ -677,13 +704,13 @@ function MinuteItemRow({
         </Button>
         <Button
           size="sm"
-          disabled={!agenda.trim() || m.updateMinuteItem.isPending}
+          disabled={!topic.trim() || m.updateMinuteItem.isPending}
           onClick={() =>
             m.updateMinuteItem.mutate(
               {
                 itemId: item.id,
                 body: {
-                  agenda: agenda.trim(),
+                  topic: topic.trim(),
                   discussion: discussion.trim() || undefined,
                   decision: decision.trim() || undefined,
                 },
@@ -700,12 +727,12 @@ function MinuteItemRow({
 }
 
 function AddMinuteItemForm({ m }: { m: Mutations }) {
-  const [agenda, setAgenda] = useState("");
+  const [topic, setTopic] = useState("");
   const [discussion, setDiscussion] = useState("");
   const [decision, setDecision] = useState("");
 
   const reset = () => {
-    setAgenda("");
+    setTopic("");
     setDiscussion("");
     setDecision("");
   };
@@ -713,7 +740,7 @@ function AddMinuteItemForm({ m }: { m: Mutations }) {
   const submit = () => {
     m.addMinuteItem.mutate(
       {
-        agenda: agenda.trim(),
+        topic: topic.trim(),
         discussion: discussion.trim() || undefined,
         decision: decision.trim() || undefined,
       },
@@ -723,11 +750,11 @@ function AddMinuteItemForm({ m }: { m: Mutations }) {
 
   return (
     <div className="space-y-3 rounded-xl border border-border p-4">
-      <h4 className="font-medium text-sm">Add agenda item</h4>
+      <h4 className="font-medium text-sm">Add minute item</h4>
       <Input
-        value={agenda}
-        placeholder="Agenda"
-        onChange={(e) => setAgenda(e.target.value)}
+        value={topic}
+        placeholder="Topic"
+        onChange={(e) => setTopic(e.target.value)}
       />
       <Textarea
         value={discussion}
@@ -741,7 +768,7 @@ function AddMinuteItemForm({ m }: { m: Mutations }) {
       />
       <Button
         size="sm"
-        disabled={!agenda.trim() || m.addMinuteItem.isPending}
+        disabled={!topic.trim() || m.addMinuteItem.isPending}
         onClick={submit}
       >
         {m.addMinuteItem.isPending && (
@@ -764,6 +791,34 @@ function ActionsSection({
 }) {
   const userName = (id: string | null) =>
     id ? (users.find((u) => u.userId === id)?.user?.name ?? id) : null;
+  // A bulk-imported action carries no assignee (the CSV has no assignee
+  // column) — it reaches nobody until someone delegates it. There is no
+  // route to set assigneeId on an existing action (see the server's
+  // comment in apps/api/src/meeting/index.ts), so "delegating" it means
+  // recording a new, assigned action against the same minute item (and with
+  // the same description, so it doesn't have to be retyped) via the form
+  // below. `prefill` pre-fills that form and remounts it (via `seq`) so its
+  // internal state actually picks the values up, then scrolls it into view —
+  // making the existing assign control reachable for this specific
+  // unassigned action rather than merely present somewhere on the page.
+  const [prefill, setPrefill] = useState<{
+    minuteItemId: string;
+    description: string;
+    seq: number;
+  } | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  const delegate = (action: MeetingAction) => {
+    setPrefill({
+      minuteItemId: action.minuteItemId ?? "",
+      description: action.description,
+      seq: Date.now(),
+    });
+    // Optional-called, not just optional-accessed: jsdom's HTMLElement has
+    // no scrollIntoView at all (unlike a real browser), so this would throw
+    // in every test that exercises Delegate otherwise.
+    formRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="space-y-4">
@@ -773,38 +828,114 @@ function ActionsSection({
             No follow-up actions recorded.
           </p>
         )}
-        {meeting.actions.map((action) => (
-          <div
-            key={action.id}
-            className="space-y-1.5 rounded-md border border-border px-3 py-2 text-sm"
-          >
-            <p>{action.description}</p>
-            <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
-              {action.assigneeId && (
-                <span>Assigned to {userName(action.assigneeId)}</span>
-              )}
-              {action.dueAt && (
-                <span>Due {formatDateMedium(action.dueAt)}</span>
-              )}
-              <Badge
-                variant={action.status === "done" ? "success" : "outline"}
-                className="text-xs"
-              >
-                {action.status}
-              </Badge>
-              {action.acceptance !== "accepted" && (
-                <Badge variant="outline" className="text-xs">
-                  {action.acceptance}
+        {meeting.actions.map((action) => {
+          const isUnassigned = !action.assigneeId;
+          const isDone = action.status === "done";
+          // The complete route 409s on anything that isn't an open,
+          // accepted action (still-pending acceptance, a rejected/cancelled
+          // action) — offering the control before that just invites the
+          // error, so it must not render until it can actually succeed.
+          const canComplete =
+            action.status === "open" && action.acceptance === "accepted";
+          return (
+            <div
+              key={action.id}
+              className="space-y-1.5 rounded-md border border-border px-3 py-2 text-sm"
+            >
+              {/* Clamped: an imported action's description can be
+                  `topic — details`, and `details` may be a whole paragraph —
+                  without a clamp that paragraph becomes the entire card. */}
+              <p className="line-clamp-3 whitespace-pre-wrap">
+                {action.description}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+                {action.assigneeId ? (
+                  <span>Assigned to {userName(action.assigneeId)}</span>
+                ) : (
+                  // Once done, there's nothing left needing delegation — the
+                  // marker and its Delegate button would be a stale prompt
+                  // for work that's already closed out.
+                  !isDone && (
+                    <>
+                      <Badge
+                        variant="warning"
+                        className="flex items-center gap-1 text-xs"
+                      >
+                        <UserX className="h-3 w-3" />
+                        Unassigned — needs delegating
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-1.5"
+                        onClick={() => delegate(action)}
+                      >
+                        Delegate
+                      </Button>
+                    </>
+                  )
+                )}
+                {action.dueAt && (
+                  <span>Due {formatDateMedium(action.dueAt)}</span>
+                )}
+                <Badge
+                  variant={isDone ? "success" : "outline"}
+                  className="text-xs"
+                >
+                  {action.status}
                 </Badge>
+                {/* An unassigned action is created with acceptance
+                    "accepted" by convention (there's no assignee to accept
+                    anything), so this must only ever render for an assigned
+                    action — showing it here would misleadingly read as
+                    "awaiting someone" when nothing is. */}
+                {action.assigneeId && action.acceptance !== "accepted" && (
+                  <Badge variant="outline" className="text-xs">
+                    {action.acceptance}
+                  </Badge>
+                )}
+                {/* There was previously no way at all, anywhere in the web
+                    app, to complete a meeting action — the API route has
+                    always existed and is integration-tested, but had zero
+                    web callers. Without this, a delegated unassigned action
+                    is a permanent card: Delegate mints a new one every click
+                    and nothing ever closes the original out. */}
+                {canComplete && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto h-6 px-1.5"
+                    disabled={m.completeAction.isPending}
+                    onClick={() => m.completeAction.mutate(action.id)}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Mark done
+                  </Button>
+                )}
+              </div>
+              {isUnassigned && !isDone && (
+                <p className="text-muted-foreground text-xs">
+                  Delegate records a new, assigned action for this item — once
+                  that's recorded, mark this placeholder done.
+                </p>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {/* Actions stay editable even on an adopted meeting — accepting and
           completing delegated actions is the work adoption sets in motion,
           so this form is never gated on meeting.status. */}
-      <AddActionForm meeting={meeting} m={m} users={users} />
+      <div ref={formRef}>
+        <AddActionForm
+          key={prefill?.seq ?? "default"}
+          meeting={meeting}
+          m={m}
+          users={users}
+          initialMinuteItemId={prefill?.minuteItemId}
+          initialDescription={prefill?.description}
+        />
+      </div>
     </div>
   );
 }
@@ -813,13 +944,27 @@ function AddActionForm({
   meeting,
   m,
   users,
+  initialMinuteItemId,
+  initialDescription,
 }: {
   meeting: MeetingDetail;
   m: Mutations;
   users: WorkspaceUser[];
+  /**
+   * Set when "Delegate" was clicked on an unassigned action — the parent
+   * remounts this form (via a changing `key`) whenever it changes, so this
+   * only needs to seed initial state, not react to later prop updates.
+   */
+  initialMinuteItemId?: string;
+  /**
+   * Also seeded from Delegate, so the imported text doesn't have to be
+   * retyped verbatim — submit is disabled while `description` is empty, so
+   * without this the user's first step would always be typing it back in.
+   */
+  initialDescription?: string;
 }) {
-  const [description, setDescription] = useState("");
-  const [minuteItemId, setMinuteItemId] = useState("");
+  const [description, setDescription] = useState(initialDescription ?? "");
+  const [minuteItemId, setMinuteItemId] = useState(initialMinuteItemId ?? "");
   const [assigneeId, setAssigneeId] = useState("");
   const [dueAt, setDueAt] = useState<Date | null>(null);
 
@@ -859,14 +1004,14 @@ function AddActionForm({
             <SelectValue>
               {minuteItemId
                 ? (meeting.minuteItems.find((i) => i.id === minuteItemId)
-                    ?.agenda ?? minuteItemId)
-                : "No agenda item (optional)"}
+                    ?.topic ?? minuteItemId)
+                : "No minute item (optional)"}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {meeting.minuteItems.map((item) => (
               <SelectItem key={item.id} value={item.id}>
-                {item.agenda}
+                {item.topic}
               </SelectItem>
             ))}
           </SelectContent>

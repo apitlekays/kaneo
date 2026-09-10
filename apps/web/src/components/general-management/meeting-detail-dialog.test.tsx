@@ -1,5 +1,7 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Meeting, MeetingDetail } from "@/fetchers/meeting";
 import { MeetingDetailDialog } from "./meeting-detail-dialog";
@@ -27,6 +29,7 @@ const mutations = vi.hoisted(() => ({
   addMinuteItem: { mutate: vi.fn(), isPending: false },
   updateMinuteItem: { mutate: vi.fn(), isPending: false },
   addAction: { mutate: vi.fn(), isPending: false },
+  completeAction: { mutate: vi.fn(), isPending: false },
   adopt: { mutate: vi.fn(), isPending: false },
   create: { mutate: vi.fn(), isPending: false },
   update: { mutate: vi.fn(), isPending: false },
@@ -94,8 +97,10 @@ function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
         id: "item-1",
         meetingId: "meeting-1",
         position: 0,
-        agenda: "Approve the annual budget",
+        numbering: null,
+        topic: "Approve the annual budget",
         discussion: null,
+        status: null,
         decision: null,
         createdAt: "2026-01-01T00:00:00.000Z",
       },
@@ -104,6 +109,19 @@ function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
     adoptedByMeeting: null,
     ...overrides,
   };
+}
+
+// MinuteItemImport (rendered inside the Minute Items tab) calls the real
+// useMutation/useQueryClient, unlike every other mutation here (mocked via
+// useMeetingMutations above) — so every render needs a real QueryClient in
+// context, the same pattern minute-thread.test.tsx uses for the same reason.
+function renderDialog(ui: ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+  );
 }
 
 async function openTab(user: ReturnType<typeof userEvent.setup>, name: string) {
@@ -148,7 +166,7 @@ describe("MeetingDetailDialog", () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting();
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -170,7 +188,7 @@ describe("MeetingDetailDialog", () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting();
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -193,7 +211,7 @@ describe("MeetingDetailDialog", () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting();
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -218,11 +236,11 @@ describe("MeetingDetailDialog", () => {
     expect(body).not.toHaveProperty("userId");
   });
 
-  it("3. adding a minute item calls addMinuteItem with the entered agenda text", async () => {
+  it("3. adding a minute item calls addMinuteItem with the entered topic text", async () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting({ minuteItems: [] });
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -232,14 +250,14 @@ describe("MeetingDetailDialog", () => {
 
     await openTab(user, "Minute Items");
     await user.type(
-      screen.getByPlaceholderText(/^agenda$/i),
+      screen.getByPlaceholderText(/^topic$/i),
       "Approve the annual budget",
     );
     await user.click(screen.getByRole("button", { name: /add item/i }));
 
     expect(mutations.addMinuteItem.mutate).toHaveBeenCalledWith(
       {
-        agenda: "Approve the annual budget",
+        topic: "Approve the annual budget",
         discussion: undefined,
         decision: undefined,
       },
@@ -247,11 +265,75 @@ describe("MeetingDetailDialog", () => {
     );
   });
 
+  it("3b. a minute item's numbering and status render on its row, and a long status grows instead of overlapping", async () => {
+    const user = userEvent.setup();
+    const longStatus =
+      "Dalam tindakan oleh Jawatankuasa Induk dan menunggu pengesahan";
+    state.meeting = makeMeeting({
+      minuteItems: [
+        {
+          id: "item-1",
+          meetingId: "meeting-1",
+          position: 0,
+          numbering: "2.1.4",
+          topic: "Approve the annual budget",
+          discussion: null,
+          status: "Dalam tindakan",
+          decision: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "item-2",
+          meetingId: "meeting-1",
+          position: 1,
+          numbering: null,
+          topic: "Review the vendor contract",
+          discussion: "Legal flagged clause 4.2 for redrafting.",
+          status: longStatus,
+          decision: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    renderDialog(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await openTab(user, "Minute Items");
+
+    expect(screen.getByText("2.1.4")).toBeVisible();
+    expect(screen.getByText("Dalam tindakan")).toBeVisible();
+
+    // The long status must actually be allowed to wrap and grow the badge —
+    // not just be present in the DOM. A `whitespace-nowrap`/fixed-height
+    // badge would still pass a bare getByText assertion while visually
+    // overlapping the discussion text rendered right below it.
+    const longStatusBadge = screen.getByText(longStatus);
+    expect(longStatusBadge).toBeVisible();
+    expect(longStatusBadge.className).toMatch(/\bwhitespace-normal\b/);
+    expect(longStatusBadge.className).not.toMatch(/\bwhitespace-nowrap\b/);
+    expect(longStatusBadge.className).toMatch(/\bh-auto\b/);
+
+    // The discussion text for that same item must still render as its own
+    // visible, distinct node — the failure mode this guards against is the
+    // wrapped status painting over exactly this element.
+    const discussion = screen.getByText(
+      "Legal flagged clause 4.2 for redrafting.",
+    );
+    expect(discussion).toBeVisible();
+    expect(discussion).not.toBe(longStatusBadge);
+  });
+
   it("4. creating an action calls addAction with its description and assignee", async () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting();
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -278,6 +360,175 @@ describe("MeetingDetailDialog", () => {
     );
   });
 
+  it("4b. an unassigned action is marked distinct, and Delegate pre-fills the same minute item into the existing assign control", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({
+      actions: [
+        {
+          id: "action-1",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: null,
+          fromUserId: "user-1",
+          description: "Circulate the approved budget",
+          dueAt: null,
+          // Imported actions are created with acceptance "accepted" even
+          // with no assignee (this module's convention for an unassigned
+          // action — see minute-item-import's server contract).
+          acceptance: "accepted",
+          rejectionReason: null,
+          status: "open",
+          completedAt: null,
+          completedBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    renderDialog(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await openTab(user, "Actions");
+
+    expect(screen.getByText(/unassigned.*needs delegating/i)).toBeVisible();
+    // acceptance is "accepted" here, not "pending" — rendering an
+    // "accepted" badge on top of that would misleadingly read as "awaiting
+    // someone" when nothing is.
+    expect(screen.queryByText(/^accepted$/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /delegate/i }));
+
+    // The existing assign control — the same "record a follow-up action"
+    // form used to create any action — must become reachable for this
+    // specific unassigned action: pre-filled with its minute item.
+    const matches = screen.getAllByText("Approve the annual budget");
+    expect(matches.some((el) => el.closest('[role="combobox"]'))).toBe(true);
+
+    // ...and its description, so the imported text doesn't have to be
+    // retyped verbatim (the form's submit is disabled while empty).
+    expect(screen.getByPlaceholderText(/what needs to be done/i)).toHaveValue(
+      "Circulate the approved budget",
+    );
+  });
+
+  it("4c. Mark done calls completeAction with the action's id, and disappears once an action is already done", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({
+      actions: [
+        {
+          id: "action-1",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: "user-2",
+          fromUserId: "user-1",
+          description: "Circulate the approved budget",
+          dueAt: null,
+          acceptance: "accepted",
+          rejectionReason: null,
+          status: "open",
+          completedAt: null,
+          completedBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "action-2",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: "user-2",
+          fromUserId: "user-1",
+          description: "Already finished action",
+          dueAt: null,
+          acceptance: "accepted",
+          rejectionReason: null,
+          status: "done",
+          completedAt: "2026-01-02T00:00:00.000Z",
+          completedBy: "user-2",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    renderDialog(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await openTab(user, "Actions");
+
+    // Before this fix there was no control anywhere in the web app that
+    // could ever call the (already-existing, integration-tested) complete
+    // route, so an open action — delegated or not — could never be closed
+    // out from the UI.
+    const markDoneButtons = screen.getAllByRole("button", {
+      name: /mark done/i,
+    });
+    expect(markDoneButtons).toHaveLength(1);
+
+    await user.click(markDoneButtons[0]);
+
+    expect(mutations.completeAction.mutate).toHaveBeenCalledWith("action-1");
+  });
+
+  it("4d. Mark done is not offered for a still-pending action or a cancelled one — the complete route 409s on both", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({
+      actions: [
+        {
+          id: "action-pending",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: "user-2",
+          fromUserId: "user-1",
+          description: "Not yet accepted by its assignee",
+          dueAt: null,
+          acceptance: "pending",
+          rejectionReason: null,
+          status: "open",
+          completedAt: null,
+          completedBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "action-cancelled",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: "user-2",
+          fromUserId: "user-1",
+          description: "Cancelled before it was ever done",
+          dueAt: null,
+          acceptance: "accepted",
+          rejectionReason: null,
+          status: "cancelled",
+          completedAt: null,
+          completedBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    renderDialog(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await openTab(user, "Actions");
+
+    expect(
+      screen.queryByRole("button", { name: /mark done/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("5. an adopted meeting offers no attendee or minute-item editing controls, while a draft one does", async () => {
     const user = userEvent.setup();
     state.meeting = makeMeeting({
@@ -295,7 +546,7 @@ describe("MeetingDetailDialog", () => {
       ],
     });
 
-    const { unmount } = render(
+    const { unmount } = renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -313,10 +564,18 @@ describe("MeetingDetailDialog", () => {
 
     await openTab(user, "Minute Items");
     expect(
-      screen.queryByRole("heading", { name: /add agenda item/i }),
+      screen.queryByRole("heading", { name: /add minute item/i }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /^edit$/i }),
+    ).not.toBeInTheDocument();
+    // The bulk-import UI is gated the same way as AddMinuteItemForm: an
+    // adopted meeting's minute items are read-only.
+    expect(
+      screen.queryByRole("button", { name: /download template/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /import meeting minutes items/i }),
     ).not.toBeInTheDocument();
 
     unmount();
@@ -336,7 +595,7 @@ describe("MeetingDetailDialog", () => {
       ],
     });
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -352,9 +611,15 @@ describe("MeetingDetailDialog", () => {
 
     await openTab(user, "Minute Items");
     expect(
-      screen.getByRole("heading", { name: /add agenda item/i }),
+      screen.getByRole("heading", { name: /add minute item/i }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /download template/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /import meeting minutes items/i }),
+    ).toBeVisible();
   });
 
   it("6. adopting calls the adopt mutation with the chosen adopting meeting's id", async () => {
@@ -395,7 +660,7 @@ describe("MeetingDetailDialog", () => {
       },
     ];
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -419,7 +684,7 @@ describe("MeetingDetailDialog", () => {
     state.meetingIsLoading = false;
     state.meetingIsError = true;
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -443,7 +708,7 @@ describe("MeetingDetailDialog", () => {
     state.meeting = null;
     state.meetingIsLoading = true;
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -459,7 +724,7 @@ describe("MeetingDetailDialog", () => {
     state.adoptCandidates = [];
     state.isMeetingsError = true;
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -483,7 +748,7 @@ describe("MeetingDetailDialog", () => {
       makeMeeting({ id: "other-1", title: "November committee meeting" }),
     ];
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -527,7 +792,7 @@ describe("MeetingDetailDialog", () => {
     ];
     state.adoptNextCursor = "cursor-token";
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -545,7 +810,7 @@ describe("MeetingDetailDialog", () => {
     ];
     state.adoptNextCursor = null;
 
-    render(
+    renderDialog(
       <MeetingDetailDialog
         workspaceId="ws-1"
         meetingId="meeting-1"

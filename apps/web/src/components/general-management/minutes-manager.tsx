@@ -74,8 +74,8 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
         <div>
           <h2 className="font-semibold text-lg">Meeting Minutes</h2>
           <p className="text-muted-foreground text-sm">
-            Agendas, attendance, decisions and follow-up actions for
-            organisation meetings.
+            Topics, attendance, decisions and follow-up actions for organisation
+            meetings.
           </p>
         </div>
         <Button size="sm" onClick={() => setCreating(true)}>
@@ -157,8 +157,8 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
           <div className="mx-auto max-w-md space-y-2 py-12 text-center">
             <h3 className="font-medium text-sm">No Meeting Minutes yet</h3>
             <p className="text-muted-foreground text-sm">
-              Create a meeting to start recording its agenda, attendance and
-              decisions.
+              Create a meeting to start recording its minute items, attendance
+              and decisions.
             </p>
           </div>
         )
