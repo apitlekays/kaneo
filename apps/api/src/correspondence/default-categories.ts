@@ -1,10 +1,5 @@
-import type db from "../database";
 import { gmCategoryTable } from "../database/schema";
-import { recordAuditEvent } from "./audit";
-
-// The root db and a transaction share these methods. Matches audit.ts's
-// (unexported) `DbExecutor` shape, since `recordAuditEvent` requires it.
-type Tx = Pick<typeof db, "select" | "insert" | "execute">;
+import { type DbExecutor, recordAuditEvent } from "./audit";
 
 /**
  * The default Correspondence categories seeded into every new workspace.
@@ -48,7 +43,7 @@ export const DEFAULT_GM_CATEGORIES: ReadonlyArray<{
  * from every row sharing one timestamp.
  */
 export async function seedDefaultCategories(
-  tx: Tx,
+  tx: DbExecutor,
   workspaceId: string,
   actorId: string,
 ) {

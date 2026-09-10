@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { auth } from "../../apps/api/src/auth";
+import { verifyAuditChain } from "../../apps/api/src/correspondence/audit";
 import {
   DEFAULT_GM_CATEGORIES,
   seedDefaultCategories,
@@ -12,7 +13,12 @@ import { mockAuthenticatedSession } from "./helpers/auth";
 import { resetTestDatabase } from "./helpers/database";
 
 type App = ReturnType<typeof createApp>["app"];
-type CategoryRow = { id: string; key: string; label: string };
+type CategoryRow = {
+  id: string;
+  key: string;
+  label: string;
+  createdAt: string;
+};
 type User = typeof schema.userTable.$inferSelect;
 
 /**
@@ -80,13 +86,25 @@ describe("default Correspondence categories are seeded on workspace creation", (
 
     const categories = await listCategories(app, workspaceId);
 
-    // Asserting the array (not a Set) is exactly what would fail if every
-    // seeded row shared one `createdAt` — the list route orders by
-    // `asc(createdAt)`, and with a shared timestamp Postgres is free to
-    // return ties in any order.
+    // Asserting the array (not a Set) checks the *observed* order matches
+    // the intended one, but ties break in an unspecified way in Postgres —
+    // ten identical timestamps could still happen to come back in heap
+    // order, which is the intended order, and this assertion would pass
+    // while the ordering guarantee was actually gone. It is not, on its
+    // own, proof the stagger exists.
     expect(categories.map((c) => ({ key: c.key, label: c.label }))).toEqual(
       DEFAULT_GM_CATEGORIES.map((c) => ({ key: c.key, label: c.label })),
     );
+
+    // This is the assertion that actually pins the stagger: it fails
+    // unconditionally if every row shares one `createdAt`, regardless of
+    // how Postgres happens to break that tie.
+    const createdAtMs = categories.map((c) => new Date(c.createdAt).getTime());
+    for (let i = 1; i < createdAtMs.length; i += 1) {
+      expect(createdAtMs[i] as number).toBeGreaterThan(
+        createdAtMs[i - 1] as number,
+      );
+    }
   });
 
   it("records a create audit event for each seeded category, attributed to the workspace creator", async () => {
@@ -115,6 +133,16 @@ describe("default Correspondence categories are seeded on workspace creation", (
       expect(event.actorId).toBe(user.id);
       expect(seededIds.has(event.entityId)).toBe(true);
     }
+
+    // This workspace's hash chain now carries ten links appended inside a
+    // single transaction — the first place in the codebase to do that.
+    // `recordAuditEvent` reads "the last event" via
+    // `order by seq desc limit 1` before computing each new hash, so this
+    // pins that a bigserial `seq` assigned earlier in the SAME transaction
+    // is visible to that later read, and the chain still verifies
+    // end-to-end rather than forking or skipping a link.
+    const verification = await verifyAuditChain(workspaceId);
+    expect(verification.ok).toBe(true);
   });
 
   it("is idempotent: seeding an already-seeded workspace creates no duplicates, no extra audit events, and does not throw", async () => {
