@@ -444,10 +444,47 @@ cd /opt/stacks/kaneo && docker compose up -d kaneo
 ```
 
 Migrations run on API startup, so a deploy applies pending drizzle
-migrations to production data. Rolling the *image* back does **not** roll
-migrations back — safe only because migrations here are additive (new
-tables, new nullable/defaulted columns), which older images ignore. A
-destructive migration would break that assumption.
+migrations to production data. **Rolling the *image* back does not roll
+migrations back**, and as of `0061` that is no longer a safe no-op.
+
+Every migration before `0061` was additive — new tables, new
+nullable/defaulted columns — which an older image simply ignores. **`0061`
+(shipped in 3.0.0) renames `meeting_minute_item.agenda` to `topic`.** After it
+applies, any pre-3.0.0 image still asks for a column called `agenda`, so every
+Meeting Minutes read and write fails with `column "agenda" does not exist`.
+The compose rollback above restores the container and leaves the app broken.
+
+**To roll back across `0061`, rename the column back first**, then restore the
+compose file:
+
+```bash
+docker exec kaneo-postgres psql -U kaneo -d kaneo -c \
+  'ALTER TABLE "meeting_minute_item" RENAME COLUMN "topic" TO "agenda";'
+```
+
+That reverse rename is lossless — `RENAME COLUMN` moves no data — but it
+strands `numbering` and `status`, which the old image does not know about.
+They are nullable, so it ignores them; rolling forward again picks them back
+up. The migration's row in `drizzle.__drizzle_migrations` must also be deleted,
+or the next startup sees it as applied and skips re-applying the rename:
+
+```bash
+docker exec kaneo-postgres psql -U kaneo -d kaneo -c \
+  'DELETE FROM drizzle.__drizzle_migrations WHERE id = 62;'
+```
+
+**Mind the off-by-one**: drizzle's `id` is 1-indexed while migration filenames
+are 0-indexed, so `0061_clumsy_sphinx.sql` is row **62**, and the row that
+reads `id = 61` is migration `0060`. Confirm before deleting — order by
+`created_at DESC` and check the newest row is the one you mean.
+
+Prefer rolling **forward** — fix and deploy a new tag. The backward path
+exists, but it is now two steps and one of them is manual, which is exactly
+the kind of thing that gets half-done at 2am.
+
+**Before adding another non-additive migration** — a rename, a drop, a
+narrowed type, a new NOT NULL without a default — say so in the deploy
+message and price it as a **major** per the versioning table above.
 
 Verify a deploy from outside: `/api/health` returns 200, `/api/me` returns
 401, and the `assets/index-*.js` hash in the served HTML changes.
