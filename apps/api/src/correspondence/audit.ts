@@ -4,7 +4,7 @@ import db from "../database";
 import { gmAuditEventTable } from "../database/schema";
 
 // Accepts either the root db or a transaction — both expose these methods.
-type DbExecutor = Pick<typeof db, "select" | "insert" | "execute">;
+export type DbExecutor = Pick<typeof db, "select" | "insert" | "execute">;
 
 /**
  * Deterministic JSON: object keys sorted recursively so the same logical

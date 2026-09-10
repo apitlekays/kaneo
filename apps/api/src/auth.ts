@@ -34,6 +34,7 @@ import type { AccessControl } from "better-auth/plugins/access";
 import type { UserWithAnonymous } from "better-auth/plugins/anonymous";
 import { config } from "dotenv-mono";
 import { count, eq, sql } from "drizzle-orm";
+import { seedDefaultCategories } from "./correspondence/default-categories";
 import db, { schema } from "./database";
 import { publishEvent } from "./events";
 import { checkRegistrationAllowed } from "./utils/check-registration-allowed";
@@ -368,6 +369,24 @@ export const auth = betterAuth({
           } catch (error) {
             console.error(
               "Failed to seed default workspace roles for workspace",
+              organization.id,
+              error,
+            );
+          }
+
+          // Seed the default Correspondence categories for this workspace,
+          // so a brand-new workspace's General Management → Settings →
+          // Categories isn't empty. Wrapped in its own try/catch, same as
+          // role seeding above, so a failure here never fails workspace
+          // creation. Runs in a transaction because each row's audit event
+          // (recordAuditEvent) must commit atomically with the row.
+          try {
+            await db.transaction((tx) =>
+              seedDefaultCategories(tx, organization.id, user.id),
+            );
+          } catch (error) {
+            console.error(
+              "Failed to seed default Correspondence categories for workspace",
               organization.id,
               error,
             );
