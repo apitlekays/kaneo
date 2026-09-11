@@ -2741,3 +2741,74 @@ export const meetingActionTable = pgTable(
     index("meeting_action_assigneeId_idx").on(table.assigneeId),
   ],
 );
+
+// Append-only progress thread on a meeting action. Mirrors
+// `letter_minute_update`, with one addition: `statusAfter`.
+//
+// Letter Minutes had no equivalent because completion there was a separate
+// explicit step. Here the ask is "reply with status of the actions", so the
+// status change and the note explaining it belong in one record.
+//
+// NO `updatedAt`, and deliberately NO update or delete route — immutability
+// is enforced by the absence of a way to do it, exactly as with
+// `letter_minute_update`. A correction is a new update.
+export const meetingActionUpdateTable = pgTable(
+  "meeting_action_update",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    actionId: text("action_id")
+      .notNull()
+      .references(() => meetingActionTable.id, { onDelete: "cascade" }),
+    authorId: text("author_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    body: text("body").notNull(),
+    // The status the author is setting, or null when the update is only a
+    // comment. Free text is wrong here — this drives the action's own
+    // `status` column, which is the open | done | cancelled enum.
+    statusAfter: text("status_after"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("meeting_action_update_actionId_idx").on(table.actionId)],
+);
+
+// A PDF attached either to a meeting (archival, Spec D) or to one action
+// thread update (`actionUpdateId` set). `meetingId` is NOT NULL on both
+// kinds: it is what makes a single confidentiality check cover every
+// attachment path rather than two rules that can drift apart.
+//
+// Spec D extends this table with its storage and indexing fields
+// (`originalObjectKey`, `indexStatus`, `extractedText`, …). Do not add
+// those here.
+export const meetingDocumentTable = pgTable(
+  "meeting_document",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meetingTable.id, { onDelete: "cascade" }),
+    // Null for a meeting-level document; set for a reply attachment.
+    actionUpdateId: text("action_update_id"),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull().unique(),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    sha256: text("sha256"),
+    kind: text("kind").notNull().default("original"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("meeting_document_meetingId_idx").on(table.meetingId),
+    index("meeting_document_actionUpdateId_idx").on(table.actionUpdateId),
+  ],
+);
