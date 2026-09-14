@@ -35,6 +35,8 @@ const mutations = vi.hoisted(() => ({
   update: { mutate: vi.fn(), isPending: false },
 }));
 
+const addActionUpdateMutate = vi.hoisted(() => vi.fn());
+
 vi.mock("@/hooks/queries/meeting/use-meeting", () => ({
   useMeeting: () => ({
     data: state.meeting,
@@ -59,6 +61,10 @@ vi.mock("@/hooks/queries/meeting/use-adopt-candidates", () => ({
 
 vi.mock("@/hooks/queries/meeting/use-meeting-mutations", () => ({
   useMeetingMutations: () => mutations,
+  useAddActionUpdate: () => ({
+    mutate: addActionUpdateMutate,
+    isPending: false,
+  }),
 }));
 
 vi.mock(
@@ -74,6 +80,29 @@ vi.mock(
     }),
   }),
 );
+
+// ActionThread (rendered per action) pulls in the current session and page
+// access to compute `canPost`, and fetches its own thread — none of which
+// this suite is about (that's action-thread.test.tsx's job). Stub all
+// three so ActionThread renders its empty-thread state without a real
+// session, a real page-access fetch, or a real network call.
+vi.mock("@/lib/auth-client", () => ({
+  authClient: { useSession: () => ({ data: { user: { id: "user-1" } } }) },
+}));
+
+vi.mock("@/hooks/queries/workspace-access/use-my-page-access", () => ({
+  useMyPageAccess: () => ({
+    data: { pages: ["general-management"], isAdmin: false },
+  }),
+}));
+
+vi.mock("@/fetchers/meeting", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/fetchers/meeting")>();
+  return {
+    ...actual,
+    listActionUpdates: vi.fn().mockResolvedValue([]),
+  };
+});
 
 function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
   return {
