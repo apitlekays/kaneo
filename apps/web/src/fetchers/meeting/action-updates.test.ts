@@ -5,6 +5,7 @@ import {
   meetingDocumentDownloadUrl,
   postActionUpdate,
   presignMeetingDocument,
+  uploadMeetingDocument,
 } from "./index";
 
 /**
@@ -173,6 +174,64 @@ describe("finalizeMeetingDocument", () => {
     expect(String(requestedUrl)).toBe(
       "http://localhost:1337/api/meeting/meeting-1/attachments/finalize",
     );
+  });
+});
+
+describe("uploadMeetingDocument", () => {
+  /** presign -> PUT to storage -> finalize, in that order. */
+  function mockUploadSequence() {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          key: "workspace/ws-1/meeting/meeting-1/file.pdf",
+          uploadUrl: "https://storage.example/put",
+          headers: { "Content-Type": "application/pdf" },
+        }),
+        text: async () => "",
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "doc-1" }),
+        text: async () => "",
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("sends the file's own content type to presign and finalize", async () => {
+    const fetchMock = mockUploadSequence();
+    const file = new File(["%PDF-1.4"], "report.pdf", {
+      type: "application/pdf",
+    });
+
+    await uploadMeetingDocument("ws-1", "meeting-1", file, "update-1");
+
+    const presignBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const finalizeBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(presignBody.mimeType).toBe("application/pdf");
+    expect(finalizeBody.mimeType).toBe("application/pdf");
+  });
+
+  // The client used to hard-code `mimeType: "application/pdf"` on both
+  // requests regardless of the file, so the server's PDF-only check could
+  // only ever validate a claim this client fabricated — rename payload.exe
+  // to payload.pdf, get an empty `type` from the browser, and it was stored
+  // and later served `inline` as a PDF. Sending the real type means the
+  // server gets something it can actually refuse.
+  it("does not fabricate application/pdf for a file the browser reports no type for", async () => {
+    const fetchMock = mockUploadSequence();
+    const file = new File(["MZ"], "payload.pdf", { type: "" });
+
+    await uploadMeetingDocument("ws-1", "meeting-1", file, "update-1");
+
+    const presignBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(presignBody.mimeType).not.toBe("application/pdf");
+    expect(presignBody.mimeType).toBe("");
   });
 });
 

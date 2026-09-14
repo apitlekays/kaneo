@@ -495,12 +495,6 @@ export const meetingDocumentDownloadUrl = (
     `${id}/attachments/${docId}/download?workspaceId=${encodeURIComponent(workspaceId)}`,
   );
 
-/**
- * Presign -> direct PUT to storage -> finalize, mirroring
- * `uploadLetterAttachment` in `correspondence/letters.ts`. PDF-only is
- * enforced server-side on both presign and finalize; the check here is a
- * client-side convenience so a bad pick never reaches the network.
- */
 // ── Configure -> send memorandum ────────────────────────────────────────
 // `GET`/`POST /:id/actions/:actionId/memo` — see the server's
 // `apps/api/src/meeting/memo-routes.ts` for the full contract. Both routes
@@ -586,6 +580,18 @@ export const sendActionMemo = (
     body,
   );
 
+/**
+ * Presign -> direct PUT to storage -> finalize, mirroring
+ * `uploadLetterAttachment` in `correspondence/letters.ts`.
+ *
+ * Both server routes reject a `mimeType` other than `application/pdf`, and
+ * this client sends the file's own `file.type` so that check is applied to
+ * something real rather than to a value the client made up. It is still not
+ * true enforcement: nothing anywhere reads the file's bytes, so a non-PDF
+ * whose browser-reported type happens to be `application/pdf` is accepted.
+ * Real enforcement would be a magic-byte check at finalize — tracked
+ * separately, not done here.
+ */
 export async function uploadMeetingDocument(
   workspaceId: string,
   id: string,
@@ -595,7 +601,12 @@ export async function uploadMeetingDocument(
   if (!isPdfUpload(file)) {
     throw new Error("Only PDF files can be attached");
   }
-  const contentType = "application/pdf";
+  // The file's own reported type, never a hard-coded "application/pdf":
+  // asserting the type we want would mean the server's PDF-only check only
+  // ever validates a claim this client fabricated. A file the browser
+  // reports no type for is refused by the server, which is the right
+  // outcome — `ActionThread` surfaces that message in its failure toast.
+  const contentType = file.type;
   const presign = await presignMeetingDocument(workspaceId, id, {
     filename: file.name,
     mimeType: contentType,
