@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import db, { schema } from "../../apps/api/src/database";
 import { createApp } from "../../apps/api/src/index";
+import { getPrivateObject } from "../../apps/api/src/storage/s3";
 import { mockAuthenticatedSession } from "./helpers/auth";
 import { resetTestDatabase } from "./helpers/database";
 import {
@@ -18,6 +19,21 @@ process.env.S3_ENDPOINT ||= "http://localhost:9000";
 process.env.S3_BUCKET ||= "kaneo-test-bucket";
 process.env.S3_ACCESS_KEY_ID ||= "test-access-key";
 process.env.S3_SECRET_ACCESS_KEY ||= "test-secret-key";
+
+// Unlike presign, an actual download calls `getPrivateObject`, which makes a
+// real network request to the S3 endpoint above — and nothing listens on it
+// in this environment (no MinIO container in the integration test setup).
+// Every other test that exercises the download route stops at a 403 before
+// reaching this call, so it never matters there. The one test below that
+// needs a document to actually "download" overrides this per-call with
+// `mockResolvedValueOnce`; left unmocked, it would throw a connection error
+// that the route already turns into a 404, which is not what's being tested
+// here.
+vi.mock("../../apps/api/src/storage/s3", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../apps/api/src/storage/s3")>();
+  return { ...actual, getPrivateObject: vi.fn(actual.getPrivateObject) };
+});
 
 type App = ReturnType<typeof createApp>["app"];
 
@@ -904,5 +920,209 @@ describe("API integration: meeting action updates", () => {
     expect(refused.status).toBe(403);
     const raw = await refused.text();
     expect(raw).not.toContain("Q3 Committee Meeting");
+  });
+
+  it("19. presign and finalize both reject a filename carrying a double quote and a newline (header-injection input), and no row is written", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    // Built with fromCharCode rather than literal escapes so the hostile
+    // characters (a double quote, then a newline) are unambiguous in the
+    // test source: `report"` + LF + `injected.pdf`.
+    const hostileFilename = `report${String.fromCharCode(34)}${String.fromCharCode(10)}injected.pdf`;
+
+    const presignRes = await presignAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      filename: hostileFilename,
+      actionUpdateId: update.id,
+    });
+    expect(presignRes.status).toBe(400);
+
+    const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      filename: hostileFilename,
+      objectKey: `workspace/${owner.workspace.id}/meeting/${meeting.id}/report.pdf`,
+      actionUpdateId: update.id,
+    });
+    expect(finalizeRes.status).toBe(400);
+
+    const rows = await db
+      .select()
+      .from(schema.meetingDocumentTable)
+      .where(eq(schema.meetingDocumentTable.meetingId, meeting.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("20. presign and finalize both reject a filename containing a path separator or exceeding the length limit", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    const pathLikeRes = await presignAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      filename: "../secrets/report.pdf",
+      actionUpdateId: update.id,
+    });
+    expect(pathLikeRes.status).toBe(400);
+
+    const overlongRes = await presignAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      filename: `${"a".repeat(256)}.pdf`,
+      actionUpdateId: update.id,
+    });
+    expect(overlongRes.status).toBe(400);
+
+    const finalizeOverlongRes = await finalizeAttachment(
+      assigneeApp,
+      meeting.id,
+      {
+        workspaceId: owner.workspace.id,
+        filename: `${"a".repeat(256)}.pdf`,
+        objectKey: `workspace/${owner.workspace.id}/meeting/${meeting.id}/report.pdf`,
+        actionUpdateId: update.id,
+      },
+    );
+    expect(finalizeOverlongRes.status).toBe(400);
+
+    const rows = await db
+      .select()
+      .from(schema.meetingDocumentTable)
+      .where(eq(schema.meetingDocumentTable.meetingId, meeting.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("21. a legitimate non-ASCII filename (Malay/Arabic-script) is accepted, not rejected as hostile", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    const presignRes = await presignAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      filename: "laporan kewangan جدول.pdf",
+      actionUpdateId: update.id,
+    });
+    expect(presignRes.status).toBe(200);
+  });
+
+  it("22. download's Content-Disposition is safe for a hostile filename that bypassed the validator, and a non-ASCII filename round-trips through filename*", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    // The presign/finalize validator (test 19) now refuses a filename like
+    // this, so the only way to get such a row is to write it directly —
+    // simulating a bad value from any other path: a bulk import, a
+    // fixture, or a row written before the validator existed. The
+    // download route's header-building must stay safe regardless of how
+    // the row got there.
+    const hostileFilename = `evil${String.fromCharCode(34)}${String.fromCharCode(13)}${String.fromCharCode(10)}name.pdf`;
+    const [hostileDoc] = await db
+      .insert(schema.meetingDocumentTable)
+      .values({
+        meetingId: meeting.id,
+        actionUpdateId: update.id,
+        workspaceId: owner.workspace.id,
+        objectKey: `workspace/${owner.workspace.id}/meeting/${meeting.id}/hostile.pdf`,
+        filename: hostileFilename,
+        mimeType: "application/pdf",
+        size: 1024,
+        createdBy: assignee.user.id,
+      })
+      .returning();
+    if (!hostileDoc) throw new Error("Failed to seed hostile document row");
+
+    vi.mocked(getPrivateObject).mockResolvedValueOnce({
+      body: "fake-pdf-bytes",
+      contentType: "application/pdf",
+      contentLength: 14,
+      etag: '"fake-etag"',
+      lastModified: new Date(),
+    });
+    const hostileRes = await downloadAttachment(
+      assigneeApp,
+      meeting.id,
+      hostileDoc.id,
+      owner.workspace.id,
+    );
+    expect(hostileRes.status).toBe(200);
+    const hostileDisposition =
+      hostileRes.headers.get("content-disposition") ?? "";
+    expect(hostileDisposition).not.toMatch(/[\r\n]/);
+    // Exactly the two quotes that legitimately open/close filename="..." —
+    // none smuggled in from the (attacker-controlled) stored filename.
+    expect((hostileDisposition.match(/"/g) ?? []).length).toBe(2);
+
+    const nonAsciiFilename = "Mesyuarat Agung مسودة.pdf";
+    const [nonAsciiDoc] = await db
+      .insert(schema.meetingDocumentTable)
+      .values({
+        meetingId: meeting.id,
+        actionUpdateId: update.id,
+        workspaceId: owner.workspace.id,
+        objectKey: `workspace/${owner.workspace.id}/meeting/${meeting.id}/non-ascii.pdf`,
+        filename: nonAsciiFilename,
+        mimeType: "application/pdf",
+        size: 1024,
+        createdBy: assignee.user.id,
+      })
+      .returning();
+    if (!nonAsciiDoc) throw new Error("Failed to seed non-ASCII document row");
+
+    vi.mocked(getPrivateObject).mockResolvedValueOnce({
+      body: "fake-pdf-bytes",
+      contentType: "application/pdf",
+      contentLength: 14,
+      etag: '"fake-etag"',
+      lastModified: new Date(),
+    });
+    const nonAsciiRes = await downloadAttachment(
+      assigneeApp,
+      meeting.id,
+      nonAsciiDoc.id,
+      owner.workspace.id,
+    );
+    expect(nonAsciiRes.status).toBe(200);
+    const nonAsciiDisposition =
+      nonAsciiRes.headers.get("content-disposition") ?? "";
+    expect(nonAsciiDisposition).toContain(
+      `filename*=UTF-8''${encodeURIComponent(nonAsciiFilename)}`,
+    );
   });
 });

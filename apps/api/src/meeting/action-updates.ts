@@ -14,6 +14,7 @@ import {
   getPrivateObject,
   meetingFileKeyOwnerSegment,
 } from "../storage/s3";
+import { buildContentDisposition } from "../utils/content-disposition";
 import { hasWorkspacePageAccess } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { assertCanReadMeeting, loadMeeting } from "./access";
@@ -25,8 +26,27 @@ type MeetingEnv = { Variables: { userId: string; workspaceId?: string } };
 const PAGE_SLUG = "general-management";
 const ACTION_STATUSES = ["open", "done", "cancelled"] as const;
 const MEETING_DOCUMENT_MIME_TYPE = "application/pdf";
+const MAX_FILENAME_LENGTH = 255;
+
+// Rejects ASCII control characters (incl. CR/LF — response-splitting into
+// the download route's Content-Disposition header), the double quote (which
+// breaks out of that header's quoted-string filename parameter), and path
+// separators (a filename is a display name, never a path). Unicode letters
+// (Malay, Arabic-script, …) are deliberately unrestricted — this deployment
+// has real filenames in those scripts a plain-ASCII filter would reject.
+// Defense at the input boundary, in addition to (not instead of) safe
+// encoding on the way out.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters (incl. CR/LF) are exactly what this pattern must reject.
+const SAFE_FILENAME_PATTERN = /^[^\u0000-\u001f\u007f"\\/]+$/u;
 
 const optStr = v.optional(v.string());
+const meetingDocumentFilename = v.pipe(
+  v.string(),
+  v.trim(),
+  v.minLength(1, "Filename required"),
+  v.maxLength(MAX_FILENAME_LENGTH, "Filename is too long"),
+  v.regex(SAFE_FILENAME_PATTERN, "Filename contains invalid characters"),
+);
 
 async function loadAction(meetingId: string, actionId: string) {
   const [row] = await db
@@ -289,7 +309,7 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
       "json",
       v.object({
         workspaceId: v.string(),
-        filename: v.string(),
+        filename: meetingDocumentFilename,
         mimeType: v.string(),
         size: v.number(),
         actionUpdateId: optStr,
@@ -336,7 +356,7 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
       v.object({
         workspaceId: v.string(),
         objectKey: v.string(),
-        filename: v.string(),
+        filename: meetingDocumentFilename,
         mimeType: v.string(),
         size: v.number(),
         actionUpdateId: optStr,
@@ -430,7 +450,7 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
           headers: {
             "Cache-Control": "private, max-age=120",
             "Content-Type": object.contentType || doc.mimeType,
-            "Content-Disposition": `inline; filename="${doc.filename}"`,
+            "Content-Disposition": buildContentDisposition(doc.filename),
           },
         });
       } catch {
