@@ -155,7 +155,7 @@ export const sendCorrespondenceEmail = async (
   subject: string,
   html: string,
   attachments?: CorrespondenceAttachment[],
-  options?: { replyTo?: string; fromName?: string },
+  options?: { replyTo?: string; fromName?: string; cc?: string | string[] },
 ): Promise<{ messageId: string }> => {
   if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) {
     throw new Error("SMTP_NOT_CONFIGURED");
@@ -163,9 +163,11 @@ export const sendCorrespondenceEmail = async (
   const from = options?.fromName
     ? `${options.fromName} <${process.env.SMTP_FROM}>`
     : process.env.SMTP_FROM;
+  const cc = Array.isArray(options?.cc) ? options.cc.join(", ") : options?.cc;
   const info = await transporter.sendMail({
     from,
     to: Array.isArray(to) ? to.join(", ") : to,
+    cc,
     replyTo: options?.replyTo,
     subject,
     html,
