@@ -1,4 +1,5 @@
 import { getApiUrl } from "@/fetchers/get-api-url";
+import { isPdfUpload } from "@/lib/is-pdf-upload";
 
 /** A single spreadsheet row's validation problem, as `POST
  * /:id/minute-items/import`'s 400 body carries it: `{ errors: [{ row,
@@ -363,3 +364,156 @@ export const importMinuteItems = (
   post<MinuteItemImportResult>(`${id}/minute-items/import`, workspaceId, {
     rows,
   });
+
+// ── Action progress thread ──────────────────────────────────────────────
+
+/**
+ * A row in one action's append-only progress thread. There is no PUT/PATCH/
+ * DELETE for this row anywhere in the API, by design — do not add UI that
+ * implies one exists.
+ */
+export type MeetingActionUpdate = {
+  id: string;
+  actionId: string;
+  authorId: string | null;
+  body: string;
+  statusAfter: MeetingAction["status"] | null;
+  createdAt: string;
+};
+
+export type AddActionUpdateInput = {
+  body: string;
+  statusAfter?: MeetingAction["status"];
+};
+
+export async function listActionUpdates(
+  workspaceId: string,
+  id: string,
+  actionId: string,
+): Promise<MeetingActionUpdate[]> {
+  return jsonOrThrow(
+    await fetch(
+      url(
+        `${id}/actions/${actionId}/updates?workspaceId=${encodeURIComponent(workspaceId)}`,
+      ),
+      { credentials: "include" },
+    ),
+  );
+}
+
+export const postActionUpdate = (
+  workspaceId: string,
+  id: string,
+  actionId: string,
+  body: AddActionUpdateInput,
+) =>
+  post<MeetingActionUpdate>(
+    `${id}/actions/${actionId}/updates`,
+    workspaceId,
+    body,
+  );
+
+// ── Meeting documents (attachments) ─────────────────────────────────────
+
+/**
+ * A PDF attached either at the meeting level (archival, not built yet) or to
+ * one action update (`actionUpdateId` set) — mirrors `meetingDocumentTable`.
+ */
+export type MeetingDocument = {
+  id: string;
+  meetingId: string;
+  actionUpdateId: string | null;
+  workspaceId: string;
+  objectKey: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  sha256: string | null;
+  kind: string;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type MeetingDocumentPresignResult = {
+  key: string;
+  uploadUrl: string;
+  headers: Record<string, string>;
+};
+
+export type PresignMeetingDocumentInput = {
+  filename: string;
+  mimeType: string;
+  size: number;
+  actionUpdateId?: string;
+};
+
+export type FinalizeMeetingDocumentInput = {
+  objectKey: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  actionUpdateId?: string;
+};
+
+export const presignMeetingDocument = (
+  workspaceId: string,
+  id: string,
+  body: PresignMeetingDocumentInput,
+) =>
+  post<MeetingDocumentPresignResult>(
+    `${id}/attachments/presign`,
+    workspaceId,
+    body,
+  );
+
+export const finalizeMeetingDocument = (
+  workspaceId: string,
+  id: string,
+  body: FinalizeMeetingDocumentInput,
+) => post<MeetingDocument>(`${id}/attachments/finalize`, workspaceId, body);
+
+export const meetingDocumentDownloadUrl = (
+  workspaceId: string,
+  id: string,
+  docId: string,
+) =>
+  url(
+    `${id}/attachments/${docId}/download?workspaceId=${encodeURIComponent(workspaceId)}`,
+  );
+
+/**
+ * Presign -> direct PUT to storage -> finalize, mirroring
+ * `uploadLetterAttachment` in `correspondence/letters.ts`. PDF-only is
+ * enforced server-side on both presign and finalize; the check here is a
+ * client-side convenience so a bad pick never reaches the network.
+ */
+export async function uploadMeetingDocument(
+  workspaceId: string,
+  id: string,
+  file: File,
+  actionUpdateId?: string,
+): Promise<MeetingDocument> {
+  if (!isPdfUpload(file)) {
+    throw new Error("Only PDF files can be attached");
+  }
+  const contentType = "application/pdf";
+  const presign = await presignMeetingDocument(workspaceId, id, {
+    filename: file.name,
+    mimeType: contentType,
+    size: file.size,
+    actionUpdateId,
+  });
+  const put = await fetch(presign.uploadUrl, {
+    method: "PUT",
+    headers: presign.headers,
+    body: file,
+  });
+  if (!put.ok) throw new Error("Upload to storage failed");
+  return finalizeMeetingDocument(workspaceId, id, {
+    objectKey: presign.key,
+    filename: file.name,
+    mimeType: contentType,
+    size: file.size,
+    actionUpdateId,
+  });
+}
