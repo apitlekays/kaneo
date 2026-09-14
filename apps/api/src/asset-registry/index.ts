@@ -36,6 +36,7 @@ import {
   isImageContentType,
   validateTaskAssetUploadInput,
 } from "../storage/s3";
+import { buildContentDisposition } from "../utils/content-disposition";
 import {
   hasWorkspacePageAccess,
   requireWorkspacePageAccess,
@@ -504,7 +505,7 @@ const assetRegistry = new Hono<{
             "Cache-Control": "private, max-age=86400",
             "Content-Length": object.contentLength?.toString() || "",
             "Content-Type": object.contentType || file.mimeType,
-            "Content-Disposition": `inline; filename="${file.filename}"`,
+            "Content-Disposition": buildContentDisposition(file.filename),
           },
         });
       } catch {

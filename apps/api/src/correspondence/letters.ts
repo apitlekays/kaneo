@@ -40,6 +40,7 @@ import {
   getPrivateObject,
   letterFileKeyOwnerSegment,
 } from "../storage/s3";
+import { buildContentDisposition } from "../utils/content-disposition";
 import {
   hasWorkspacePageAccess,
   requireWorkspacePageAccess,
@@ -1886,7 +1887,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             headers: {
               "Cache-Control": "private, max-age=120",
               "Content-Type": object.contentType || att.mimeType,
-              "Content-Disposition": `inline; filename="${att.filename}"`,
+              "Content-Disposition": buildContentDisposition(att.filename),
             },
           });
         } catch {
