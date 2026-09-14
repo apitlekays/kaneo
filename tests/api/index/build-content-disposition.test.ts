@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildContentDisposition } from "../../../apps/api/src/index";
+import { buildContentDisposition } from "../../../apps/api/src/utils/content-disposition";
 
 // buildContentDisposition emits two things: an ASCII fallback in the plain
 // `filename=` parameter, and the correct name percent-encoded in the RFC

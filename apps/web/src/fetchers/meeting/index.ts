@@ -1,4 +1,5 @@
 import { getApiUrl } from "@/fetchers/get-api-url";
+import { isPdfUpload } from "@/lib/is-pdf-upload";
 
 /** A single spreadsheet row's validation problem, as `POST
  * /:id/minute-items/import`'s 400 body carries it: `{ errors: [{ row,
@@ -363,3 +364,279 @@ export const importMinuteItems = (
   post<MinuteItemImportResult>(`${id}/minute-items/import`, workspaceId, {
     rows,
   });
+
+// ── Action progress thread ──────────────────────────────────────────────
+
+/**
+ * An update's attachment, as `GET /:id/actions/:actionId/updates` embeds it
+ * per update — a narrower view of `MeetingDocument` than the create/finalize
+ * response: no `objectKey` (internal storage detail; the download route
+ * takes the document's `id`, not it), no `meetingId`/`actionUpdateId`/
+ * `workspaceId`/`mimeType`/`sha256`/`kind`/`createdBy` (redundant once the
+ * document is already grouped under its update).
+ */
+export type MeetingActionUpdateAttachment = Pick<
+  MeetingDocument,
+  "id" | "filename" | "size" | "createdAt"
+>;
+
+/**
+ * A row in one action's append-only progress thread. There is no PUT/PATCH/
+ * DELETE for this row anywhere in the API, by design — do not add UI that
+ * implies one exists.
+ */
+export type MeetingActionUpdate = {
+  id: string;
+  actionId: string;
+  authorId: string | null;
+  body: string;
+  statusAfter: MeetingAction["status"] | null;
+  createdAt: string;
+  attachments: MeetingActionUpdateAttachment[];
+};
+
+export type AddActionUpdateInput = {
+  body: string;
+  statusAfter?: MeetingAction["status"];
+};
+
+export async function listActionUpdates(
+  workspaceId: string,
+  id: string,
+  actionId: string,
+): Promise<MeetingActionUpdate[]> {
+  return jsonOrThrow(
+    await fetch(
+      url(
+        `${id}/actions/${actionId}/updates?workspaceId=${encodeURIComponent(workspaceId)}`,
+      ),
+      { credentials: "include" },
+    ),
+  );
+}
+
+export const postActionUpdate = (
+  workspaceId: string,
+  id: string,
+  actionId: string,
+  body: AddActionUpdateInput,
+) =>
+  post<MeetingActionUpdate>(
+    `${id}/actions/${actionId}/updates`,
+    workspaceId,
+    body,
+  );
+
+// ── Meeting documents (attachments) ─────────────────────────────────────
+
+/**
+ * A PDF attached either at the meeting level (archival, not built yet) or to
+ * one action update (`actionUpdateId` set) — mirrors `meetingDocumentTable`.
+ */
+export type MeetingDocument = {
+  id: string;
+  meetingId: string;
+  actionUpdateId: string | null;
+  workspaceId: string;
+  objectKey: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  sha256: string | null;
+  kind: string;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type MeetingDocumentPresignResult = {
+  key: string;
+  uploadUrl: string;
+  headers: Record<string, string>;
+};
+
+export type PresignMeetingDocumentInput = {
+  filename: string;
+  mimeType: string;
+  size: number;
+  actionUpdateId?: string;
+};
+
+export type FinalizeMeetingDocumentInput = {
+  objectKey: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  actionUpdateId?: string;
+};
+
+export const presignMeetingDocument = (
+  workspaceId: string,
+  id: string,
+  body: PresignMeetingDocumentInput,
+) =>
+  post<MeetingDocumentPresignResult>(
+    `${id}/attachments/presign`,
+    workspaceId,
+    body,
+  );
+
+export const finalizeMeetingDocument = (
+  workspaceId: string,
+  id: string,
+  body: FinalizeMeetingDocumentInput,
+) => post<MeetingDocument>(`${id}/attachments/finalize`, workspaceId, body);
+
+export const meetingDocumentDownloadUrl = (
+  workspaceId: string,
+  id: string,
+  docId: string,
+) =>
+  url(
+    `${id}/attachments/${docId}/download?workspaceId=${encodeURIComponent(workspaceId)}`,
+  );
+
+// ── Configure -> send memorandum ────────────────────────────────────────
+// `GET`/`POST /:id/actions/:actionId/memo` — see the server's
+// `apps/api/src/meeting/memo-routes.ts` for the full contract. Both routes
+// gate on General Management page access AND `assertCanReadMeeting`, so a
+// confidential meeting stays closed to a non-attendee even here.
+
+/**
+ * The shortcode values `GET .../memo` resolves for one action — from the
+ * meeting (`meeting_name`/`meeting_date`), the action or its linked minute
+ * item (`numbering`/`topic`/`status` — the server, not this app, decides
+ * which source wins; see `resolveBaseValues` in memo-routes.ts), and the
+ * two the user fills in (`recipient_name`/`notes`, always empty on GET).
+ */
+export type MeetingActionMemoValues = {
+  meeting_name: string;
+  meeting_date: string;
+  numbering: string;
+  topic: string;
+  status: string;
+  recipient_name: string;
+  notes: string;
+};
+
+/** One past send of the memorandum for an action, as embedded in the GET's
+ * `lastSend` and returned whole by the POST — surfaced so the Configure
+ * popup can show "already sent" instead of inviting a duplicate. */
+export type MeetingActionMemoSend = {
+  id: string;
+  recipientName: string;
+  recipientEmail: string;
+  cc: string[] | null;
+  replyTo: string;
+  subject: string;
+  bodyHtml: string;
+  sentAt: string;
+};
+
+export type MeetingActionMemoContext = {
+  /** The default body, as Markdown, with `{{shortcode}}` tokens in it —
+   * never HTML. See `apps/api/src/meeting/memorandum.ts`'s `MEMO_SHORTCODES`
+   * for the vocabulary (mirrored, not imported, in
+   * `action-configure-dialog.tsx` — that module is the API's internals). */
+  defaultTemplate: string;
+  values: MeetingActionMemoValues;
+  lastSend: MeetingActionMemoSend | null;
+};
+
+export type SendMeetingActionMemoInput = {
+  recipientName: string;
+  recipientEmail: string;
+  notes?: string;
+  replyTo?: string;
+  cc?: string[];
+  /** Markdown ONLY — the route rejects (or worse, mis-renders) HTML. See
+   * `buildMemorandumHtml`'s docstring in the API for why. */
+  bodyMarkdown: string;
+};
+
+export async function getActionMemoContext(
+  workspaceId: string,
+  id: string,
+  actionId: string,
+): Promise<MeetingActionMemoContext> {
+  return jsonOrThrow(
+    await fetch(
+      url(
+        `${id}/actions/${actionId}/memo?workspaceId=${encodeURIComponent(workspaceId)}`,
+      ),
+      { credentials: "include" },
+    ),
+  );
+}
+
+export const sendActionMemo = (
+  workspaceId: string,
+  id: string,
+  actionId: string,
+  body: SendMeetingActionMemoInput,
+) =>
+  post<MeetingActionMemoSend>(
+    `${id}/actions/${actionId}/memo`,
+    workspaceId,
+    body,
+  );
+
+/**
+ * Presign -> direct PUT to storage -> finalize, mirroring
+ * `uploadLetterAttachment` in `correspondence/letters.ts`.
+ *
+ * Both server routes reject a `mimeType` other than `application/pdf`.
+ *
+ * Be clear about what that check is worth here: `isPdfUpload` below admits
+ * only `application/pdf`, or an empty type with a `.pdf` name. So the value
+ * this client can possibly send is `application/pdf` either way, and the
+ * server is validating a claim the client is structurally certain to make
+ * — NOT the file. Nothing anywhere reads the bytes, so payload.exe renamed
+ * to payload.pdf is accepted.
+ *
+ * Real enforcement is a magic-byte check at finalize, tracked separately
+ * and deliberately not done here. Until then the blast radius is bounded by
+ * two things, both verified: the presigned PUT binds Content-Type into its
+ * signature, and the download route sends `X-Content-Type-Options: nosniff`.
+ * A mislabelled file is stored wrongly and renders as a broken PDF; it is
+ * not executed.
+ */
+export async function uploadMeetingDocument(
+  workspaceId: string,
+  id: string,
+  file: File,
+  actionUpdateId?: string,
+): Promise<MeetingDocument> {
+  if (!isPdfUpload(file)) {
+    throw new Error("Only PDF files can be attached");
+  }
+  // Given the gate above this resolves to "application/pdf" for every file
+  // that reaches it: `file.type` is either that already, or empty for the
+  // typeless `.pdf` case (how several Android file providers report a
+  // perfectly good PDF), where sending "" would have the server 400 a file
+  // the client had just accepted.
+  //
+  // Written as the expression rather than the literal on purpose: it is
+  // `isPdfUpload`, not this line, that decides what may be uploaded, so if
+  // that gate is ever widened the file's real type flows through instead of
+  // a fabricated one. It is NOT a claim that the real type is sent today.
+  const contentType = file.type || "application/pdf";
+  const presign = await presignMeetingDocument(workspaceId, id, {
+    filename: file.name,
+    mimeType: contentType,
+    size: file.size,
+    actionUpdateId,
+  });
+  const put = await fetch(presign.uploadUrl, {
+    method: "PUT",
+    headers: presign.headers,
+    body: file,
+  });
+  if (!put.ok) throw new Error("Upload to storage failed");
+  return finalizeMeetingDocument(workspaceId, id, {
+    objectKey: presign.key,
+    filename: file.name,
+    mimeType: contentType,
+    size: file.size,
+    actionUpdateId,
+  });
+}

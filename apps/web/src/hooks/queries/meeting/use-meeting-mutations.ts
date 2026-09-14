@@ -2,6 +2,35 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/fetchers/meeting";
 import { toast } from "@/lib/toast";
 
+/**
+ * Posts to one action's progress thread. Mirrors `useAddMinuteUpdate` in
+ * `use-letters.ts`: a standalone hook rather than a member of
+ * `useMeetingMutations`'s returned object, since its variables (`actionId`)
+ * are per-call rather than fixed for the whole dialog. Query key matches
+ * `use-meeting.ts`'s `useMeeting` exactly, so a post refreshes the same
+ * cache entry the detail dialog reads.
+ */
+export function useAddActionUpdate(workspaceId: string, meetingId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { actionId: string } & api.AddActionUpdateInput) =>
+      api.postActionUpdate(workspaceId, meetingId, vars.actionId, {
+        body: vars.body,
+        statusAfter: vars.statusAfter,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["meeting", workspaceId, meetingId] });
+    },
+    // Same shape as `useMeetingMutations`'s shared `onError` below. Without
+    // it a failed post is completely silent — the composer keeps the user's
+    // text, so the screen is identical to a click that never registered.
+    onError: (error: unknown) =>
+      toast.error(
+        error instanceof Error ? error.message : "Failed to post update",
+      ),
+  });
+}
+
 export function useMeetingMutations(workspaceId: string, meetingId?: string) {
   const qc = useQueryClient();
   const invalidate = () => {

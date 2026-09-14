@@ -35,6 +35,8 @@ const mutations = vi.hoisted(() => ({
   update: { mutate: vi.fn(), isPending: false },
 }));
 
+const addActionUpdateMutate = vi.hoisted(() => vi.fn());
+
 vi.mock("@/hooks/queries/meeting/use-meeting", () => ({
   useMeeting: () => ({
     data: state.meeting,
@@ -59,6 +61,10 @@ vi.mock("@/hooks/queries/meeting/use-adopt-candidates", () => ({
 
 vi.mock("@/hooks/queries/meeting/use-meeting-mutations", () => ({
   useMeetingMutations: () => mutations,
+  useAddActionUpdate: () => ({
+    mutate: addActionUpdateMutate,
+    isPending: false,
+  }),
 }));
 
 vi.mock(
@@ -74,6 +80,49 @@ vi.mock(
     }),
   }),
 );
+
+// ActionThread (rendered per action) pulls in the current session and page
+// access to compute `canPost` — not what this suite is about (that is
+// action-thread.test.tsx's job), so both are stubbed.
+//
+// The thread query itself is no longer the reason for the fetch stub:
+// threads now render COLLAPSED and pass `enabled` on the expanded state, so
+// nothing here issues one. The stub stays because this suite must keep
+// working if a future change expands a thread by default — and if that
+// happens, action-thread.test.tsx's collapsed-issues-no-query case is what
+// should fail, not this file.
+vi.mock("@/lib/auth-client", () => ({
+  authClient: { useSession: () => ({ data: { user: { id: "user-1" } } }) },
+}));
+
+vi.mock("@/hooks/queries/workspace-access/use-my-page-access", () => ({
+  useMyPageAccess: () => ({
+    data: { pages: ["general-management"], isAdmin: false },
+  }),
+}));
+
+vi.mock("@/fetchers/meeting", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/fetchers/meeting")>();
+  return {
+    ...actual,
+    listActionUpdates: vi.fn().mockResolvedValue([]),
+  };
+});
+
+// ActionConfigureDialog (opened per action from the Configure button) has
+// its own full suite in action-configure-dialog.test.tsx — including a real
+// CommentEditor stub, the memo-context query, and the send mutation. This
+// suite is only about whether the button exists and opens it with the
+// right action, so a minimal stub stands in.
+vi.mock("./action-configure-dialog", () => ({
+  ActionConfigureDialog: (props: {
+    open: boolean;
+    action: { id: string } | null;
+  }) =>
+    props.open && props.action ? (
+      <div data-testid="action-configure-dialog">{props.action.id}</div>
+    ) : null,
+}));
 
 function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
   return {
@@ -821,5 +870,48 @@ describe("MeetingDetailDialog", () => {
     expect(
       screen.queryByText(/most recent meetings only/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows a Configure button on an action and opens its memorandum popup for that action", async () => {
+    const user = userEvent.setup();
+    state.meeting = makeMeeting({
+      actions: [
+        {
+          id: "action-1",
+          meetingId: "meeting-1",
+          minuteItemId: "item-1",
+          assigneeId: "user-2",
+          fromUserId: "user-1",
+          description: "Circulate the approved budget",
+          dueAt: null,
+          acceptance: "accepted",
+          rejectionReason: null,
+          status: "open",
+          completedAt: null,
+          completedBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    renderDialog(
+      <MeetingDetailDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await openTab(user, "Actions");
+
+    expect(
+      screen.queryByTestId("action-configure-dialog"),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /configure/i }));
+
+    expect(screen.getByTestId("action-configure-dialog")).toHaveTextContent(
+      "action-1",
+    );
   });
 });

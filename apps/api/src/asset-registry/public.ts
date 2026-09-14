@@ -12,6 +12,7 @@ import {
   workspaceTable,
 } from "../database/schema";
 import { getPrivateObject } from "../storage/s3";
+import { buildContentDisposition } from "../utils/content-disposition";
 
 /**
  * Resolve a location's full "Site / Building / Room" path within a workspace.
@@ -133,7 +134,7 @@ const publicAsset = new Hono()
             "Cache-Control": "public, max-age=300",
             "Content-Length": object.contentLength?.toString() || "",
             "Content-Type": object.contentType || image.mimeType,
-            "Content-Disposition": `inline; filename="${image.filename}"`,
+            "Content-Disposition": buildContentDisposition(image.filename),
           },
         });
       } catch {

@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, ilike, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  isNull,
+  ne,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -24,8 +35,14 @@ import {
 } from "../utils/page-access";
 import { isGlobalAdmin } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
-import { canReadMeeting } from "./access";
+import {
+  assertCanReadMeeting,
+  canReadMeeting,
+  loadAttendeeUserIds,
+  loadMeeting,
+} from "./access";
 import { canAdoptMeeting } from "./action-rules";
+import { registerActionUpdateRoutes } from "./action-updates";
 import {
   clampLimit,
   decodeCursor,
@@ -34,6 +51,7 @@ import {
   keysetCondition,
   visibilityCondition,
 } from "./list-query";
+import { registerMemoRoutes } from "./memo-routes";
 import { validateImportRows } from "./minute-item-import";
 
 // Context variables populated by the auth + workspace-access middleware.
@@ -95,25 +113,6 @@ function patch<T extends Row>(
   return out;
 }
 
-async function loadMeeting(workspaceId: string, id: string) {
-  const [row] = await db
-    .select()
-    .from(meetingTable)
-    .where(
-      and(eq(meetingTable.id, id), eq(meetingTable.workspaceId, workspaceId)),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
-async function loadAttendeeUserIds(meetingId: string): Promise<string[]> {
-  const rows = await db
-    .select({ userId: meetingAttendeeTable.userId })
-    .from(meetingAttendeeTable)
-    .where(eq(meetingAttendeeTable.meetingId, meetingId));
-  return rows.map((r) => r.userId).filter((id): id is string => Boolean(id));
-}
-
 /**
  * The caller's role on a meeting's body — null both when the meeting is
  * standalone (no bodyId) and when the caller simply isn't a member of that
@@ -154,31 +153,6 @@ async function idInWorkspace(
     .where(and(eq(table.id, id), eq(table.workspaceId, workspaceId)))
     .limit(1);
   return Boolean(row);
-}
-
-/**
- * Every read route composes this: a refusal throws 403. Callers must have
- * already resolved the meeting from the caller's own workspace (a mismatch
- * is a 404, not a 403 — see `loadMeeting`).
- */
-async function assertCanReadMeeting(
-  userId: string,
-  workspaceId: string,
-  meeting: { confidential: boolean; id: string },
-): Promise<void> {
-  const attendeeUserIds = await loadAttendeeUserIds(meeting.id);
-  const admin = await isGlobalAdmin(userId, workspaceId);
-  if (
-    !canReadMeeting({
-      confidential: meeting.confidential,
-      attendeeUserIds,
-      userId,
-      isGlobalAdmin: admin,
-    })
-  )
-    throw new HTTPException(403, {
-      message: "You don't have access to this meeting",
-    });
 }
 
 /**
@@ -1438,6 +1412,26 @@ app.post(
   },
 );
 
+// ── Progress thread on an action ──────────────────────────────────────────
+// Registered BEFORE any future `/:id/actions/:actionId` catch-all: Hono
+// matches literal path segments against parameterised ones in registration
+// order (same trap as "/bodies" vs "/:id" and "/:id/minute-items/import" vs
+// "/:id/minute-items/:itemId" above). There is no `POST /:id/actions/:id`
+// today, so this is latent rather than live — keep the order correct
+// regardless of what gets added later.
+registerActionUpdateRoutes(app);
+
+// ── Configure -> send memorandum ────────────────────────────────────────
+// `GET`/`POST /:id/actions/:actionId/memo` — see memo-routes.ts for the
+// confidentiality reasoning (highest-risk path in this module: the
+// memorandum subject puts the meeting's name in an outbound email by
+// design). Registered here for the same reason as
+// `registerActionUpdateRoutes` above: Hono matches literal path segments
+// against parameterised ones in registration order, and there is no
+// `POST /:id/actions/:actionId` catch-all today, so this is latent rather
+// than live — keep it ordered correctly regardless.
+registerMemoRoutes(app);
+
 // ── Complete a delegated action (its assignee, or a GM officer) ───────────
 // Deliberately not gated by `pageAccess`: the assignee of a follow-up action
 // is often a plain workspace member who was never granted the General
@@ -1490,23 +1484,34 @@ app.post(
         message: "This action must be accepted before it can be completed",
       });
     const now = new Date();
-    // Guard the UPDATE on the current status so a concurrent second
-    // completion claims no rows rather than silently overwriting.
+    // Guard the UPDATE on `completedAt IS NULL`, not `status = 'open'`.
+    // `completedAt` is the authoritative record of the formal completion
+    // act; `status` is the informal working axis the action-updates thread
+    // (action-updates.ts) is explicitly allowed to move — including setting
+    // it to "done" without completing the action. Guarding on `status`
+    // would let a thread post of `statusAfter: "done"` permanently deadlock
+    // this route: the guard would never match again, and every future
+    // completion attempt would be falsely told "Action already completed"
+    // while `completedAt`/`completedBy` stayed null forever. `completedAt
+    // IS NULL` still gives the concurrency guard this route needs — a
+    // second concurrent completion still claims no rows — and `status <>
+    // 'cancelled'` keeps a cancelled action uncompletable.
     const [row] = await db
       .update(meetingActionTable)
       .set({ status: "done", completedAt: now, completedBy: callerId })
       .where(
         and(
           eq(meetingActionTable.id, actionId),
-          eq(meetingActionTable.status, "open"),
+          isNull(meetingActionTable.completedAt),
+          ne(meetingActionTable.status, "cancelled"),
         ),
       )
       .returning();
     if (!row) {
-      // The guarded UPDATE (status = 'open') is the right concurrency
-      // control — it just can't distinguish *why* it claimed no rows. F11:
-      // re-check the actual status so a cancelled action isn't falsely told
-      // it was "already completed".
+      // The guarded UPDATE (completedAt IS NULL AND status <> 'cancelled')
+      // is the right concurrency control — it just can't distinguish *why*
+      // it claimed no rows. F11: re-check the actual status so a cancelled
+      // action isn't falsely told it was "already completed".
       const [current] = await db
         .select({ status: meetingActionTable.status })
         .from(meetingActionTable)

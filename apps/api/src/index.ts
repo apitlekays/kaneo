@@ -67,6 +67,7 @@ import {
   resolveAssetBearerOrCookie,
 } from "./utils/authenticate-api-request";
 import { getInvitationDetails } from "./utils/check-registration-allowed";
+import { buildContentDisposition } from "./utils/content-disposition";
 import { migrateApiKeyReferenceId } from "./utils/migrate-apikey-reference-id";
 import { migrateNotificationPreferencesSchema } from "./utils/migrate-notification-preferences-schema";
 import { migrateSessionColumn } from "./utils/migrate-session-column";
@@ -122,28 +123,6 @@ type ApiVariables = {
     workspaceId?: string;
   };
 };
-
-export function buildContentDisposition(filename: string) {
-  const normalized = filename
-    .normalize("NFC")
-    .replace(/[\r\n"]/g, "")
-    .trim();
-  const safeFilename = normalized || "file";
-  const asciiFallback =
-    safeFilename
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[\\/]/g, "-")
-      .replace(/[^\x20-\x7E]+/g, "_")
-      .replace(/\s+/g, " ")
-      .trim() || "file";
-  const encodedFilename = encodeURIComponent(safeFilename).replace(
-    /['()*]/g,
-    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-
-  return `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;
-}
 
 export function createApp() {
   const app = new Hono<AppVariables>();

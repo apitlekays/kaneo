@@ -435,6 +435,20 @@
       "when": 1787968700801,
       "tag": "0061_clumsy_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1789100495511,
+      "tag": "0062_minor_polaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1789369609720,
+      "tag": "0063_flowery_nico_minoru",
+      "breakpoints": true
     }
   ]
 }

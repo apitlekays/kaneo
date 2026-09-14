@@ -2741,3 +2741,113 @@ export const meetingActionTable = pgTable(
     index("meeting_action_assigneeId_idx").on(table.assigneeId),
   ],
 );
+
+// The audit record of one memorandum email sent for an action, via the
+// Configure -> send memorandum feature (see `../meeting/memorandum.ts`).
+// Governance correspondence must be auditable, and this record is also what
+// lets the popup show a memorandum already went out rather than inviting a
+// duplicate — so it stores the fully rendered body actually sent, not just
+// the inputs.
+//
+// `meeting_` prefix per this module's convention (never bare `minute_` —
+// see the "Three kinds of minutes" note in CLAUDE.md). Never renamed to
+// align with `task_mom` or `letter_minute`; those are a different domain.
+export const meetingActionMemoTable = pgTable(
+  "meeting_action_memo",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    actionId: text("action_id")
+      .notNull()
+      .references(() => meetingActionTable.id, { onDelete: "cascade" }),
+    sentBy: text("sent_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    // Free text: the recipient is often external to the workspace (no
+    // userId to reference), so a name and email are captured directly.
+    recipientName: text("recipient_name").notNull(),
+    recipientEmail: text("recipient_email").notNull(),
+    // Further CC addresses, or null when none were given — same
+    // "list-or-null" jsonb convention as `letter_dispatch.recipients`.
+    cc: jsonb("cc").$type<string[] | null>(),
+    replyTo: text("reply_to").notNull(),
+    subject: text("subject").notNull(),
+    // The fully rendered HTML actually sent, not the Markdown source —
+    // this is the auditable record of what the recipient received.
+    bodyHtml: text("body_html").notNull(),
+    sentAt: timestamp("sent_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("meeting_action_memo_actionId_idx").on(table.actionId)],
+);
+
+// Append-only progress thread on a meeting action. Mirrors
+// `letter_minute_update`, with one addition: `statusAfter`.
+//
+// Letter Minutes had no equivalent because completion there was a separate
+// explicit step. Here the ask is "reply with status of the actions", so the
+// status change and the note explaining it belong in one record.
+//
+// NO `updatedAt`, and deliberately NO update or delete route — immutability
+// is enforced by the absence of a way to do it, exactly as with
+// `letter_minute_update`. A correction is a new update.
+export const meetingActionUpdateTable = pgTable(
+  "meeting_action_update",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    actionId: text("action_id")
+      .notNull()
+      .references(() => meetingActionTable.id, { onDelete: "cascade" }),
+    authorId: text("author_id").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    body: text("body").notNull(),
+    // The status the author is setting, or null when the update is only a
+    // comment. Free text is wrong here — this drives the action's own
+    // `status` column, which is the open | done | cancelled enum.
+    statusAfter: text("status_after"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("meeting_action_update_actionId_idx").on(table.actionId)],
+);
+
+// A PDF attached either to a meeting (archival, Spec D) or to one action
+// thread update (`actionUpdateId` set). `meetingId` is NOT NULL on both
+// kinds: it is what makes a single confidentiality check cover every
+// attachment path rather than two rules that can drift apart.
+//
+// Spec D extends this table with its storage and indexing fields
+// (`originalObjectKey`, `indexStatus`, `extractedText`, …). Do not add
+// those here.
+export const meetingDocumentTable = pgTable(
+  "meeting_document",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meetingTable.id, { onDelete: "cascade" }),
+    // Null for a meeting-level document; set for a reply attachment.
+    actionUpdateId: text("action_update_id"),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull().unique(),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    sha256: text("sha256"),
+    kind: text("kind").notNull().default("original"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("meeting_document_meetingId_idx").on(table.meetingId),
+    index("meeting_document_actionUpdateId_idx").on(table.actionUpdateId),
+  ],
+);

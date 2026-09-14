@@ -4,6 +4,7 @@ import {
   Info,
   Loader2,
   Lock,
+  Mail,
   Pencil,
   Trash2,
   Users,
@@ -42,10 +43,14 @@ import type {
 import { useAdoptCandidates } from "@/hooks/queries/meeting/use-adopt-candidates";
 import { useMeeting } from "@/hooks/queries/meeting/use-meeting";
 import { useMeetingMutations } from "@/hooks/queries/meeting/use-meeting-mutations";
+import { useMyPageAccess } from "@/hooks/queries/workspace-access/use-my-page-access";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
+import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
 import { onSelectValueChange } from "@/lib/select-value";
+import { ActionConfigureDialog } from "./action-configure-dialog";
+import { ActionThread } from "./action-thread";
 import { MinuteItemImport } from "./minute-item-import";
 
 type Mutations = ReturnType<typeof useMeetingMutations>;
@@ -134,6 +139,15 @@ function Body({
   const m = useMeetingMutations(workspaceId, meeting.id);
   const { data: usersData } = useGetActiveWorkspaceUsers(workspaceId);
   const users = usersData?.members ?? [];
+  const { data: session } = authClient.useSession();
+  const currentUserId = session?.user?.id ?? "";
+  const { data: access } = useMyPageAccess(workspaceId);
+  // Mirrors the server's canPostActionUpdate gate (update-access.ts): a page
+  // holder or the action's own assignee may post to its progress thread.
+  // `access.pages` already includes every slug when the caller is an admin,
+  // so this alone covers both the admin and the explicitly-granted case.
+  const hasGeneralManagementAccess =
+    access?.pages?.includes("general-management") ?? false;
   const [adoptSearch, setAdoptSearch] = useState("");
   const { data: adoptPage, isError: isMeetingsError } = useAdoptCandidates(
     workspaceId,
@@ -220,7 +234,14 @@ function Body({
           />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="actions">
-          <ActionsSection meeting={meeting} m={m} users={users} />
+          <ActionsSection
+            workspaceId={workspaceId}
+            meeting={meeting}
+            m={m}
+            users={users}
+            currentUserId={currentUserId}
+            hasGeneralManagementAccess={hasGeneralManagementAccess}
+          />
         </DialogSidebarPanel>
       </DialogSidebar>
     </>
@@ -781,13 +802,19 @@ function AddMinuteItemForm({ m }: { m: Mutations }) {
 }
 
 function ActionsSection({
+  workspaceId,
   meeting,
   m,
   users,
+  currentUserId,
+  hasGeneralManagementAccess,
 }: {
+  workspaceId: string;
   meeting: MeetingDetail;
   m: Mutations;
   users: WorkspaceUser[];
+  currentUserId: string;
+  hasGeneralManagementAccess: boolean;
 }) {
   const userName = (id: string | null) =>
     id ? (users.find((u) => u.userId === id)?.user?.name ?? id) : null;
@@ -807,6 +834,10 @@ function ActionsSection({
     seq: number;
   } | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  // The Configure popup ("Configure -> send memorandum") needs the whole
+  // action, not just its id — its detail is shown at the top of the popup
+  // alongside the send-out form.
+  const [configuring, setConfiguring] = useState<MeetingAction | null>(null);
 
   const delegate = (action: MeetingAction) => {
     setPrefill({
@@ -912,6 +943,19 @@ function ActionsSection({
                     Mark done
                   </Button>
                 )}
+                {/* Always available, regardless of assignment or
+                    completion status — a memorandum to an outside
+                    recipient can be sent about an action at any point in
+                    its life. */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={cn("h-6 px-1.5", !canComplete && "ml-auto")}
+                  onClick={() => setConfiguring(action)}
+                >
+                  <Mail className="h-3.5 w-3.5" />
+                  Configure
+                </Button>
               </div>
               {isUnassigned && !isDone && (
                 <p className="text-muted-foreground text-xs">
@@ -919,6 +963,15 @@ function ActionsSection({
                   that's recorded, mark this placeholder done.
                 </p>
               )}
+              <ActionThread
+                workspaceId={workspaceId}
+                meetingId={meeting.id}
+                action={action}
+                canPost={
+                  hasGeneralManagementAccess ||
+                  action.assigneeId === currentUserId
+                }
+              />
             </div>
           );
         })}
@@ -936,6 +989,14 @@ function ActionsSection({
           initialDescription={prefill?.description}
         />
       </div>
+      <ActionConfigureDialog
+        workspaceId={workspaceId}
+        meetingId={meeting.id}
+        action={configuring}
+        confidential={meeting.confidential}
+        open={Boolean(configuring)}
+        onClose={() => setConfiguring(null)}
+      />
     </div>
   );
 }
