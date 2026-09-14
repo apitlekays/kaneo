@@ -24,8 +24,14 @@ import {
 } from "../utils/page-access";
 import { isGlobalAdmin } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
-import { canReadMeeting } from "./access";
+import {
+  assertCanReadMeeting,
+  canReadMeeting,
+  loadAttendeeUserIds,
+  loadMeeting,
+} from "./access";
 import { canAdoptMeeting } from "./action-rules";
+import { registerActionUpdateRoutes } from "./action-updates";
 import {
   clampLimit,
   decodeCursor,
@@ -95,25 +101,6 @@ function patch<T extends Row>(
   return out;
 }
 
-async function loadMeeting(workspaceId: string, id: string) {
-  const [row] = await db
-    .select()
-    .from(meetingTable)
-    .where(
-      and(eq(meetingTable.id, id), eq(meetingTable.workspaceId, workspaceId)),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
-async function loadAttendeeUserIds(meetingId: string): Promise<string[]> {
-  const rows = await db
-    .select({ userId: meetingAttendeeTable.userId })
-    .from(meetingAttendeeTable)
-    .where(eq(meetingAttendeeTable.meetingId, meetingId));
-  return rows.map((r) => r.userId).filter((id): id is string => Boolean(id));
-}
-
 /**
  * The caller's role on a meeting's body — null both when the meeting is
  * standalone (no bodyId) and when the caller simply isn't a member of that
@@ -154,31 +141,6 @@ async function idInWorkspace(
     .where(and(eq(table.id, id), eq(table.workspaceId, workspaceId)))
     .limit(1);
   return Boolean(row);
-}
-
-/**
- * Every read route composes this: a refusal throws 403. Callers must have
- * already resolved the meeting from the caller's own workspace (a mismatch
- * is a 404, not a 403 — see `loadMeeting`).
- */
-async function assertCanReadMeeting(
-  userId: string,
-  workspaceId: string,
-  meeting: { confidential: boolean; id: string },
-): Promise<void> {
-  const attendeeUserIds = await loadAttendeeUserIds(meeting.id);
-  const admin = await isGlobalAdmin(userId, workspaceId);
-  if (
-    !canReadMeeting({
-      confidential: meeting.confidential,
-      attendeeUserIds,
-      userId,
-      isGlobalAdmin: admin,
-    })
-  )
-    throw new HTTPException(403, {
-      message: "You don't have access to this meeting",
-    });
 }
 
 /**
@@ -1437,6 +1399,15 @@ app.post(
     return c.json(row, 201);
   },
 );
+
+// ── Progress thread on an action ──────────────────────────────────────────
+// Registered BEFORE any future `/:id/actions/:actionId` catch-all: Hono
+// matches literal path segments against parameterised ones in registration
+// order (same trap as "/bodies" vs "/:id" and "/:id/minute-items/import" vs
+// "/:id/minute-items/:itemId" above). There is no `POST /:id/actions/:id`
+// today, so this is latent rather than live — keep the order correct
+// regardless of what gets added later.
+registerActionUpdateRoutes(app);
 
 // ── Complete a delegated action (its assignee, or a GM officer) ───────────
 // Deliberately not gated by `pageAccess`: the assignee of a follow-up action
