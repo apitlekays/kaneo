@@ -584,14 +584,21 @@ export const sendActionMemo = (
  * Presign -> direct PUT to storage -> finalize, mirroring
  * `uploadLetterAttachment` in `correspondence/letters.ts`.
  *
- * Both server routes reject a `mimeType` other than `application/pdf`, and
- * this client sends the file's own `file.type` so that check is applied to
- * something real rather than to a value the client made up. It is still not
- * true enforcement: nothing anywhere reads the file's bytes, so a non-PDF
- * whose browser-reported type happens to be `application/pdf` — or which
- * reports no type at all and ends in `.pdf` — is accepted. Real enforcement
- * would be a magic-byte check at finalize — tracked separately, not done
- * here.
+ * Both server routes reject a `mimeType` other than `application/pdf`.
+ *
+ * Be clear about what that check is worth here: `isPdfUpload` below admits
+ * only `application/pdf`, or an empty type with a `.pdf` name. So the value
+ * this client can possibly send is `application/pdf` either way, and the
+ * server is validating a claim the client is structurally certain to make
+ * — NOT the file. Nothing anywhere reads the bytes, so payload.exe renamed
+ * to payload.pdf is accepted.
+ *
+ * Real enforcement is a magic-byte check at finalize, tracked separately
+ * and deliberately not done here. Until then the blast radius is bounded by
+ * two things, both verified: the presigned PUT binds Content-Type into its
+ * signature, and the download route sends `X-Content-Type-Options: nosniff`.
+ * A mislabelled file is stored wrongly and renders as a broken PDF; it is
+ * not executed.
  */
 export async function uploadMeetingDocument(
   workspaceId: string,
@@ -602,19 +609,16 @@ export async function uploadMeetingDocument(
   if (!isPdfUpload(file)) {
     throw new Error("Only PDF files can be attached");
   }
-  // The file's own reported type wherever there is one, never a blanket
-  // hard-coded "application/pdf": asserting the type we want would mean the
-  // server's PDF-only check only ever validates a claim this client
-  // fabricated.
+  // Given the gate above this resolves to "application/pdf" for every file
+  // that reaches it: `file.type` is either that already, or empty for the
+  // typeless `.pdf` case (how several Android file providers report a
+  // perfectly good PDF), where sending "" would have the server 400 a file
+  // the client had just accepted.
   //
-  // The one exception is the case `isPdfUpload` above deliberately admits —
-  // empty `type` plus a `.pdf` extension, which is how some systems
-  // (notably several Android file providers) report a perfectly good PDF.
-  // Sending "" there would have the server reject a file the client just
-  // decided was a PDF, breaking an upload path this codebase supports on
-  // purpose. Anything else the browser reports is already refused by
-  // `isPdfUpload`, so this fallback widens nothing the client had not
-  // already accepted.
+  // Written as the expression rather than the literal on purpose: it is
+  // `isPdfUpload`, not this line, that decides what may be uploaded, so if
+  // that gate is ever widened the file's real type flows through instead of
+  // a fabricated one. It is NOT a claim that the real type is sent today.
   const contentType = file.type || "application/pdf";
   const presign = await presignMeetingDocument(workspaceId, id, {
     filename: file.name,

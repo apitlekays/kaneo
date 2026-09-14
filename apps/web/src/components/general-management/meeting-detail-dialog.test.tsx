@@ -82,10 +82,15 @@ vi.mock(
 );
 
 // ActionThread (rendered per action) pulls in the current session and page
-// access to compute `canPost`, and fetches its own thread — none of which
-// this suite is about (that's action-thread.test.tsx's job). Stub all
-// three so ActionThread renders its empty-thread state without a real
-// session, a real page-access fetch, or a real network call.
+// access to compute `canPost` — not what this suite is about (that is
+// action-thread.test.tsx's job), so both are stubbed.
+//
+// The thread query itself is no longer the reason for the fetch stub:
+// threads now render COLLAPSED and pass `enabled` on the expanded state, so
+// nothing here issues one. The stub stays because this suite must keep
+// working if a future change expands a thread by default — and if that
+// happens, action-thread.test.tsx's collapsed-issues-no-query case is what
+// should fail, not this file.
 vi.mock("@/lib/auth-client", () => ({
   authClient: { useSession: () => ({ data: { user: { id: "user-1" } } }) },
 }));

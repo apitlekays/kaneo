@@ -203,7 +203,11 @@ describe("uploadMeetingDocument", () => {
     return fetchMock;
   }
 
-  it("sends the file's own content type to presign and finalize", async () => {
+  // NOT "sends the file's own type": `isPdfUpload` guarantees the value is
+  // "application/pdf" whatever the file reports, so that name described a
+  // tautology. What is worth pinning is that BOTH requests carry the same
+  // type, since finalize's stored row is what the download route trusts.
+  it("sends application/pdf to presign and finalize alike", async () => {
     const fetchMock = mockUploadSequence();
     const file = new File(["%PDF-1.4"], "report.pdf", {
       type: "application/pdf",

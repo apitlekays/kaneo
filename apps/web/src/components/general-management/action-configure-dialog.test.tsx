@@ -84,7 +84,7 @@ function loadApiShortcodeTokens(): string[] {
       "Could not find MEMO_SHORTCODES in the API's memorandum.ts",
     );
   }
-  const tokens = [...list[1].matchAll(/token: "([a-z_]+)"/g)].map(
+  const tokens = [...list[1].matchAll(/token: "([^"]+)"/g)].map(
     (match) => match[1],
   );
   if (tokens.length === 0) {
