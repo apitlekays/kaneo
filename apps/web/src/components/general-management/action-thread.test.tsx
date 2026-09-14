@@ -498,6 +498,124 @@ describe("ActionThread", () => {
     });
   });
 
+  // The thread is append-only with no per-update attach control anywhere in
+  // the UI, so discarding the selection on a failed upload leaves the user
+  // no way to attach that PDF short of posting a duplicate update. Keeping
+  // it selected is what makes a retry possible at all.
+  it("keeps the picked file selected when the upload fails, so it can be retried", async () => {
+    const user = userEvent.setup();
+    mockListActionUpdates.mockResolvedValue([]);
+    const postedUpdate: MeetingActionUpdate = {
+      id: "update-101",
+      actionId: "action-1",
+      authorId: "user-2",
+      body: "Report attached",
+      statusAfter: null,
+      createdAt: "2026-01-07T00:00:00.000Z",
+      attachments: [],
+    };
+    state.mutate.mockImplementation((_vars, opts) => {
+      opts.onSuccess(postedUpdate);
+    });
+    mockUploadMeetingDocument.mockRejectedValue(
+      new Error("Upload to storage failed"),
+    );
+
+    const { container } = renderThread(
+      <ActionThread
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        action={makeAction()}
+        canPost
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/post an update/i)).toBeVisible(),
+    );
+
+    const file = new File(["%PDF-1.4"], "report.pdf", {
+      type: "application/pdf",
+    });
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    await user.upload(fileInput, file);
+
+    await user.type(
+      screen.getByPlaceholderText(/post an update/i),
+      "Report attached",
+    );
+    await user.click(screen.getByRole("button", { name: /post update/i }));
+
+    await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+
+    // Still selected: the attach control keeps showing the filename, the
+    // "Remove" affordance is still offered, and the input still holds it.
+    expect(
+      screen.getByRole("button", { name: /report\.pdf/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove/i })).toBeInTheDocument();
+    expect(fileInput.files?.[0]).toBe(file);
+    // …and the toast says what to do next, not only what broke.
+    expect(mockToastError).toHaveBeenCalledWith(
+      expect.stringMatching(/still selected/i),
+    );
+  });
+
+  it("clears the picked file once the upload succeeds", async () => {
+    const user = userEvent.setup();
+    mockListActionUpdates.mockResolvedValue([]);
+    const postedUpdate: MeetingActionUpdate = {
+      id: "update-102",
+      actionId: "action-1",
+      authorId: "user-2",
+      body: "Report attached",
+      statusAfter: null,
+      createdAt: "2026-01-08T00:00:00.000Z",
+      attachments: [],
+    };
+    state.mutate.mockImplementation((_vars, opts) => {
+      opts.onSuccess(postedUpdate);
+    });
+    mockUploadMeetingDocument.mockResolvedValue({ id: "doc-2" });
+
+    const { container } = renderThread(
+      <ActionThread
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        action={makeAction()}
+        canPost
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/post an update/i)).toBeVisible(),
+    );
+
+    const file = new File(["%PDF-1.4"], "report.pdf", {
+      type: "application/pdf",
+    });
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    await user.upload(fileInput, file);
+
+    await user.type(
+      screen.getByPlaceholderText(/post an update/i),
+      "Report attached",
+    );
+    await user.click(screen.getByRole("button", { name: /post update/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /attach pdf/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /remove/i }),
+    ).not.toBeInTheDocument();
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
   it("renders an attachment the server returns on the update it belongs to — proving durability across a reload, not just the post-upload case", async () => {
     // No upload happens in this test at all: `listActionUpdates` is mocked
     // to return an update that already carries its attachment, exactly what

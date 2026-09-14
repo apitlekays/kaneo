@@ -94,7 +94,6 @@ export function ActionThread({
         onSuccess: async (created: MeetingActionUpdate) => {
           setBody("");
           setStatus("");
-          resetFile();
           qc.invalidateQueries({ queryKey });
           if (!toAttach) return;
           // The update itself is already saved at this point — a failed
@@ -108,9 +107,20 @@ export function ActionThread({
               toAttach,
               created.id,
             );
+            // Only now — clearing the selection before the upload was
+            // attempted left a failure unrecoverable: the thread is
+            // append-only and there is no per-update attach control, so the
+            // only way back to that PDF was posting a duplicate update.
+            resetFile();
             qc.invalidateQueries({ queryKey });
-          } catch {
-            toast.error("Update posted, but the attachment upload failed");
+          } catch (error) {
+            const reason =
+              error instanceof Error && error.message
+                ? ` (${error.message})`
+                : "";
+            toast.error(
+              `Update posted, but the attachment upload failed${reason}. The file is still selected — post another update to retry the upload.`,
+            );
           } finally {
             setUploading(false);
           }
