@@ -209,23 +209,21 @@ git show origin/main:apps/api/src/storage/s3.ts | grep -nE "createMeetingFileUpl
 If any name has changed, record the new name and use it throughout; do not
 rename anything back to match this plan.
 
-- [ ] **Step 3: Apply the two Spec-D-relevant findings from C's final review**
+- [ ] **Step 3: Confirm the one Spec-D-relevant fix from C's review is present**
 
-C's final API review recorded one finding that is latent in C and becomes
-**live** the moment this plan lands, because Spec D adds a second writer to
-`meeting_document`:
-
-> **F9** — the download gate resolves the action update without scoping it to
-> the meeting. One `and(...)` fixes it.
-
-Check whether C's merge already fixed it:
+C's final API review found that the document download gate resolved the
+action update without scoping it to the meeting — latent in C, but live the
+moment this plan adds a second writer to `meeting_document`. **It was fixed
+before C merged** (commit `938f7bee`, with an integration test that returns
+200 before the fix and 403 after). Confirm it is still there, since this
+plan is what would make a regression exploitable:
 
 ```bash
-git show origin/main:apps/api/src/meeting/action-updates.ts | sed -n '/attachments\/:docId\/download/,/^  );/p' | grep -n "meetingId"
+git show origin/main:apps/api/src/meeting/action-updates.ts | sed -n '/attachments\/:docId\/download/,/^  );/p' | grep -c "meetingId"
 ```
 
-If the update lookup is not scoped by `meetingId`, fix it as the first commit
-of this plan — before Task 1 — since this plan is what makes it exploitable.
+Expected: at least one match inside the download handler. If it is zero,
+STOP — do not build on top of it.
 
 - [ ] **Step 4: Record findings in the ledger, then proceed**
 
