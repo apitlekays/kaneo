@@ -217,21 +217,52 @@ describe("uploadMeetingDocument", () => {
     expect(finalizeBody.mimeType).toBe("application/pdf");
   });
 
-  // The client used to hard-code `mimeType: "application/pdf"` on both
-  // requests regardless of the file, so the server's PDF-only check could
-  // only ever validate a claim this client fabricated — rename payload.exe
-  // to payload.pdf, get an empty `type` from the browser, and it was stored
-  // and later served `inline` as a PDF. Sending the real type means the
-  // server gets something it can actually refuse.
-  it("does not fabricate application/pdf for a file the browser reports no type for", async () => {
+  // The client used to hard-code `mimeType: "application/pdf"` on every
+  // request regardless of the file, so the server's PDF-only check could
+  // only ever validate a claim this client fabricated. It now sends
+  // `file.type` — except for the ONE case `isPdfUpload` deliberately
+  // admits: empty `type` plus a `.pdf` extension, which is how several
+  // Android file providers report a perfectly good PDF. Sending "" there
+  // would have the server refuse a file the client had just accepted,
+  // breaking an upload path this codebase supports on purpose (see the
+  // comment in `is-pdf-upload.ts`).
+  //
+  // This does leave payload.exe-renamed-to-payload.pdf accepted. That hole
+  // is NOT closed by sending "": a rename is equally reachable by a caller
+  // that simply claims `application/pdf`, so refusing the empty-type case
+  // costs legitimate uploads and buys nothing. It is closed only by reading
+  // the bytes — a magic-byte check at finalize, tracked separately. Note
+  // the blast radius is bounded meanwhile: the presigned PUT binds
+  // Content-Type into its signature, and the download route sends
+  // `X-Content-Type-Options: nosniff`, so a mislabelled file is stored
+  // wrongly rather than executed.
+  it("falls back to application/pdf only for the empty-type .pdf case isPdfUpload allows", async () => {
     const fetchMock = mockUploadSequence();
-    const file = new File(["MZ"], "payload.pdf", { type: "" });
+    const file = new File(["%PDF-1.4"], "scan.pdf", { type: "" });
 
     await uploadMeetingDocument("ws-1", "meeting-1", file, "update-1");
 
     const presignBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(presignBody.mimeType).not.toBe("application/pdf");
-    expect(presignBody.mimeType).toBe("");
+    const finalizeBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(presignBody.mimeType).toBe("application/pdf");
+    expect(finalizeBody.mimeType).toBe("application/pdf");
+  });
+
+  it("refuses a non-PDF type outright rather than relabelling it", async () => {
+    // The fallback must not become a blanket relabel: a browser-reported
+    // type that is neither empty nor application/pdf is rejected by
+    // `isPdfUpload` before any request goes out. Asserting zero fetches is
+    // what makes this bite — a toast-only assertion would still pass if the
+    // request were sent anyway.
+    const fetchMock = mockUploadSequence();
+    const file = new File(["MZ"], "payload.exe", {
+      type: "application/octet-stream",
+    });
+
+    await expect(
+      uploadMeetingDocument("ws-1", "meeting-1", file, "update-1"),
+    ).rejects.toThrow(/only pdf/i);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

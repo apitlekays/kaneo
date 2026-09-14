@@ -588,9 +588,10 @@ export const sendActionMemo = (
  * this client sends the file's own `file.type` so that check is applied to
  * something real rather than to a value the client made up. It is still not
  * true enforcement: nothing anywhere reads the file's bytes, so a non-PDF
- * whose browser-reported type happens to be `application/pdf` is accepted.
- * Real enforcement would be a magic-byte check at finalize — tracked
- * separately, not done here.
+ * whose browser-reported type happens to be `application/pdf` — or which
+ * reports no type at all and ends in `.pdf` — is accepted. Real enforcement
+ * would be a magic-byte check at finalize — tracked separately, not done
+ * here.
  */
 export async function uploadMeetingDocument(
   workspaceId: string,
@@ -601,12 +602,20 @@ export async function uploadMeetingDocument(
   if (!isPdfUpload(file)) {
     throw new Error("Only PDF files can be attached");
   }
-  // The file's own reported type, never a hard-coded "application/pdf":
-  // asserting the type we want would mean the server's PDF-only check only
-  // ever validates a claim this client fabricated. A file the browser
-  // reports no type for is refused by the server, which is the right
-  // outcome — `ActionThread` surfaces that message in its failure toast.
-  const contentType = file.type;
+  // The file's own reported type wherever there is one, never a blanket
+  // hard-coded "application/pdf": asserting the type we want would mean the
+  // server's PDF-only check only ever validates a claim this client
+  // fabricated.
+  //
+  // The one exception is the case `isPdfUpload` above deliberately admits —
+  // empty `type` plus a `.pdf` extension, which is how some systems
+  // (notably several Android file providers) report a perfectly good PDF.
+  // Sending "" there would have the server reject a file the client just
+  // decided was a PDF, breaking an upload path this codebase supports on
+  // purpose. Anything else the browser reports is already refused by
+  // `isPdfUpload`, so this fallback widens nothing the client had not
+  // already accepted.
+  const contentType = file.type || "application/pdf";
   const presign = await presignMeetingDocument(workspaceId, id, {
     filename: file.name,
     mimeType: contentType,

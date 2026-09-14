@@ -190,7 +190,7 @@ export function ActionThread({
                     Set status: {update.statusAfter}
                   </Badge>
                 )}
-                {update.attachments.map((doc) => (
+                {(update.attachments ?? []).map((doc) => (
                   <a
                     key={doc.id}
                     href={meetingDocumentDownloadUrl(
