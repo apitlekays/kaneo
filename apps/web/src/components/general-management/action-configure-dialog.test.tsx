@@ -151,6 +151,7 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
@@ -171,6 +172,7 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
@@ -202,6 +204,7 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
@@ -221,6 +224,7 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
@@ -250,6 +254,7 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
@@ -268,6 +273,7 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
@@ -285,6 +291,7 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
@@ -304,6 +311,7 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
@@ -357,6 +365,7 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
@@ -384,11 +393,94 @@ describe("ActionConfigureDialog", () => {
         workspaceId="ws-1"
         meetingId="meeting-1"
         action={makeAction()}
+        confidential={false}
         open
         onClose={vi.fn()}
       />,
     );
 
     expect(screen.getAllByText(/Meeting Minutes/).length).toBeGreaterThan(0);
+  });
+
+  // The memorandum puts the meeting's name in the email subject by design,
+  // and the recipient is free text nobody verifies — so the sender needs to
+  // be told, at the moment of sending, that this particular send puts a
+  // confidential title in an unverified inbox. Advisory only: the send is
+  // authorised server-side and must not be blocked here.
+  it("warns beside the send button when the meeting is confidential", () => {
+    state.data = makeMemoContext();
+
+    render(
+      <ActionConfigureDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        action={makeAction()}
+        confidential
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    const warning = screen.getByTestId("memo-confidential-warning");
+    expect(warning).toHaveTextContent(/confidential/i);
+    expect(warning).toHaveTextContent(/subject line/i);
+    expect(warning).toHaveTextContent(/authoris/i);
+  });
+
+  it("shows no confidentiality warning for a meeting that is not confidential", () => {
+    state.data = makeMemoContext();
+
+    render(
+      <ActionConfigureDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        action={makeAction()}
+        confidential={false}
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("memo-confidential-warning"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still sends with the confidentiality warning shown — it is a warning, not a gate", async () => {
+    const user = userEvent.setup();
+    state.data = makeMemoContext();
+
+    render(
+      <ActionConfigureDialog
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        action={makeAction()}
+        confidential
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("memo-confidential-warning")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/recipient name/i), "Dato' Ahmad");
+    await user.type(
+      screen.getByLabelText(/recipient email/i),
+      "ahmad@example.com",
+    );
+
+    const sendButton = screen.getByRole("button", {
+      name: /send memorandum/i,
+    });
+    expect(sendButton).not.toBeDisabled();
+    await user.click(sendButton);
+
+    expect(state.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientName: "Dato' Ahmad",
+        recipientEmail: "ahmad@example.com",
+      }),
+      expect.anything(),
+    );
   });
 });

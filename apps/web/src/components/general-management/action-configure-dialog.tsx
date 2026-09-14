@@ -1,4 +1,4 @@
-import { Loader2, Mail, X } from "lucide-react";
+import { Loader2, Lock, Mail, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import CommentEditor from "@/components/activity/comment-editor";
 import { Badge } from "@/components/ui/badge";
@@ -63,12 +63,18 @@ export function ActionConfigureDialog({
   workspaceId,
   meetingId,
   action,
+  confidential,
   open,
   onClose,
 }: {
   workspaceId: string;
   meetingId: string;
   action: MeetingAction | null;
+  /** The meeting's own `confidential` flag, threaded from the detail
+   * dialog. Sending is authorised server-side and is not gated here — this
+   * only decides whether the sender is warned that the subject line will
+   * carry a confidential meeting's name to an unverified address. */
+  confidential: boolean;
   open: boolean;
   onClose: () => void;
 }) {
@@ -373,6 +379,25 @@ export function ActionConfigureDialog({
                 for those contexts.
               </p>
             </div>
+
+            {/* Beside the send action, not at the top of the dialog: the
+                point is that it is in view at the moment of sending rather
+                than scrolled past on open. Same visual idiom as the
+                confidential banner in `meeting-detail-dialog.tsx`'s
+                OverviewSection. */}
+            {confidential && (
+              <div
+                data-testid="memo-confidential-warning"
+                className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
+              >
+                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <span>
+                  This meeting is confidential, and its name appears in the
+                  email subject line. Confirm the recipient is authorised to
+                  know about it before sending.
+                </span>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" onClick={onClose}>

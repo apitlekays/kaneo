@@ -993,6 +993,7 @@ function ActionsSection({
         workspaceId={workspaceId}
         meetingId={meeting.id}
         action={configuring}
+        confidential={meeting.confidential}
         open={Boolean(configuring)}
         onClose={() => setConfiguring(null)}
       />
