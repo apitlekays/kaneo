@@ -10,6 +10,8 @@ import {
   meetingDocumentTable,
 } from "../database/schema";
 import {
+  applyKeyPrefix,
+  assertStorageConfigured,
   createMeetingFileUploadUrl,
   getPrivateObject,
   meetingFileKeyOwnerSegment,
@@ -39,13 +41,21 @@ const MAX_FILENAME_LENGTH = 255;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters (incl. CR/LF) are exactly what this pattern must reject.
 const SAFE_FILENAME_PATTERN = /^[^\u0000-\u001f\u007f"\\/]+$/u;
 
-const optStr = v.optional(v.string());
 const meetingDocumentFilename = v.pipe(
   v.string(),
   v.trim(),
   v.minLength(1, "Filename required"),
   v.maxLength(MAX_FILENAME_LENGTH, "Filename is too long"),
   v.regex(SAFE_FILENAME_PATTERN, "Filename contains invalid characters"),
+);
+// `v.optional(v.string())` would accept `""`, which `?? null` at the
+// finalize write site does NOT map to null — it would persist as a value
+// that is neither a valid reply attachment (no matching update) nor a
+// valid meeting-level document (not actually null), and is then invisible
+// to both `eq(actionUpdateId, x)` and `isNull(actionUpdateId)` lookups.
+// Reject the empty string at the door instead of only patching the write.
+const optionalActionUpdateId = v.optional(
+  v.pipe(v.string(), v.trim(), v.minLength(1)),
 );
 
 async function loadAction(meetingId: string, actionId: string) {
@@ -63,9 +73,10 @@ async function loadAction(meetingId: string, actionId: string) {
 }
 
 /**
- * PDF only — enforced here so the check holds on presign as well as
- * finalize, rather than only at the point a row is written. A client-side
- * MIME check is a convenience; this is the boundary.
+ * PDF only — the first check in `assertCanAttachMeetingDocument`, so it
+ * cannot be forgotten by a future caller of the gate (Spec D adds one).
+ * Kept as its own function since the read-side gate below has no MIME type
+ * to check at all.
  */
 function assertPdfOnly(mimeType: string): void {
   if (mimeType !== MEETING_DOCUMENT_MIME_TYPE)
@@ -81,7 +92,9 @@ function assertPdfOnly(mimeType: string): void {
  * unreachable: the caller can never obtain an upload URL. Both routes below
  * call this one function.
  *
- * Confidentiality first (`assertCanReadMeeting`): `canPostActionUpdate`
+ * PDF-only first: cheap, and refuses the request before any DB/S3 work.
+ *
+ * Confidentiality next (`assertCanReadMeeting`): `canPostActionUpdate`
  * alone would let a General Management page holder who is NOT an attendee
  * attach to a confidential meeting's action, since page access alone
  * satisfies it. That would be exactly the title/data leak this module has
@@ -100,7 +113,9 @@ async function assertCanAttachMeetingDocument(
   workspaceId: string,
   meeting: { id: string; confidential: boolean },
   actionUpdateId: string | undefined,
+  mimeType: string,
 ): Promise<void> {
+  assertPdfOnly(mimeType);
   await assertCanReadMeeting(userId, workspaceId, meeting);
   if (!actionUpdateId) {
     if (!(await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG)))
@@ -135,6 +150,55 @@ async function assertCanAttachMeetingDocument(
     throw new HTTPException(403, {
       message:
         "Only the action's assignee or a GM officer can attach files here",
+    });
+}
+
+/**
+ * Read counterpart of `assertCanAttachMeetingDocument`, applied once the
+ * document row is in hand. `assertCanReadMeeting` alone is not enough: it
+ * returns true unconditionally for a non-confidential meeting, but an
+ * attachment is thread content — the same reason
+ * `GET /:id/actions/:actionId/updates` above layers `canPostActionUpdate`
+ * on top of `assertCanReadMeeting` rather than relying on it alone.
+ *
+ * No 404-on-missing-join here (unlike the attach gate): the document row
+ * was already loaded from THIS meeting's own document set, so its
+ * `actionUpdateId`, if set, is trusted to resolve — a missing join only
+ * means `actionAssigneeId` falls through to `null`, which still requires
+ * page access to satisfy `canPostActionUpdate`, refusing safely rather
+ * than throwing.
+ */
+async function assertCanReadMeetingDocument(
+  userId: string,
+  workspaceId: string,
+  doc: { actionUpdateId: string | null },
+): Promise<void> {
+  if (!doc.actionUpdateId) {
+    if (!(await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG)))
+      throw new HTTPException(403, {
+        message: "You don't have access to this page",
+      });
+    return;
+  }
+  const [row] = await db
+    .select({ actionAssigneeId: meetingActionTable.assigneeId })
+    .from(meetingActionUpdateTable)
+    .innerJoin(
+      meetingActionTable,
+      eq(meetingActionTable.id, meetingActionUpdateTable.actionId),
+    )
+    .where(eq(meetingActionUpdateTable.id, doc.actionUpdateId))
+    .limit(1);
+  const hasPage = await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG);
+  if (
+    !canPostActionUpdate({
+      userId,
+      hasPageAccess: hasPage,
+      actionAssigneeId: row?.actionAssigneeId ?? null,
+    })
+  )
+    throw new HTTPException(403, {
+      message: "Only the action's assignee or a GM officer can download this",
     });
 }
 
@@ -312,7 +376,7 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         filename: meetingDocumentFilename,
         mimeType: v.string(),
         size: v.number(),
-        actionUpdateId: optStr,
+        actionUpdateId: optionalActionUpdateId,
       }),
     ),
     workspaceAccess.fromBody("workspaceId"),
@@ -324,12 +388,12 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
 
       const meeting = await loadMeeting(ws, id);
       if (!meeting) throw new HTTPException(404, { message: "Not found" });
-      assertPdfOnly(b.mimeType);
       await assertCanAttachMeetingDocument(
         userId,
         ws,
         meeting,
         b.actionUpdateId,
+        b.mimeType,
       );
 
       const presigned = await createMeetingFileUploadUrl({
@@ -359,7 +423,7 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         filename: meetingDocumentFilename,
         mimeType: v.string(),
         size: v.number(),
-        actionUpdateId: optStr,
+        actionUpdateId: optionalActionUpdateId,
       }),
     ),
     workspaceAccess.fromBody("workspaceId"),
@@ -371,7 +435,6 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
 
       const meeting = await loadMeeting(ws, id);
       if (!meeting) throw new HTTPException(404, { message: "Not found" });
-      assertPdfOnly(b.mimeType);
       // Same gate as presign — see the function's own comment for why
       // gating only one of the two leaves the feature unreachable.
       await assertCanAttachMeetingDocument(
@@ -379,14 +442,22 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         ws,
         meeting,
         b.actionUpdateId,
+        b.mimeType,
       );
       // Reject an objectKey pointed outside this meeting's owner segment —
       // otherwise finalize becomes a way to claim someone else's uploaded
       // object. The meeting-shaped twin of the same guard in
-      // `correspondence/letters.ts`.
+      // `correspondence/letters.ts`. `startsWith` rather than `includes`:
+      // the latter would also accept a key that merely CONTAINS the owner
+      // segment as a substring without being rooted under it (e.g.
+      // `attacker-controlled/workspace/<ws>/meeting/<id>/evil.pdf`).
+      const ownerSegmentPrefix = applyKeyPrefix(
+        assertStorageConfigured().keyPrefix,
+        meetingFileKeyOwnerSegment(ws, id),
+      );
       if (
         b.objectKey.includes("..") ||
-        !b.objectKey.includes(meetingFileKeyOwnerSegment(ws, id))
+        !b.objectKey.startsWith(ownerSegmentPrefix)
       )
         throw new HTTPException(400, { message: "Invalid object key" });
 
@@ -428,8 +499,11 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
 
       const meeting = await loadMeeting(ws, id);
       if (!meeting) throw new HTTPException(404, { message: "Not found" });
-      // Download is refused for anyone who cannot read the meeting itself —
-      // the same confidentiality rule as every other read in this module.
+      // Confidentiality first, same as every other read in this module —
+      // but not sufficient on its own: `assertCanReadMeeting` returns true
+      // unconditionally for a non-confidential meeting, and an attachment
+      // is thread content, narrower than the meeting itself (see the
+      // comment on `assertCanReadMeetingDocument`).
       await assertCanReadMeeting(userId, ws, meeting);
 
       const [doc] = await db
@@ -443,6 +517,7 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         )
         .limit(1);
       if (!doc) throw new HTTPException(404, { message: "Not found" });
+      await assertCanReadMeetingDocument(userId, ws, doc);
 
       try {
         const object = await getPrivateObject(doc.objectKey);
@@ -451,6 +526,12 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
             "Cache-Control": "private, max-age=120",
             "Content-Type": object.contentType || doc.mimeType,
             "Content-Disposition": buildContentDisposition(doc.filename),
+            // The stored MIME type is always "application/pdf" (enforced by
+            // `assertPdfOnly`), but the bytes themselves are never verified
+            // to actually be a PDF — this stops a browser from sniffing and
+            // rendering/executing something else if they aren't, especially
+            // given the response is served `inline`.
+            "X-Content-Type-Options": "nosniff",
           },
         });
       } catch {

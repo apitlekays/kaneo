@@ -1125,4 +1125,196 @@ describe("API integration: meeting action updates", () => {
       `filename*=UTF-8''${encodeURIComponent(nonAsciiFilename)}`,
     );
   });
+
+  it("23. download requires the same read authority as the thread: a non-page, non-assignee member is refused even on a non-confidential meeting; the assignee can still download", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    const presigned = await (
+      await presignAttachment(assigneeApp, meeting.id, {
+        workspaceId: owner.workspace.id,
+        actionUpdateId: update.id,
+      })
+    ).json();
+    const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      objectKey: presigned.key,
+      actionUpdateId: update.id,
+    });
+    expect(finalizeRes.status).toBe(201);
+    const doc = await finalizeRes.json();
+
+    // Same shape as the bystander in test 5c (GET updates): a plain
+    // workspace member, no General Management page, not an attendee, not
+    // the assignee. The meeting itself is NOT confidential, so
+    // `assertCanReadMeeting` alone would let this caller straight through
+    // — `canReadMeeting` returns true unconditionally for a non-confidential
+    // meeting. An attachment is thread content, same as the updates
+    // themselves, and must be gated the same way.
+    const bystander = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: owner.workspace.id,
+      userId: bystander.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+
+    mockAuthenticatedSession(bystander.user);
+    const { app: bystanderApp } = createApp();
+    // Mocked so that, absent the fix, this would actually succeed (200) —
+    // the point being proven — rather than an unrelated 404 from the real
+    // (unavailable in this environment) S3 endpoint masking the gap.
+    vi.mocked(getPrivateObject).mockResolvedValueOnce({
+      body: "fake-pdf-bytes",
+      contentType: "application/pdf",
+      contentLength: 14,
+      etag: '"fake-etag"',
+      lastModified: new Date(),
+    });
+    const refused = await downloadAttachment(
+      bystanderApp,
+      meeting.id,
+      doc.id,
+      owner.workspace.id,
+    );
+    expect(refused.status).toBe(403);
+
+    mockAuthenticatedSession(assignee.user);
+    vi.mocked(getPrivateObject).mockResolvedValueOnce({
+      body: "fake-pdf-bytes",
+      contentType: "application/pdf",
+      contentLength: 14,
+      etag: '"fake-etag"',
+      lastModified: new Date(),
+    });
+    const allowed = await downloadAttachment(
+      assigneeApp,
+      meeting.id,
+      doc.id,
+      owner.workspace.id,
+    );
+    expect(allowed.status).toBe(200);
+  });
+
+  it('24. an empty-string actionUpdateId is rejected at both routes, not silently treated as "no actionUpdateId"', async () => {
+    const { owner, meeting } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    // The owner already holds full General Management access, so the old
+    // "no actionUpdateId" (meeting-level) branch of the gate would have let
+    // this straight through — exactly the case where an empty string
+    // masquerading as "not set" must be refused before it can ever reach
+    // storage, where it would be neither a valid reply attachment nor a
+    // valid meeting-level document (`?? null` does not map "" to null).
+    mockAuthenticatedSession(owner.user);
+    const { app: ownerApp } = createApp();
+
+    const presignRes = await presignAttachment(ownerApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      actionUpdateId: "",
+    });
+    expect(presignRes.status).toBe(400);
+
+    const finalizeRes = await finalizeAttachment(ownerApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      objectKey: `workspace/${owner.workspace.id}/meeting/${meeting.id}/report.pdf`,
+      actionUpdateId: "",
+    });
+    expect(finalizeRes.status).toBe(400);
+
+    const rows = await db
+      .select()
+      .from(schema.meetingDocumentTable)
+      .where(eq(schema.meetingDocumentTable.meetingId, meeting.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("25. finalize rejects an object key that merely contains the owner segment without being rooted under it", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    // Contains the exact owner segment as a substring, but does not start
+    // with it — a bare `includes` check cannot distinguish this from a key
+    // genuinely rooted under this meeting's folder.
+    const trickyKey = `attacker-controlled/workspace/${owner.workspace.id}/meeting/${meeting.id}/evil.pdf`;
+
+    const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      objectKey: trickyKey,
+      actionUpdateId: update.id,
+    });
+    expect(finalizeRes.status).toBe(400);
+
+    const rows = await db
+      .select()
+      .from(schema.meetingDocumentTable)
+      .where(eq(schema.meetingDocumentTable.meetingId, meeting.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("26. download responses carry X-Content-Type-Options: nosniff", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    const presigned = await (
+      await presignAttachment(assigneeApp, meeting.id, {
+        workspaceId: owner.workspace.id,
+        actionUpdateId: update.id,
+      })
+    ).json();
+    const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      objectKey: presigned.key,
+      actionUpdateId: update.id,
+    });
+    expect(finalizeRes.status).toBe(201);
+    const doc = await finalizeRes.json();
+
+    vi.mocked(getPrivateObject).mockResolvedValueOnce({
+      body: "fake-pdf-bytes",
+      contentType: "application/pdf",
+      contentLength: 14,
+      etag: '"fake-etag"',
+      lastModified: new Date(),
+    });
+    const res = await downloadAttachment(
+      assigneeApp,
+      meeting.id,
+      doc.id,
+      owner.workspace.id,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+  });
 });
