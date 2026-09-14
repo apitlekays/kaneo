@@ -501,6 +501,91 @@ export const meetingDocumentDownloadUrl = (
  * enforced server-side on both presign and finalize; the check here is a
  * client-side convenience so a bad pick never reaches the network.
  */
+// ── Configure -> send memorandum ────────────────────────────────────────
+// `GET`/`POST /:id/actions/:actionId/memo` — see the server's
+// `apps/api/src/meeting/memo-routes.ts` for the full contract. Both routes
+// gate on General Management page access AND `assertCanReadMeeting`, so a
+// confidential meeting stays closed to a non-attendee even here.
+
+/**
+ * The shortcode values `GET .../memo` resolves for one action — from the
+ * meeting (`meeting_name`/`meeting_date`), the action or its linked minute
+ * item (`numbering`/`topic`/`status` — the server, not this app, decides
+ * which source wins; see `resolveBaseValues` in memo-routes.ts), and the
+ * two the user fills in (`recipient_name`/`notes`, always empty on GET).
+ */
+export type MeetingActionMemoValues = {
+  meeting_name: string;
+  meeting_date: string;
+  numbering: string;
+  topic: string;
+  status: string;
+  recipient_name: string;
+  notes: string;
+};
+
+/** One past send of the memorandum for an action, as embedded in the GET's
+ * `lastSend` and returned whole by the POST — surfaced so the Configure
+ * popup can show "already sent" instead of inviting a duplicate. */
+export type MeetingActionMemoSend = {
+  id: string;
+  recipientName: string;
+  recipientEmail: string;
+  cc: string[] | null;
+  replyTo: string;
+  subject: string;
+  bodyHtml: string;
+  sentAt: string;
+};
+
+export type MeetingActionMemoContext = {
+  /** The default body, as Markdown, with `{{shortcode}}` tokens in it —
+   * never HTML. See `apps/api/src/meeting/memorandum.ts`'s `MEMO_SHORTCODES`
+   * for the vocabulary (mirrored, not imported, in
+   * `action-configure-dialog.tsx` — that module is the API's internals). */
+  defaultTemplate: string;
+  values: MeetingActionMemoValues;
+  lastSend: MeetingActionMemoSend | null;
+};
+
+export type SendMeetingActionMemoInput = {
+  recipientName: string;
+  recipientEmail: string;
+  notes?: string;
+  replyTo?: string;
+  cc?: string[];
+  /** Markdown ONLY — the route rejects (or worse, mis-renders) HTML. See
+   * `buildMemorandumHtml`'s docstring in the API for why. */
+  bodyMarkdown: string;
+};
+
+export async function getActionMemoContext(
+  workspaceId: string,
+  id: string,
+  actionId: string,
+): Promise<MeetingActionMemoContext> {
+  return jsonOrThrow(
+    await fetch(
+      url(
+        `${id}/actions/${actionId}/memo?workspaceId=${encodeURIComponent(workspaceId)}`,
+      ),
+      { credentials: "include" },
+    ),
+  );
+}
+
+export const sendActionMemo = (
+  workspaceId: string,
+  id: string,
+  actionId: string,
+  body: SendMeetingActionMemoInput,
+) =>
+  post<MeetingActionMemoSend>(
+    `${id}/actions/${actionId}/memo`,
+    workspaceId,
+    body,
+  );
+
 export async function uploadMeetingDocument(
   workspaceId: string,
   id: string,

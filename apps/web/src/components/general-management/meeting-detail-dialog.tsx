@@ -4,6 +4,7 @@ import {
   Info,
   Loader2,
   Lock,
+  Mail,
   Pencil,
   Trash2,
   Users,
@@ -48,6 +49,7 @@ import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
 import { onSelectValueChange } from "@/lib/select-value";
+import { ActionConfigureDialog } from "./action-configure-dialog";
 import { ActionThread } from "./action-thread";
 import { MinuteItemImport } from "./minute-item-import";
 
@@ -832,6 +834,10 @@ function ActionsSection({
     seq: number;
   } | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  // The Configure popup ("Configure -> send memorandum") needs the whole
+  // action, not just its id — its detail is shown at the top of the popup
+  // alongside the send-out form.
+  const [configuring, setConfiguring] = useState<MeetingAction | null>(null);
 
   const delegate = (action: MeetingAction) => {
     setPrefill({
@@ -937,6 +943,19 @@ function ActionsSection({
                     Mark done
                   </Button>
                 )}
+                {/* Always available, regardless of assignment or
+                    completion status — a memorandum to an outside
+                    recipient can be sent about an action at any point in
+                    its life. */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={cn("h-6 px-1.5", !canComplete && "ml-auto")}
+                  onClick={() => setConfiguring(action)}
+                >
+                  <Mail className="h-3.5 w-3.5" />
+                  Configure
+                </Button>
               </div>
               {isUnassigned && !isDone && (
                 <p className="text-muted-foreground text-xs">
@@ -970,6 +989,13 @@ function ActionsSection({
           initialDescription={prefill?.description}
         />
       </div>
+      <ActionConfigureDialog
+        workspaceId={workspaceId}
+        meetingId={meeting.id}
+        action={configuring}
+        open={Boolean(configuring)}
+        onClose={() => setConfiguring(null)}
+      />
     </div>
   );
 }
