@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -72,6 +73,20 @@ function renderThread(ui: ReactElement) {
   );
 }
 
+/**
+ * The thread is collapsed by default — the detail dialog mounts one per
+ * action, so each one only queries once its disclosure is opened. Every
+ * test about the thread's contents or composer opens it first.
+ *
+ * `fireEvent` rather than `userEvent` so the tests that assert
+ * synchronously straight after mount (the loading state) still can.
+ */
+function renderExpandedThread(ui: ReactElement) {
+  const result = renderThread(ui);
+  fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+  return result;
+}
+
 function makeAction(overrides: Partial<MeetingAction> = {}): MeetingAction {
   return {
     id: "action-1",
@@ -113,10 +128,63 @@ afterEach(() => {
 });
 
 describe("ActionThread", () => {
+  // The detail dialog renders one thread per action and Base UI's
+  // Tabs.Panel mounts them all at once, so an unconditional query here
+  // meant one request per action (up to 500 for an imported minutes
+  // document) the instant the Actions tab was selected.
+  it("issues no request while collapsed, and renders no composer", () => {
+    mockListActionUpdates.mockResolvedValue([]);
+
+    renderThread(
+      <ActionThread
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        action={makeAction()}
+        canPost
+      />,
+    );
+
+    expect(mockListActionUpdates).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Updates" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(
+      screen.queryByPlaceholderText(/post an update/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/no updates yet/i)).not.toBeInTheDocument();
+  });
+
+  it("fetches the thread once expanded", async () => {
+    mockListActionUpdates.mockResolvedValue([]);
+
+    renderExpandedThread(
+      <ActionThread
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        action={makeAction()}
+        canPost
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mockListActionUpdates).toHaveBeenCalledWith(
+        "ws-1",
+        "meeting-1",
+        "action-1",
+      ),
+    );
+    expect(mockListActionUpdates).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Updates" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
   it("shows a loading state while the thread is being fetched", () => {
     mockListActionUpdates.mockReturnValue(new Promise(() => {}));
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -132,7 +200,7 @@ describe("ActionThread", () => {
   it("shows a distinguishable error state when the thread fails to load — not the empty state", async () => {
     mockListActionUpdates.mockRejectedValue(new Error("Not found"));
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -151,7 +219,7 @@ describe("ActionThread", () => {
   it("shows a distinguishable empty state when there are no updates — not an error", async () => {
     mockListActionUpdates.mockResolvedValue([]);
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -189,7 +257,7 @@ describe("ActionThread", () => {
     ];
     mockListActionUpdates.mockResolvedValue(updates);
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -221,7 +289,7 @@ describe("ActionThread", () => {
       },
     ] satisfies MeetingActionUpdate[]);
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -242,7 +310,7 @@ describe("ActionThread", () => {
   it("does not render a composer when canPost is false", async () => {
     mockListActionUpdates.mockResolvedValue([]);
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -263,7 +331,7 @@ describe("ActionThread", () => {
     const user = userEvent.setup();
     mockListActionUpdates.mockResolvedValue([]);
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -289,7 +357,7 @@ describe("ActionThread", () => {
     const user = userEvent.setup();
     mockListActionUpdates.mockResolvedValue([]);
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -322,7 +390,7 @@ describe("ActionThread", () => {
     const user = userEvent.setup();
     mockListActionUpdates.mockResolvedValue([]);
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -355,7 +423,7 @@ describe("ActionThread", () => {
     const user = userEvent.setup({ applyAccept: false });
     mockListActionUpdates.mockResolvedValue([]);
 
-    const { container } = renderThread(
+    const { container } = renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -409,7 +477,7 @@ describe("ActionThread", () => {
       createdAt: "2026-01-05T00:00:00.000Z",
     });
 
-    const { container } = renderThread(
+    const { container } = renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -465,7 +533,7 @@ describe("ActionThread", () => {
       new Error("Upload to storage failed"),
     );
 
-    const { container } = renderThread(
+    const { container } = renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -521,7 +589,7 @@ describe("ActionThread", () => {
       new Error("Upload to storage failed"),
     );
 
-    const { container } = renderThread(
+    const { container } = renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -579,7 +647,7 @@ describe("ActionThread", () => {
     });
     mockUploadMeetingDocument.mockResolvedValue({ id: "doc-2" });
 
-    const { container } = renderThread(
+    const { container } = renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -643,7 +711,7 @@ describe("ActionThread", () => {
       },
     ] satisfies MeetingActionUpdate[]);
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -673,7 +741,7 @@ describe("ActionThread", () => {
       },
     ] satisfies MeetingActionUpdate[]);
 
-    renderThread(
+    renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"
@@ -788,7 +856,7 @@ describe("ActionThread", () => {
         };
       });
 
-    const { container } = renderThread(
+    const { container } = renderExpandedThread(
       <ActionThread
         workspaceId="ws-1"
         meetingId="meeting-1"

@@ -1,5 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Loader2, Paperclip } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Loader2,
+  Paperclip,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +50,13 @@ const actionUpdatesKey = (
  * they persist across a reload. A freshly uploaded attachment shows up as
  * soon as the thread query is invalidated after `uploadMeetingDocument`
  * resolves — no separate local state needed to bridge the gap.
+ *
+ * Collapsed by default, and the query is `enabled` only while expanded.
+ * The detail dialog renders one of these per action and Base UI's
+ * `Tabs.Panel` mounts them all at once (`keepMounted` defaults to false),
+ * so an unconditional query here meant selecting the Actions tab fired one
+ * request per action — up to 500 in parallel for an imported minutes
+ * document, each of which re-runs the meeting load and the read gate.
  */
 export function ActionThread({
   workspaceId,
@@ -61,10 +74,12 @@ export function ActionThread({
   const userName = (id: string | null) =>
     id ? (users.find((u) => u.userId === id)?.user?.name ?? id) : "—";
 
+  const [expanded, setExpanded] = useState(false);
   const queryKey = actionUpdatesKey(workspaceId, meetingId, action.id);
   const { data, isLoading, isError } = useQuery({
     queryKey,
     queryFn: () => listActionUpdates(workspaceId, meetingId, action.id),
+    enabled: expanded,
   });
 
   const qc = useQueryClient();
@@ -131,7 +146,20 @@ export function ActionThread({
 
   return (
     <div className="mt-2 space-y-2 border-border border-t pt-2">
-      {isLoading ? (
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+        className="flex items-center gap-1.5 text-muted-foreground text-xs hover:text-foreground"
+      >
+        {expanded ? (
+          <ChevronUp className="h-3.5 w-3.5" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5" />
+        )}
+        Updates
+      </button>
+      {!expanded ? null : isLoading ? (
         <div
           className="flex items-center gap-2 py-2 text-muted-foreground text-xs"
           role="status"
@@ -183,7 +211,7 @@ export function ActionThread({
           </ul>
         </>
       )}
-      {canPost && (
+      {expanded && canPost && (
         <div className="space-y-2 pt-1">
           <Textarea
             value={body}
