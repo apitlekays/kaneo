@@ -21,6 +21,13 @@ export function useAddActionUpdate(workspaceId: string, meetingId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["meeting", workspaceId, meetingId] });
     },
+    // Same shape as `useMeetingMutations`'s shared `onError` below. Without
+    // it a failed post is completely silent — the composer keeps the user's
+    // text, so the screen is identical to a click that never registered.
+    onError: (error: unknown) =>
+      toast.error(
+        error instanceof Error ? error.message : "Failed to post update",
+      ),
   });
 }
 
