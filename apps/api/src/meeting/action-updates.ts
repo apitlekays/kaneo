@@ -119,6 +119,15 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         // the status flag the update itself asserts. `completedAt` /
         // `completedBy`, and the acceptance precondition, belong solely to
         // `POST /:id/actions/:actionId/complete`.
+        //
+        // Deliberately asymmetric: posting `statusAfter: "open"` on an
+        // already-completed action leaves `completedAt`/`completedBy` set,
+        // with `status` reverted to "open". That is honest history —
+        // "completed, then reopened in discussion" — not a bug. The thread
+        // is allowed to move `status` in either direction, but it must
+        // never erase the record of a formal completion that already
+        // happened; only `/complete`'s own guard (see index.ts) governs
+        // `completedAt`. Do not add code here to null it out on reopen.
         if (b.statusAfter) {
           await tx
             .update(meetingActionTable)
@@ -152,6 +161,25 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
 
       const action = await loadAction(id, actionId);
       if (!action) throw new HTTPException(404, { message: "Not found" });
+
+      // The thread is a narrower surface than the meeting: reading it also
+      // requires the same authority posting to it does (page holder or the
+      // action's own assignee), mirroring `/:id/actions/:actionId/complete`
+      // in index.ts. Without this, any plain workspace member who can read
+      // a non-confidential meeting — which is nearly everyone — could read
+      // every action's progress thread, though the same person is refused
+      // `GET /:id` and the meeting list without the General Management page.
+      const hasPage = await hasWorkspacePageAccess(userId, ws, PAGE_SLUG);
+      if (
+        !canPostActionUpdate({
+          userId,
+          hasPageAccess: hasPage,
+          actionAssigneeId: action.assigneeId,
+        })
+      )
+        throw new HTTPException(403, {
+          message: "Only the action's assignee or a GM officer can read this",
+        });
 
       const rows = await db
         .select()

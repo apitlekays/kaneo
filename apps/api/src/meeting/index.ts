@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, ilike, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  isNull,
+  ne,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -1461,23 +1472,34 @@ app.post(
         message: "This action must be accepted before it can be completed",
       });
     const now = new Date();
-    // Guard the UPDATE on the current status so a concurrent second
-    // completion claims no rows rather than silently overwriting.
+    // Guard the UPDATE on `completedAt IS NULL`, not `status = 'open'`.
+    // `completedAt` is the authoritative record of the formal completion
+    // act; `status` is the informal working axis the action-updates thread
+    // (action-updates.ts) is explicitly allowed to move — including setting
+    // it to "done" without completing the action. Guarding on `status`
+    // would let a thread post of `statusAfter: "done"` permanently deadlock
+    // this route: the guard would never match again, and every future
+    // completion attempt would be falsely told "Action already completed"
+    // while `completedAt`/`completedBy` stayed null forever. `completedAt
+    // IS NULL` still gives the concurrency guard this route needs — a
+    // second concurrent completion still claims no rows — and `status <>
+    // 'cancelled'` keeps a cancelled action uncompletable.
     const [row] = await db
       .update(meetingActionTable)
       .set({ status: "done", completedAt: now, completedBy: callerId })
       .where(
         and(
           eq(meetingActionTable.id, actionId),
-          eq(meetingActionTable.status, "open"),
+          isNull(meetingActionTable.completedAt),
+          ne(meetingActionTable.status, "cancelled"),
         ),
       )
       .returning();
     if (!row) {
-      // The guarded UPDATE (status = 'open') is the right concurrency
-      // control — it just can't distinguish *why* it claimed no rows. F11:
-      // re-check the actual status so a cancelled action isn't falsely told
-      // it was "already completed".
+      // The guarded UPDATE (completedAt IS NULL AND status <> 'cancelled')
+      // is the right concurrency control — it just can't distinguish *why*
+      // it claimed no rows. F11: re-check the actual status so a cancelled
+      // action isn't falsely told it was "already completed".
       const [current] = await db
         .select({ status: meetingActionTable.status })
         .from(meetingActionTable)

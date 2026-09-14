@@ -76,6 +76,58 @@ function listUpdates(
   );
 }
 
+function completeAction(
+  app: App,
+  meetingId: string,
+  actionId: string,
+  body: { workspaceId: string },
+) {
+  return app.request(`/api/meeting/${meetingId}/actions/${actionId}/complete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * `seedMeetingWithAction` delegates to a different user, so the created
+ * action starts `acceptance: "pending"` — `/complete` refuses a pending
+ * action with 409, unrelated to this file's own tests. Accept it first via
+ * the generic pending-decision endpoint, same as `meeting-actions.test.ts`.
+ */
+function acceptAction(app: App, actionId: string, workspaceId: string) {
+  return app.request(
+    `/api/pending-decision/meeting-action/${actionId}/decide`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspaceId, decision: "accepted", reason: null }),
+    },
+  );
+}
+
+/**
+ * A General Management page holder who is deliberately NOT an attendee of
+ * the meeting under test — the caller that distinguishes `canReadMeeting`
+ * from `canPostActionUpdate`. Holding the page satisfies
+ * `canPostActionUpdate` unconditionally, so this fixture only stays locked
+ * out of a confidential meeting if `assertCanReadMeeting` is actually
+ * composed in the route — unlike a plain stranger, who fails
+ * `canPostActionUpdate` regardless and so proves nothing about
+ * confidentiality.
+ */
+async function seedGmOfficerNotAttendee(workspaceId: string) {
+  const gmOfficer = await createWorkspaceMember({ role: "member" });
+  await db.insert(schema.workspaceUserTable).values({
+    workspaceId,
+    userId: gmOfficer.user.id,
+    role: "member",
+    joinedAt: new Date(),
+  });
+  await grantGeneralManagement(workspaceId, gmOfficer.user.id);
+  return gmOfficer;
+}
+
 /**
  * Owner creates a meeting and, as its creator, may delegate an action to
  * `assignee` without holding a separate General Management grant.
@@ -278,30 +330,74 @@ describe("API integration: meeting action updates", () => {
   it("5. a caller who cannot read a confidential meeting gets 403 and the meeting's title appears nowhere in the response body", async () => {
     // The assignee must be an attendee here, or assigning the action itself
     // would be refused (see meeting-actions.test.ts #8) and there would be
-    // no action to exercise. The stranger below is the one who must stay
-    // locked out.
+    // no action to exercise.
+    //
+    // The caller here MUST hold the General Management page (not be a plain
+    // stranger): a plain stranger already fails `canPostActionUpdate` on its
+    // own, so a test built on one passes identically whether or not
+    // `assertCanReadMeeting` is even called — it would not have caught this
+    // module's repeated history of leaking a confidential meeting's title.
+    // A page holder who is not an attendee is blocked ONLY by
+    // `assertCanReadMeeting`, so this exercises the actual check.
     const { owner, meeting, action } = await seedMeetingWithAction({
       confidential: true,
       assigneeIsAttendee: true,
     });
+    const gmOfficer = await seedGmOfficerNotAttendee(owner.workspace.id);
 
-    const stranger = await createWorkspaceMember({ role: "member" });
-    await db.insert(schema.workspaceUserTable).values({
-      workspaceId: owner.workspace.id,
-      userId: stranger.user.id,
-      role: "member",
-      joinedAt: new Date(),
-    });
-
-    mockAuthenticatedSession(stranger.user);
-    const { app: strangerApp } = createApp();
-    const res = await postUpdate(strangerApp, meeting.id, action.id, {
+    mockAuthenticatedSession(gmOfficer.user);
+    const { app: gmApp } = createApp();
+    const res = await postUpdate(gmApp, meeting.id, action.id, {
       workspaceId: owner.workspace.id,
       body: "Trying to peek",
     });
     expect(res.status).toBe(403);
     const raw = await res.text();
     expect(raw).not.toContain("Q3 Committee Meeting");
+  });
+
+  it("5b. the same page-holding, non-attendee caller is refused on GET too, with no title leak", async () => {
+    const { owner, meeting, action } = await seedMeetingWithAction({
+      confidential: true,
+      assigneeIsAttendee: true,
+    });
+    const gmOfficer = await seedGmOfficerNotAttendee(owner.workspace.id);
+
+    mockAuthenticatedSession(gmOfficer.user);
+    const { app: gmApp } = createApp();
+    const res = await listUpdates(
+      gmApp,
+      meeting.id,
+      action.id,
+      owner.workspace.id,
+    );
+    expect(res.status).toBe(403);
+    const raw = await res.text();
+    expect(raw).not.toContain("Q3 Committee Meeting");
+  });
+
+  it("5c. GET is a narrower surface than the meeting: a plain workspace member with no GM page and no assignment is refused, even on a non-confidential meeting", async () => {
+    const { owner, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    const bystander = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: owner.workspace.id,
+      userId: bystander.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+
+    mockAuthenticatedSession(bystander.user);
+    const { app: bystanderApp } = createApp();
+    const res = await listUpdates(
+      bystanderApp,
+      meeting.id,
+      action.id,
+      owner.workspace.id,
+    );
+    expect(res.status).toBe(403);
   });
 
   it("6. posting on an adopted meeting's action succeeds", async () => {
@@ -369,5 +465,140 @@ describe("API integration: meeting action updates", () => {
       "First",
       "Second",
     ]);
+  });
+
+  it("9. an action whose thread set statusAfter 'done' can still be completed through /complete, setting completedAt/completedBy", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+
+    // The thread moving `status` to "done" must not deadlock the formal
+    // completion act — the bug this guards against had the /complete guard
+    // keyed on `status = 'open'`, which this update would have permanently
+    // broken.
+    // seedMeetingWithAction delegates to a different user, so this action
+    // starts pending and must be accepted before /complete will consider it.
+    const accepted = await acceptAction(
+      assigneeApp,
+      action.id,
+      owner.workspace.id,
+    );
+    expect(accepted.status).toBe(200);
+
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Draft sent for review",
+      statusAfter: "done",
+    });
+    expect(posted.status).toBe(201);
+
+    const completed = await completeAction(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+    });
+    expect(completed.status).toBe(200);
+    const completedBody = await completed.json();
+    expect(completedBody.status).toBe("done");
+    expect(completedBody.completedBy).toBe(assignee.user.id);
+    expect(completedBody.completedAt).not.toBeNull();
+  });
+
+  it("10. a second concurrent completion still claims no rows and reports 'Action already completed'", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const accepted = await acceptAction(
+      assigneeApp,
+      action.id,
+      owner.workspace.id,
+    );
+    expect(accepted.status).toBe(200);
+
+    const first = await completeAction(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+    });
+    expect(first.status).toBe(200);
+
+    const second = await completeAction(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+    });
+    expect(second.status).toBe(409);
+    // HTTPException here carries a plain-text body, not JSON — same as
+    // every other 409 this route throws (see meeting-actions.test.ts, which
+    // never calls .json() on one).
+    const secondBody = await second.text();
+    expect(secondBody).toBe("Action already completed");
+  });
+
+  it("11. a cancelled action still cannot be completed", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const accepted = await acceptAction(
+      assigneeApp,
+      action.id,
+      owner.workspace.id,
+    );
+    expect(accepted.status).toBe(200);
+
+    const cancelled = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "No longer needed",
+      statusAfter: "cancelled",
+    });
+    expect(cancelled.status).toBe(201);
+
+    const attempt = await completeAction(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+    });
+    expect(attempt.status).toBe(409);
+    const attemptBody = await attempt.text();
+    expect(attemptBody).toBe("This action was cancelled");
+  });
+
+  it("12. posting statusAfter 'open' on an already-completed action leaves completedAt/completedBy set (honest history, not an undo)", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const accepted = await acceptAction(
+      assigneeApp,
+      action.id,
+      owner.workspace.id,
+    );
+    expect(accepted.status).toBe(200);
+
+    const completed = await completeAction(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+    });
+    expect(completed.status).toBe(200);
+
+    const reopened = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Actually, reopening this for discussion",
+      statusAfter: "open",
+    });
+    expect(reopened.status).toBe(201);
+
+    const [row] = await db
+      .select()
+      .from(schema.meetingActionTable)
+      .where(eq(schema.meetingActionTable.id, action.id));
+    expect(row.status).toBe("open");
+    // The thread never erases the record of a formal completion that
+    // already happened — that would let discussion silently undo a formal
+    // act. Only `/complete`'s own guard governs `completedAt`.
+    expect(row.completedAt).not.toBeNull();
+    expect(row.completedBy).toBe(assignee.user.id);
   });
 });
