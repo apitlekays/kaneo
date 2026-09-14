@@ -1494,4 +1494,90 @@ describe("API integration: meeting action updates", () => {
     );
     expect(gmRes.status).toBe(403);
   });
+  it("30. download's gate scopes the update to the meeting in the URL: a row on meeting B pointing at an update on meeting A is refused, and A's own document is unreachable through B", async () => {
+    const { owner, assignee, meeting, action, ownerApp } =
+      await seedMeetingWithAction({ assigneeIsAttendee: true });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    const presigned = await (
+      await presignAttachment(assigneeApp, meeting.id, {
+        workspaceId: owner.workspace.id,
+        actionUpdateId: update.id,
+      })
+    ).json();
+    const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      objectKey: presigned.key,
+      actionUpdateId: update.id,
+    });
+    expect(finalizeRes.status).toBe(201);
+    const docOnA = await finalizeRes.json();
+
+    // A second, unrelated meeting in the SAME workspace. Not confidential,
+    // so `assertCanReadMeeting` waves everyone through; the assignee is
+    // neither an attendee of it nor a General Management page holder, so
+    // the document gate is the only thing standing between them and it.
+    mockAuthenticatedSession(owner.user);
+    const otherRes = await createMeeting(ownerApp, {
+      workspaceId: owner.workspace.id,
+      title: "Unrelated Meeting",
+    });
+    const other = await otherRes.json();
+
+    // Finalize refuses to write this shape (test 14), so insert it
+    // directly — it is exactly the row a second writer of
+    // `meeting_document` (Spec D's archive) could produce, and the reason
+    // the read gate must scope the update lookup by meeting rather than
+    // trusting `actionUpdateId` to resolve.
+    const [smuggled] = await db
+      .insert(schema.meetingDocumentTable)
+      .values({
+        meetingId: other.id,
+        workspaceId: owner.workspace.id,
+        actionUpdateId: update.id,
+        objectKey: `workspace/${owner.workspace.id}/meeting/${other.id}/smuggled.pdf`,
+        filename: "smuggled.pdf",
+        mimeType: "application/pdf",
+        size: 1024,
+        createdBy: owner.user.id,
+      })
+      .returning();
+
+    mockAuthenticatedSession(assignee.user);
+    // Mocked so that, absent the scoping, this would really return 200 —
+    // the point being proven — rather than a 404 from the unavailable S3.
+    vi.mocked(getPrivateObject).mockResolvedValueOnce({
+      body: "fake-pdf-bytes",
+      contentType: "application/pdf",
+      contentLength: 14,
+      etag: '"fake-etag"',
+      lastModified: new Date(),
+    });
+    const crossMeeting = await downloadAttachment(
+      assigneeApp,
+      other.id,
+      smuggled.id,
+      owner.workspace.id,
+    );
+    expect(crossMeeting.status).toBe(403);
+
+    // And the document that legitimately belongs to meeting A is not
+    // reachable through meeting B's route either (the document lookup is
+    // itself meeting-scoped).
+    const wrongMeeting = await downloadAttachment(
+      assigneeApp,
+      other.id,
+      docOnA.id,
+      owner.workspace.id,
+    );
+    expect(wrongMeeting.status).toBe(404);
+  });
 });

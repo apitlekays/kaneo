@@ -161,9 +161,15 @@ async function assertCanAttachMeetingDocument(
  * `GET /:id/actions/:actionId/updates` above layers `canPostActionUpdate`
  * on top of `assertCanReadMeeting` rather than relying on it alone.
  *
- * No 404-on-missing-join here (unlike the attach gate): the document row
- * was already loaded from THIS meeting's own document set, so its
- * `actionUpdateId`, if set, is trusted to resolve — a missing join only
+ * The update lookup is scoped by the document's own `meetingId`, the same
+ * way the attach gate scopes it. Without that term, a `meeting_document`
+ * row whose `actionUpdateId` points at an update on a *different* meeting
+ * resolves that other action's assignee and grants them this download.
+ * Unreachable while finalize is the only writer of the table (it 404s on a
+ * cross-meeting `actionUpdateId`), but Spec D adds a second writer, and the
+ * condition costs nothing.
+ *
+ * No 404-on-missing-join here (unlike the attach gate): a missing join only
  * means `actionAssigneeId` falls through to `null`, which still requires
  * page access to satisfy `canPostActionUpdate`, refusing safely rather
  * than throwing.
@@ -171,7 +177,7 @@ async function assertCanAttachMeetingDocument(
 async function assertCanReadMeetingDocument(
   userId: string,
   workspaceId: string,
-  doc: { actionUpdateId: string | null },
+  doc: { meetingId: string; actionUpdateId: string | null },
 ): Promise<void> {
   if (!doc.actionUpdateId) {
     if (!(await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG)))
@@ -187,7 +193,12 @@ async function assertCanReadMeetingDocument(
       meetingActionTable,
       eq(meetingActionTable.id, meetingActionUpdateTable.actionId),
     )
-    .where(eq(meetingActionUpdateTable.id, doc.actionUpdateId))
+    .where(
+      and(
+        eq(meetingActionUpdateTable.id, doc.actionUpdateId),
+        eq(meetingActionTable.meetingId, doc.meetingId),
+      ),
+    )
     .limit(1);
   const hasPage = await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG);
   if (
