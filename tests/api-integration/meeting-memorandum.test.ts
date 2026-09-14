@@ -228,6 +228,37 @@ describe("meeting memorandum", () => {
     expect(body.values.status).toBe("Dalam tindakan");
   });
 
+  it("a send for an action with a numbered minute item carries the numbering in the subject", async () => {
+    const { owner, app, meeting } = await seedMeetingWithAction({
+      title: "Q3 Committee Meeting",
+    });
+    const itemRes = await createMinuteItem(app, meeting.id, {
+      workspaceId: owner.workspace.id,
+      topic: "Budget approval",
+      numbering: "3.2",
+    });
+    const item = await itemRes.json();
+    const actionRes = await createAction(app, meeting.id, {
+      workspaceId: owner.workspace.id,
+      description: "Follow up on budget approval",
+      minuteItemId: item.id,
+    });
+    const action = await actionRes.json();
+
+    const res = await sendMemo(app, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      recipientName: "Jane Doe",
+      recipientEmail: "jane@example.com",
+      bodyMarkdown: "Dengan hormatnya, {{recipient_name}} diminta membalas.",
+    });
+
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.subject).toBe(
+      "Memorandum Tindakan bagi Q3 Committee Meeting - 3.2",
+    );
+  });
+
   it("a send produces exactly one record carrying the rendered body, and the response asserts on subject/body, not just a status code", async () => {
     const { owner, app, meeting, action } = await seedMeetingWithAction({
       title: "Q3 Committee Meeting",
@@ -242,8 +273,10 @@ describe("meeting memorandum", () => {
 
     expect(res.status).toBe(201);
     const created = await res.json();
+    // This action has no minute item, so `numbering` is empty — the subject
+    // must end at the meeting name rather than with a dangling " - ".
     expect(created.subject).toBe(
-      "Memorandum Tindakan bagi Q3 Committee Meeting - ",
+      "Memorandum Tindakan bagi Q3 Committee Meeting",
     );
     expect(created.bodyHtml).toContain("Jane Doe");
     expect(created.bodyHtml).toContain("Q3 Committee Meeting");

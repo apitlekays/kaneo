@@ -156,6 +156,21 @@ describe("buildMemorandumHtml", () => {
     expect(subject).toBe("Memorandum Tindakan bagi Q3 Committee Meeting - 3.2");
   });
 
+  // `minuteItemId` is optional on an action and `meeting_minute_item.numbering`
+  // is itself nullable, so `numbering` arrives empty for any action created by
+  // hand rather than by the CSV import. The separator must not survive on its
+  // own: the outbound subject line and the stored audit record both read
+  // "Memorandum Tindakan bagi Q3 Committee Meeting - " otherwise.
+  it("drops the separator when the action has no numbering", async () => {
+    const { subject } = await buildMemorandumHtml({
+      values: { ...values, numbering: "" },
+      bodyMarkdown,
+    });
+
+    expect(subject).toBe("Memorandum Tindakan bagi Q3 Committee Meeting");
+    expect(subject).not.toMatch(/-\s*$/);
+  });
+
   it("renders the greeting/body copy verbatim, with shortcodes substituted", async () => {
     const { html } = await buildMemorandumHtml({ values, bodyMarkdown });
 

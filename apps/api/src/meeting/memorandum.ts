@@ -270,7 +270,13 @@ export const buildMemorandumHtml = async (
 ): Promise<{ subject: string; html: string }> => {
   const { values, bodyMarkdown } = args;
 
-  const subject = `Memorandum Tindakan bagi ${values.meeting_name} - ${values.numbering}`;
+  // The separator only appears between two present parts: `numbering` is
+  // empty for any action with no linked minute item (or whose item has no
+  // numbering), and a trailing " - " would go out in the subject line of a
+  // governance email and into the stored audit record.
+  const subject = values.numbering
+    ? `Memorandum Tindakan bagi ${values.meeting_name} - ${values.numbering}`
+    : `Memorandum Tindakan bagi ${values.meeting_name}`;
 
   const safeMarkdown = neutraliseRawHtml(bodyMarkdown);
   const bodyHtmlFromMarkdown = marked.parse(safeMarkdown, { async: false });
