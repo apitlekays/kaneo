@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -53,6 +56,42 @@ vi.mock("@/hooks/queries/meeting/use-action-memo", () => ({
     isPending: state.isPending,
   }),
 }));
+
+/**
+ * Reads the shortcode tokens straight out of the API's `MEMO_SHORTCODES`,
+ * as *text* — the same technique the memorandum integration test uses for
+ * the verbatim Malay greeting. The dialog deliberately mirrors that list
+ * rather than importing it (the API's internals are not this app's to reach
+ * into across the app boundary), and a hard-coded expectation compared to a
+ * hard-coded mirror cannot detect drift: add a token server-side and the
+ * popup silently stops advertising it; rename one and the popup keeps
+ * offering a token `renderShortcodes` no longer substitutes, so the
+ * memorandum goes out to an external recipient reading literally
+ * `{{topic}}`. Reading the file is not an import — nothing from the API
+ * module is executed or bundled here.
+ */
+function loadApiShortcodeTokens(): string[] {
+  const memorandumPath = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../../api/src/meeting/memorandum.ts",
+  );
+  const source = fs.readFileSync(memorandumPath, "utf8");
+  const list = source.match(
+    /export const MEMO_SHORTCODES = \[([\s\S]*?)\n\] as const/,
+  );
+  if (!list?.[1]) {
+    throw new Error(
+      "Could not find MEMO_SHORTCODES in the API's memorandum.ts",
+    );
+  }
+  const tokens = [...list[1].matchAll(/token: "([a-z_]+)"/g)].map(
+    (match) => match[1],
+  );
+  if (tokens.length === 0) {
+    throw new Error("Found MEMO_SHORTCODES but no tokens inside it");
+  }
+  return tokens;
+}
 
 function makeAction(overrides: Partial<MeetingAction> = {}): MeetingAction {
   return {
@@ -124,7 +163,7 @@ describe("ActionConfigureDialog", () => {
     expect(screen.getByText("{{action_table}}")).toBeInTheDocument();
   });
 
-  it("lists exactly the eight documented shortcode tokens — kept in step with the API's MEMO_SHORTCODES", () => {
+  it("lists exactly the tokens the API's MEMO_SHORTCODES declares, read from that file — so drift fails here", () => {
     state.data = makeMemoContext();
 
     render(
@@ -137,24 +176,22 @@ describe("ActionConfigureDialog", () => {
       />,
     );
 
-    const expectedTokens = [
-      "meeting_name",
-      "meeting_date",
-      "numbering",
-      "topic",
-      "status",
-      "recipient_name",
-      "action_table",
-      "notes",
-    ];
+    const apiTokens = loadApiShortcodeTokens();
 
-    for (const token of expectedTokens) {
+    for (const token of apiTokens) {
       expect(screen.getByText(`{{${token}}}`)).toBeInTheDocument();
     }
 
+    // Both directions: the set, so a renamed token fails, and the length,
+    // so a token added on either side fails too.
     const shortcodeList = screen.getByTestId("memo-shortcode-list");
-    const codeNodes = shortcodeList.querySelectorAll("code");
-    expect(codeNodes).toHaveLength(8);
+    const rendered = Array.from(shortcodeList.querySelectorAll("code")).map(
+      (node) => node.textContent,
+    );
+    expect(new Set(rendered)).toEqual(
+      new Set(apiTokens.map((token) => `{{${token}}}`)),
+    );
+    expect(rendered).toHaveLength(apiTokens.length);
   });
 
   it("shows a loading state distinct from an error or empty state", () => {

@@ -25,9 +25,11 @@ const DEFAULT_REPLY_TO = "governance@mapim.org";
  * The documented shortcode vocabulary, mirrored from `MEMO_SHORTCODES` in
  * `apps/api/src/meeting/memorandum.ts` — NOT imported from there. That
  * module is the API's internals, not this app's to reach across the
- * app boundary for. `action-configure-dialog.test.tsx` asserts this list
- * matches the API's exactly (both the token set and its length), which is
- * what keeps the two from silently drifting apart.
+ * app boundary for. `action-configure-dialog.test.tsx` reads that file as
+ * text and regexes the tokens out of it, then asserts this list matches
+ * exactly (both the token set and its length) — a hard-coded expectation
+ * compared against this hard-coded mirror would prove nothing, so the
+ * test is what actually keeps the two from drifting apart.
  */
 const MEMO_SHORTCODES = [
   { token: "meeting_name", description: "Name of the meeting" },
