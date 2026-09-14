@@ -9,6 +9,16 @@ import {
   grantGeneralManagement,
 } from "./helpers/fixtures";
 
+// The presign route calls into the S3 presigner, which only computes a
+// signature locally — it never contacts the endpoint. Fake, stable
+// credentials are enough for it to run in the integration environment,
+// which otherwise leaves S3 unconfigured. Same pattern as
+// minute-updates.test.ts.
+process.env.S3_ENDPOINT ||= "http://localhost:9000";
+process.env.S3_BUCKET ||= "kaneo-test-bucket";
+process.env.S3_ACCESS_KEY_ID ||= "test-access-key";
+process.env.S3_SECRET_ACCESS_KEY ||= "test-secret-key";
+
 type App = ReturnType<typeof createApp>["app"];
 
 function createMeeting(
@@ -73,6 +83,64 @@ function listUpdates(
 ) {
   return app.request(
     `/api/meeting/${meetingId}/actions/${actionId}/updates?workspaceId=${workspaceId}`,
+  );
+}
+
+function presignAttachment(
+  app: App,
+  meetingId: string,
+  body: {
+    workspaceId: string;
+    filename?: string;
+    mimeType?: string;
+    size?: number;
+    actionUpdateId?: string;
+  },
+) {
+  return app.request(`/api/meeting/${meetingId}/attachments/presign`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      filename: "laporan.pdf",
+      mimeType: "application/pdf",
+      size: 1024,
+      ...body,
+    }),
+  });
+}
+
+function finalizeAttachment(
+  app: App,
+  meetingId: string,
+  body: {
+    workspaceId: string;
+    objectKey: string;
+    filename?: string;
+    mimeType?: string;
+    size?: number;
+    actionUpdateId?: string;
+  },
+) {
+  return app.request(`/api/meeting/${meetingId}/attachments/finalize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      filename: "laporan.pdf",
+      mimeType: "application/pdf",
+      size: 1024,
+      ...body,
+    }),
+  });
+}
+
+function downloadAttachment(
+  app: App,
+  meetingId: string,
+  docId: string,
+  workspaceId: string,
+) {
+  return app.request(
+    `/api/meeting/${meetingId}/attachments/${docId}/download?workspaceId=${workspaceId}`,
   );
 }
 
@@ -600,5 +668,241 @@ describe("API integration: meeting action updates", () => {
     // act. Only `/complete`'s own guard governs `completedAt`.
     expect(row.completedAt).not.toBeNull();
     expect(row.completedBy).toBe(assignee.user.id);
+  });
+
+  it("13. a non-PDF is refused at presign as well as finalize, separately", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const updateRes = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(updateRes.status).toBe(201);
+    const createdUpdate = await updateRes.json();
+
+    const presignRes = await presignAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      mimeType: "image/png",
+      actionUpdateId: createdUpdate.id,
+    });
+    expect(presignRes.status).toBe(400);
+
+    const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      mimeType: "image/png",
+      objectKey: `workspace/${owner.workspace.id}/meeting/${meeting.id}/report.png`,
+      actionUpdateId: createdUpdate.id,
+    });
+    expect(finalizeRes.status).toBe(400);
+
+    const rows = await db
+      .select()
+      .from(schema.meetingDocumentTable)
+      .where(eq(schema.meetingDocumentTable.meetingId, meeting.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("14. finalizing with an actionUpdateId belonging to an update on a different meeting is 404", async () => {
+    // The two seeds have separate workspaces (each `seedMeetingWithAction`
+    // creates its own owner/workspace): post the update for meeting B using
+    // B's own assignee and workspace.
+    const seededA = await seedMeetingWithAction({ assigneeIsAttendee: true });
+    const seededB = await seedMeetingWithAction({ assigneeIsAttendee: true });
+
+    // `mockAuthenticatedSession` mocks a shared module-level session
+    // resolved at request time, not at `createApp()` time — so the session
+    // must be (re-)set immediately before each `.request()` call, not once
+    // up front for both apps.
+    mockAuthenticatedSession(seededB.assignee.user);
+    const { app: assigneeAppB } = createApp();
+    const updateBRes = await postUpdate(
+      assigneeAppB,
+      seededB.meeting.id,
+      seededB.action.id,
+      {
+        workspaceId: seededB.owner.workspace.id,
+        body: "Update on a different meeting entirely",
+      },
+    );
+    expect(updateBRes.status).toBe(201);
+    const updateB = await updateBRes.json();
+
+    mockAuthenticatedSession(seededA.assignee.user);
+    const { app: assigneeAppA } = createApp();
+    const finalizeRes = await finalizeAttachment(
+      assigneeAppA,
+      seededA.meeting.id,
+      {
+        workspaceId: seededA.owner.workspace.id,
+        objectKey: `workspace/${seededA.owner.workspace.id}/meeting/${seededA.meeting.id}/report.pdf`,
+        actionUpdateId: updateB.id,
+      },
+    );
+    expect(finalizeRes.status).toBe(404);
+  });
+
+  it("15. a non-attendee GM page holder cannot attach to a confidential meeting's action; the title leaks nowhere; the attendee assignee can", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      confidential: true,
+      assigneeIsAttendee: true,
+    });
+    const gmOfficer = await seedGmOfficerNotAttendee(owner.workspace.id);
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching supporting evidence",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    mockAuthenticatedSession(gmOfficer.user);
+    const { app: gmApp } = createApp();
+    const gmPresign = await presignAttachment(gmApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      actionUpdateId: update.id,
+    });
+    expect(gmPresign.status).toBe(403);
+    const gmRaw = await gmPresign.text();
+    expect(gmRaw).not.toContain("Q3 Committee Meeting");
+
+    // The session mock is global and resolved at request time — re-set it
+    // to the assignee before this request, or it would still resolve as
+    // the GM officer mocked just above, even though `assigneeApp` is a
+    // different app instance.
+    mockAuthenticatedSession(assignee.user);
+    const assigneePresign = await presignAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      actionUpdateId: update.id,
+    });
+    expect(assigneePresign.status).toBe(200);
+    const presigned = await assigneePresign.json();
+    expect(typeof presigned.key).toBe("string");
+  });
+
+  it("16. a finalized row carries a not-null meetingId even when actionUpdateId is set", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching the signed report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    const presigned = await (
+      await presignAttachment(assigneeApp, meeting.id, {
+        workspaceId: owner.workspace.id,
+        actionUpdateId: update.id,
+      })
+    ).json();
+
+    const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      objectKey: presigned.key,
+      actionUpdateId: update.id,
+    });
+    expect(finalizeRes.status).toBe(201);
+    const created = await finalizeRes.json();
+    expect(created.meetingId).toBe(meeting.id);
+    expect(created.actionUpdateId).toBe(update.id);
+
+    const [row] = await db
+      .select()
+      .from(schema.meetingDocumentTable)
+      .where(eq(schema.meetingDocumentTable.id, created.id));
+    expect(row?.meetingId).toBe(meeting.id);
+  });
+
+  it("17. finalize refuses an object key outside this meeting's owner segment", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    // Creating a meeting requires the General Management page, which the
+    // assignee (a plain member) does not hold — do this as the owner
+    // instead, re-mocking the session for the same reason noted in test 15.
+    mockAuthenticatedSession(owner.user);
+    const { app: ownerApp } = createApp();
+    const otherMeeting = await createMeeting(ownerApp, {
+      workspaceId: owner.workspace.id,
+      title: "Some Other Meeting",
+    });
+    const other = await otherMeeting.json();
+
+    mockAuthenticatedSession(assignee.user);
+    const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      objectKey: `workspace/${owner.workspace.id}/meeting/${other.id}/report.pdf`,
+      actionUpdateId: update.id,
+    });
+    expect(finalizeRes.status).toBe(400);
+
+    const rows = await db
+      .select()
+      .from(schema.meetingDocumentTable)
+      .where(eq(schema.meetingDocumentTable.meetingId, meeting.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("18. download is refused for someone who cannot read the meeting", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      confidential: true,
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+    const posted = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Attaching a report",
+    });
+    expect(posted.status).toBe(201);
+    const update = await posted.json();
+
+    const presigned = await (
+      await presignAttachment(assigneeApp, meeting.id, {
+        workspaceId: owner.workspace.id,
+        actionUpdateId: update.id,
+      })
+    ).json();
+    const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      objectKey: presigned.key,
+      actionUpdateId: update.id,
+    });
+    expect(finalizeRes.status).toBe(201);
+    const doc = await finalizeRes.json();
+
+    const gmOfficer = await seedGmOfficerNotAttendee(owner.workspace.id);
+    mockAuthenticatedSession(gmOfficer.user);
+    const { app: gmApp } = createApp();
+    const refused = await downloadAttachment(
+      gmApp,
+      meeting.id,
+      doc.id,
+      owner.workspace.id,
+    );
+    expect(refused.status).toBe(403);
+    const raw = await refused.text();
+    expect(raw).not.toContain("Q3 Committee Meeting");
   });
 });

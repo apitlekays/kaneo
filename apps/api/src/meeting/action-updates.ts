@@ -7,7 +7,13 @@ import db from "../database";
 import {
   meetingActionTable,
   meetingActionUpdateTable,
+  meetingDocumentTable,
 } from "../database/schema";
+import {
+  createMeetingFileUploadUrl,
+  getPrivateObject,
+  meetingFileKeyOwnerSegment,
+} from "../storage/s3";
 import { hasWorkspacePageAccess } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { assertCanReadMeeting, loadMeeting } from "./access";
@@ -18,6 +24,9 @@ type MeetingEnv = { Variables: { userId: string; workspaceId?: string } };
 
 const PAGE_SLUG = "general-management";
 const ACTION_STATUSES = ["open", "done", "cancelled"] as const;
+const MEETING_DOCUMENT_MIME_TYPE = "application/pdf";
+
+const optStr = v.optional(v.string());
 
 async function loadAction(meetingId: string, actionId: string) {
   const [row] = await db
@@ -31,6 +40,82 @@ async function loadAction(meetingId: string, actionId: string) {
     )
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * PDF only — enforced here so the check holds on presign as well as
+ * finalize, rather than only at the point a row is written. A client-side
+ * MIME check is a convenience; this is the boundary.
+ */
+function assertPdfOnly(mimeType: string): void {
+  if (mimeType !== MEETING_DOCUMENT_MIME_TYPE)
+    throw new HTTPException(400, {
+      message: "Only PDF files may be attached",
+    });
+}
+
+/**
+ * Attachment gate shared by presign and finalize — the meeting-shaped twin
+ * of `assertCanAttach` in `correspondence/letters.ts:205`. That module
+ * learned the hard way that gating finalize alone leaves the feature
+ * unreachable: the caller can never obtain an upload URL. Both routes below
+ * call this one function.
+ *
+ * Confidentiality first (`assertCanReadMeeting`): `canPostActionUpdate`
+ * alone would let a General Management page holder who is NOT an attendee
+ * attach to a confidential meeting's action, since page access alone
+ * satisfies it. That would be exactly the title/data leak this module has
+ * shipped three times before — see `access.ts` and the "Confidentiality
+ * first" comment on the updates POST route above.
+ *
+ * With no `actionUpdateId` (a meeting-level document — Spec D's archival
+ * PDFs, not built here), the only gate is holding the General Management
+ * page, same as an ordinary attachment on the letters module. With
+ * `actionUpdateId` set, the update must belong to an action on THIS
+ * meeting (404 otherwise), and only that action's assignee or a page holder
+ * may attach — reusing `canPostActionUpdate` rather than re-deriving it.
+ */
+async function assertCanAttachMeetingDocument(
+  userId: string,
+  workspaceId: string,
+  meeting: { id: string; confidential: boolean },
+  actionUpdateId: string | undefined,
+): Promise<void> {
+  await assertCanReadMeeting(userId, workspaceId, meeting);
+  if (!actionUpdateId) {
+    if (!(await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG)))
+      throw new HTTPException(403, {
+        message: "You don't have access to this page",
+      });
+    return;
+  }
+  const [row] = await db
+    .select({ actionAssigneeId: meetingActionTable.assigneeId })
+    .from(meetingActionUpdateTable)
+    .innerJoin(
+      meetingActionTable,
+      eq(meetingActionTable.id, meetingActionUpdateTable.actionId),
+    )
+    .where(
+      and(
+        eq(meetingActionUpdateTable.id, actionUpdateId),
+        eq(meetingActionTable.meetingId, meeting.id),
+      ),
+    )
+    .limit(1);
+  if (!row) throw new HTTPException(404, { message: "Not found" });
+  const hasPage = await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG);
+  if (
+    !canPostActionUpdate({
+      userId,
+      hasPageAccess: hasPage,
+      actionAssigneeId: row.actionAssigneeId,
+    })
+  )
+    throw new HTTPException(403, {
+      message:
+        "Only the action's assignee or a GM officer can attach files here",
+    });
 }
 
 /**
@@ -187,6 +272,170 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         .where(eq(meetingActionUpdateTable.actionId, actionId))
         .orderBy(asc(meetingActionUpdateTable.createdAt));
       return c.json(rows);
+    },
+  );
+
+  // ── Attachments: presign ────────────────────────────────────────────────
+  app.post(
+    "/:id/attachments/presign",
+    describeRoute({
+      operationId: "presignMeetingDocumentUpload",
+      tags: ["Meeting"],
+      description:
+        "Presign a PDF upload for a meeting document, optionally attached to one action update",
+    }),
+    validator("param", v.object({ id: v.string() })),
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        filename: v.string(),
+        mimeType: v.string(),
+        size: v.number(),
+        actionUpdateId: optStr,
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    async (c) => {
+      const ws = c.get("workspaceId") as string;
+      const userId = c.get("userId") as string;
+      const { id } = c.req.valid("param");
+      const b = c.req.valid("json");
+
+      const meeting = await loadMeeting(ws, id);
+      if (!meeting) throw new HTTPException(404, { message: "Not found" });
+      assertPdfOnly(b.mimeType);
+      await assertCanAttachMeetingDocument(
+        userId,
+        ws,
+        meeting,
+        b.actionUpdateId,
+      );
+
+      const presigned = await createMeetingFileUploadUrl({
+        workspaceId: ws,
+        meetingId: id,
+        filename: b.filename,
+        contentType: b.mimeType,
+      });
+      return c.json(presigned);
+    },
+  );
+
+  // ── Attachments: finalize ───────────────────────────────────────────────
+  app.post(
+    "/:id/attachments/finalize",
+    describeRoute({
+      operationId: "finalizeMeetingDocument",
+      tags: ["Meeting"],
+      description: "Record a meeting document row for an already-uploaded PDF",
+    }),
+    validator("param", v.object({ id: v.string() })),
+    validator(
+      "json",
+      v.object({
+        workspaceId: v.string(),
+        objectKey: v.string(),
+        filename: v.string(),
+        mimeType: v.string(),
+        size: v.number(),
+        actionUpdateId: optStr,
+      }),
+    ),
+    workspaceAccess.fromBody("workspaceId"),
+    async (c) => {
+      const ws = c.get("workspaceId") as string;
+      const userId = c.get("userId") as string;
+      const { id } = c.req.valid("param");
+      const b = c.req.valid("json");
+
+      const meeting = await loadMeeting(ws, id);
+      if (!meeting) throw new HTTPException(404, { message: "Not found" });
+      assertPdfOnly(b.mimeType);
+      // Same gate as presign — see the function's own comment for why
+      // gating only one of the two leaves the feature unreachable.
+      await assertCanAttachMeetingDocument(
+        userId,
+        ws,
+        meeting,
+        b.actionUpdateId,
+      );
+      // Reject an objectKey pointed outside this meeting's owner segment —
+      // otherwise finalize becomes a way to claim someone else's uploaded
+      // object. The meeting-shaped twin of the same guard in
+      // `correspondence/letters.ts`.
+      if (
+        b.objectKey.includes("..") ||
+        !b.objectKey.includes(meetingFileKeyOwnerSegment(ws, id))
+      )
+        throw new HTTPException(400, { message: "Invalid object key" });
+
+      const [row] = await db
+        .insert(meetingDocumentTable)
+        .values({
+          // NOT NULL even when actionUpdateId is set — see the schema
+          // comment: this is what makes a single confidentiality check
+          // cover every attachment path instead of two rules that drift.
+          meetingId: id,
+          actionUpdateId: b.actionUpdateId ?? null,
+          workspaceId: ws,
+          objectKey: b.objectKey,
+          filename: b.filename,
+          mimeType: b.mimeType,
+          size: b.size,
+          createdBy: userId,
+        })
+        .returning();
+      return c.json(row, 201);
+    },
+  );
+
+  // ── Attachments: download ───────────────────────────────────────────────
+  app.get(
+    "/:id/attachments/:docId/download",
+    describeRoute({
+      operationId: "downloadMeetingDocument",
+      tags: ["Meeting"],
+      description: "A presigned download of a meeting document",
+    }),
+    validator("param", v.object({ id: v.string(), docId: v.string() })),
+    validator("query", v.object({ workspaceId: v.string() })),
+    workspaceAccess.fromQuery("workspaceId"),
+    async (c) => {
+      const ws = c.get("workspaceId") as string;
+      const userId = c.get("userId") as string;
+      const { id, docId } = c.req.valid("param");
+
+      const meeting = await loadMeeting(ws, id);
+      if (!meeting) throw new HTTPException(404, { message: "Not found" });
+      // Download is refused for anyone who cannot read the meeting itself —
+      // the same confidentiality rule as every other read in this module.
+      await assertCanReadMeeting(userId, ws, meeting);
+
+      const [doc] = await db
+        .select()
+        .from(meetingDocumentTable)
+        .where(
+          and(
+            eq(meetingDocumentTable.id, docId),
+            eq(meetingDocumentTable.meetingId, id),
+          ),
+        )
+        .limit(1);
+      if (!doc) throw new HTTPException(404, { message: "Not found" });
+
+      try {
+        const object = await getPrivateObject(doc.objectKey);
+        return new Response(object.body as BodyInit, {
+          headers: {
+            "Cache-Control": "private, max-age=120",
+            "Content-Type": object.contentType || doc.mimeType,
+            "Content-Disposition": `inline; filename="${doc.filename}"`,
+          },
+        });
+      } catch {
+        throw new HTTPException(404, { message: "File not found" });
+      }
     },
   );
 }

@@ -506,6 +506,72 @@ export async function createLetterFileUploadUrl(
   };
 }
 
+type MeetingFileUploadContext = {
+  workspaceId: string;
+  meetingId: string;
+  filename: string;
+  contentType: string;
+};
+
+/**
+ * Owner-scoping segment every meeting document key must contain (finalize
+ * guard) — the meeting-shaped twin of `letterFileKeyOwnerSegment`.
+ */
+export function meetingFileKeyOwnerSegment(
+  workspaceId: string,
+  meetingId: string,
+) {
+  return `workspace/${sanitizePathSegment(workspaceId)}/meeting/${sanitizePathSegment(meetingId)}/`;
+}
+
+/** Object key for a meeting document: workspace/<ws>/meeting/<id>/<name>. */
+export function buildMeetingFileObjectKey(context: MeetingFileUploadContext) {
+  const extension = getFileExtension(context.filename);
+  const prefix = [
+    "workspace",
+    sanitizePathSegment(context.workspaceId),
+    "meeting",
+    sanitizePathSegment(context.meetingId),
+  ].join("/");
+  const timestamp = Date.now();
+  const randomId = createId();
+  const baseName = sanitizePathSegment(
+    context.filename.replace(/\.[^/.]+$/, "") || "file",
+  ).slice(0, 64);
+  const fileName = extension
+    ? `${baseName}-${timestamp}-${randomId}.${extension}`
+    : `${baseName}-${timestamp}-${randomId}`;
+  return `${prefix}/${fileName}`;
+}
+
+/**
+ * Presigned PUT URL for a meeting document — either an action-update
+ * attachment or (Spec D) an archival PDF.
+ */
+export async function createMeetingFileUploadUrl(
+  context: MeetingFileUploadContext,
+): Promise<TaskImageUploadUrl> {
+  const config = getStorageConfig();
+  const client = getClient(config);
+  const key = applyKeyPrefix(
+    config.keyPrefix,
+    buildMeetingFileObjectKey(context),
+  );
+  const command = new PutObjectCommand({
+    Bucket: config.bucket,
+    Key: key,
+    ContentType: context.contentType,
+  });
+  const uploadUrl = await presignPutObjectUrl(client, command, {
+    expiresIn: config.presignTtlSeconds,
+  });
+  return {
+    key,
+    uploadUrl,
+    headers: { "Content-Type": context.contentType },
+  };
+}
+
 export async function getPrivateObject(key: string): Promise<AssetObject> {
   const config = getStorageConfig();
   const client = getClient(config);
