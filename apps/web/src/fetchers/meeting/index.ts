@@ -368,6 +368,19 @@ export const importMinuteItems = (
 // ── Action progress thread ──────────────────────────────────────────────
 
 /**
+ * An update's attachment, as `GET /:id/actions/:actionId/updates` embeds it
+ * per update — a narrower view of `MeetingDocument` than the create/finalize
+ * response: no `objectKey` (internal storage detail; the download route
+ * takes the document's `id`, not it), no `meetingId`/`actionUpdateId`/
+ * `workspaceId`/`mimeType`/`sha256`/`kind`/`createdBy` (redundant once the
+ * document is already grouped under its update).
+ */
+export type MeetingActionUpdateAttachment = Pick<
+  MeetingDocument,
+  "id" | "filename" | "size" | "createdAt"
+>;
+
+/**
  * A row in one action's append-only progress thread. There is no PUT/PATCH/
  * DELETE for this row anywhere in the API, by design — do not add UI that
  * implies one exists.
@@ -379,6 +392,7 @@ export type MeetingActionUpdate = {
   body: string;
   statusAfter: MeetingAction["status"] | null;
   createdAt: string;
+  attachments: MeetingActionUpdateAttachment[];
 };
 
 export type AddActionUpdateInput = {

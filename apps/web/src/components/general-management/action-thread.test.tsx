@@ -175,6 +175,7 @@ describe("ActionThread", () => {
         body: "Started drafting",
         statusAfter: null,
         createdAt: "2026-01-02T00:00:00.000Z",
+        attachments: [],
       },
       {
         id: "update-2",
@@ -183,6 +184,7 @@ describe("ActionThread", () => {
         body: "Marked done",
         statusAfter: "done",
         createdAt: "2026-01-03T00:00:00.000Z",
+        attachments: [],
       },
     ];
     mockListActionUpdates.mockResolvedValue(updates);
@@ -215,6 +217,7 @@ describe("ActionThread", () => {
         body: "Started drafting",
         statusAfter: null,
         createdAt: "2026-01-02T00:00:00.000Z",
+        attachments: [],
       },
     ] satisfies MeetingActionUpdate[]);
 
@@ -386,6 +389,7 @@ describe("ActionThread", () => {
       body: "Progress report attached",
       statusAfter: null,
       createdAt: "2026-01-05T00:00:00.000Z",
+      attachments: [],
     };
     state.mutate.mockImplementation((_vars, opts) => {
       opts.onSuccess(postedUpdate);
@@ -452,6 +456,7 @@ describe("ActionThread", () => {
       body: "Report attached",
       statusAfter: null,
       createdAt: "2026-01-06T00:00:00.000Z",
+      attachments: [],
     };
     state.mutate.mockImplementation((_vars, opts) => {
       opts.onSuccess(postedUpdate);
@@ -493,6 +498,76 @@ describe("ActionThread", () => {
     });
   });
 
+  it("renders an attachment the server returns on the update it belongs to — proving durability across a reload, not just the post-upload case", async () => {
+    // No upload happens in this test at all: `listActionUpdates` is mocked
+    // to return an update that already carries its attachment, exactly what
+    // a page reload looks like. Against the previous behaviour (the route
+    // never joined `meetingDocumentTable`, and the component only ever
+    // showed attachments from its own in-memory upload state) this update's
+    // attachment would never have appeared, since nothing here uploads
+    // anything in the current session.
+    mockListActionUpdates.mockResolvedValue([
+      {
+        id: "update-301",
+        actionId: "action-1",
+        authorId: "user-2",
+        body: "Report from a previous session",
+        statusAfter: null,
+        createdAt: "2026-01-09T00:00:00.000Z",
+        attachments: [
+          {
+            id: "doc-durable",
+            filename: "durable-report.pdf",
+            size: 4096,
+            createdAt: "2026-01-09T00:00:00.000Z",
+          },
+        ],
+      },
+    ] satisfies MeetingActionUpdate[]);
+
+    renderThread(
+      <ActionThread
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        action={makeAction()}
+        canPost
+      />,
+    );
+
+    expect(await screen.findByText("durable-report.pdf")).toBeVisible();
+    const link = screen.getByText("durable-report.pdf").closest("a");
+    expect(link).toHaveAttribute(
+      "href",
+      expect.stringContaining("/attachments/doc-durable/download"),
+    );
+  });
+
+  it("renders no attachment row for an update the server reports has none", async () => {
+    mockListActionUpdates.mockResolvedValue([
+      {
+        id: "update-302",
+        actionId: "action-1",
+        authorId: "user-2",
+        body: "Just a note, nothing attached",
+        statusAfter: null,
+        createdAt: "2026-01-10T00:00:00.000Z",
+        attachments: [],
+      },
+    ] satisfies MeetingActionUpdate[]);
+
+    renderThread(
+      <ActionThread
+        workspaceId="ws-1"
+        meetingId="meeting-1"
+        action={makeAction()}
+        canPost
+      />,
+    );
+
+    await screen.findByText("Just a note, nothing attached");
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
   it("scopes an update's attachment display to that update, not another one", async () => {
     const user = userEvent.setup();
     const firstUpdate: MeetingActionUpdate = {
@@ -502,6 +577,7 @@ describe("ActionThread", () => {
       body: "First report",
       statusAfter: null,
       createdAt: "2026-01-07T00:00:00.000Z",
+      attachments: [],
     };
     const secondUpdate: MeetingActionUpdate = {
       id: "update-202",
@@ -510,11 +586,15 @@ describe("ActionThread", () => {
       body: "Second report",
       statusAfter: null,
       createdAt: "2026-01-08T00:00:00.000Z",
+      attachments: [],
     };
     // Posting invalidates the thread's own query, which in real usage
     // refetches from a server that now includes the just-created row — model
     // that here instead of a fetcher that always returns the same list,
     // otherwise this test could never observe a posted update at all.
+    // Finalizing an attachment invalidates the query again, so the server
+    // model must also start returning that update WITH its attachment from
+    // then on — exactly what the real route now does via its `inArray` join.
     let serverRows: MeetingActionUpdate[] = [];
     mockListActionUpdates.mockImplementation(async () => [...serverRows]);
     state.mutate
@@ -527,33 +607,67 @@ describe("ActionThread", () => {
         opts.onSuccess(secondUpdate);
       });
     mockUploadMeetingDocument
-      .mockResolvedValueOnce({
-        id: "doc-first",
-        meetingId: "meeting-1",
-        actionUpdateId: firstUpdate.id,
-        workspaceId: "ws-1",
-        objectKey: "key-first",
-        filename: "first.pdf",
-        mimeType: "application/pdf",
-        size: 100,
-        sha256: null,
-        kind: "original",
-        createdBy: "user-2",
-        createdAt: "2026-01-07T00:00:00.000Z",
+      .mockImplementationOnce(async () => {
+        serverRows = serverRows.map((row) =>
+          row.id === firstUpdate.id
+            ? {
+                ...row,
+                attachments: [
+                  {
+                    id: "doc-first",
+                    filename: "first.pdf",
+                    size: 100,
+                    createdAt: "2026-01-07T00:00:00.000Z",
+                  },
+                ],
+              }
+            : row,
+        );
+        return {
+          id: "doc-first",
+          meetingId: "meeting-1",
+          actionUpdateId: firstUpdate.id,
+          workspaceId: "ws-1",
+          objectKey: "key-first",
+          filename: "first.pdf",
+          mimeType: "application/pdf",
+          size: 100,
+          sha256: null,
+          kind: "original",
+          createdBy: "user-2",
+          createdAt: "2026-01-07T00:00:00.000Z",
+        };
       })
-      .mockResolvedValueOnce({
-        id: "doc-second",
-        meetingId: "meeting-1",
-        actionUpdateId: secondUpdate.id,
-        workspaceId: "ws-1",
-        objectKey: "key-second",
-        filename: "second.pdf",
-        mimeType: "application/pdf",
-        size: 100,
-        sha256: null,
-        kind: "original",
-        createdBy: "user-2",
-        createdAt: "2026-01-08T00:00:00.000Z",
+      .mockImplementationOnce(async () => {
+        serverRows = serverRows.map((row) =>
+          row.id === secondUpdate.id
+            ? {
+                ...row,
+                attachments: [
+                  {
+                    id: "doc-second",
+                    filename: "second.pdf",
+                    size: 100,
+                    createdAt: "2026-01-08T00:00:00.000Z",
+                  },
+                ],
+              }
+            : row,
+        );
+        return {
+          id: "doc-second",
+          meetingId: "meeting-1",
+          actionUpdateId: secondUpdate.id,
+          workspaceId: "ws-1",
+          objectKey: "key-second",
+          filename: "second.pdf",
+          mimeType: "application/pdf",
+          size: 100,
+          sha256: null,
+          kind: "original",
+          createdBy: "user-2",
+          createdAt: "2026-01-08T00:00:00.000Z",
+        };
       });
 
     const { container } = renderThread(

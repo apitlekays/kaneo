@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute, validator } from "hono-openapi";
@@ -355,7 +355,56 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         .from(meetingActionUpdateTable)
         .where(eq(meetingActionUpdateTable.actionId, actionId))
         .orderBy(asc(meetingActionUpdateTable.createdAt));
-      return c.json(rows);
+
+      // Attachments are thread content: fold them into each update's row
+      // rather than exposing a separate list-documents endpoint, which
+      // would cost the client a second round trip for no benefit. One
+      // `inArray` query keyed on `actionUpdateId` (indexed — see
+      // `meeting_document_actionUpdateId_idx`) rather than N+1 per update.
+      // `objectKey` is deliberately excluded: it is an internal storage
+      // detail, and the download route takes the document's `id`, not it.
+      const updateIds = rows.map((row) => row.id);
+      const attachmentsByUpdateId = new Map<
+        string,
+        Array<{
+          id: string;
+          filename: string;
+          size: number;
+          createdAt: Date;
+        }>
+      >();
+      if (updateIds.length > 0) {
+        const docs = await db
+          .select({
+            id: meetingDocumentTable.id,
+            actionUpdateId: meetingDocumentTable.actionUpdateId,
+            filename: meetingDocumentTable.filename,
+            size: meetingDocumentTable.size,
+            createdAt: meetingDocumentTable.createdAt,
+          })
+          .from(meetingDocumentTable)
+          .where(inArray(meetingDocumentTable.actionUpdateId, updateIds));
+        for (const doc of docs) {
+          // `actionUpdateId` can only be null for a meeting-level document,
+          // which can never match this `inArray` (built from update ids) —
+          // the guard is for the type checker, not reachability.
+          if (!doc.actionUpdateId) continue;
+          const list = attachmentsByUpdateId.get(doc.actionUpdateId) ?? [];
+          list.push({
+            id: doc.id,
+            filename: doc.filename,
+            size: doc.size,
+            createdAt: doc.createdAt,
+          });
+          attachmentsByUpdateId.set(doc.actionUpdateId, list);
+        }
+      }
+
+      const withAttachments = rows.map((row) => ({
+        ...row,
+        attachments: attachmentsByUpdateId.get(row.id) ?? [],
+      }));
+      return c.json(withAttachments);
     },
   );
 

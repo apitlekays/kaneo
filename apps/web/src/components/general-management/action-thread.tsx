@@ -15,7 +15,6 @@ import {
   listActionUpdates,
   type MeetingAction,
   type MeetingActionUpdate,
-  type MeetingDocument,
   meetingDocumentDownloadUrl,
   uploadMeetingDocument,
 } from "@/fetchers/meeting";
@@ -41,11 +40,10 @@ const actionUpdatesKey = (
  * is why loading/error/empty need to be told apart explicitly rather than
  * falling out of a prop that's simply present or absent.
  *
- * There is no list-documents route for an update's attachments (only
- * presign/finalize/download), so attachments shown here are the ones
- * uploaded in THIS browser session, not a durable server-fetched list —
- * a real gap, not an oversight; a future archival/search spec is the
- * natural place to close it.
+ * Attachments are returned inline on each update (`update.attachments`), so
+ * they persist across a reload. A freshly uploaded attachment shows up as
+ * soon as the thread query is invalidated after `uploadMeetingDocument`
+ * resolves — no separate local state needed to bridge the gap.
  */
 export function ActionThread({
   workspaceId,
@@ -75,9 +73,6 @@ export function ActionThread({
   const [status, setStatus] = useState<ActionStatus | "">("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [attachmentsByUpdate, setAttachmentsByUpdate] = useState<
-    Record<string, MeetingDocument[]>
-  >({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const trimmed = body.trim();
 
@@ -107,16 +102,13 @@ export function ActionThread({
           // through"; it must read as "the file didn't attach".
           setUploading(true);
           try {
-            const doc = await uploadMeetingDocument(
+            await uploadMeetingDocument(
               workspaceId,
               meetingId,
               toAttach,
               created.id,
             );
-            setAttachmentsByUpdate((prev) => ({
-              ...prev,
-              [created.id]: [...(prev[created.id] ?? []), doc],
-            }));
+            qc.invalidateQueries({ queryKey });
           } catch {
             toast.error("Update posted, but the attachment upload failed");
           } finally {
@@ -160,7 +152,7 @@ export function ActionThread({
                     Set status: {update.statusAfter}
                   </Badge>
                 )}
-                {(attachmentsByUpdate[update.id] ?? []).map((doc) => (
+                {update.attachments.map((doc) => (
                   <a
                     key={doc.id}
                     href={meetingDocumentDownloadUrl(

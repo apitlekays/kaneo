@@ -1317,4 +1317,181 @@ describe("API integration: meeting action updates", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
+  it("27. GET updates returns each update's attachments inline, with the expected fields and without objectKey; an update with none gets an empty list, not null or a missing key", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+
+    const withAttachmentsRes = await postUpdate(
+      assigneeApp,
+      meeting.id,
+      action.id,
+      {
+        workspaceId: owner.workspace.id,
+        body: "Attaching two reports",
+      },
+    );
+    expect(withAttachmentsRes.status).toBe(201);
+    const withAttachmentsUpdate = await withAttachmentsRes.json();
+
+    const noAttachmentsRes = await postUpdate(
+      assigneeApp,
+      meeting.id,
+      action.id,
+      {
+        workspaceId: owner.workspace.id,
+        body: "Just a comment, nothing attached",
+      },
+    );
+    expect(noAttachmentsRes.status).toBe(201);
+    const noAttachmentsUpdate = await noAttachmentsRes.json();
+
+    for (const filename of ["first.pdf", "second.pdf"]) {
+      const presigned = await (
+        await presignAttachment(assigneeApp, meeting.id, {
+          workspaceId: owner.workspace.id,
+          filename,
+          actionUpdateId: withAttachmentsUpdate.id,
+        })
+      ).json();
+      const finalizeRes = await finalizeAttachment(assigneeApp, meeting.id, {
+        workspaceId: owner.workspace.id,
+        objectKey: presigned.key,
+        filename,
+        actionUpdateId: withAttachmentsUpdate.id,
+      });
+      expect(finalizeRes.status).toBe(201);
+    }
+
+    const res = await listUpdates(
+      assigneeApp,
+      meeting.id,
+      action.id,
+      owner.workspace.id,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    const withAttachmentsRow = body.find(
+      (u: { id: string }) => u.id === withAttachmentsUpdate.id,
+    );
+    const noAttachmentsRow = body.find(
+      (u: { id: string }) => u.id === noAttachmentsUpdate.id,
+    );
+    expect(withAttachmentsRow).toBeDefined();
+    expect(noAttachmentsRow).toBeDefined();
+
+    expect(withAttachmentsRow.attachments).toHaveLength(2);
+    const filenames = withAttachmentsRow.attachments
+      .map((a: { filename: string }) => a.filename)
+      .sort();
+    expect(filenames).toEqual(["first.pdf", "second.pdf"]);
+    for (const attachment of withAttachmentsRow.attachments) {
+      expect(typeof attachment.id).toBe("string");
+      expect(typeof attachment.filename).toBe("string");
+      expect(typeof attachment.size).toBe("number");
+      expect(attachment.createdAt).toBeTruthy();
+      expect(attachment).not.toHaveProperty("objectKey");
+    }
+
+    // An update with no attachments gets an empty array, not null and not a
+    // missing key — a client that does `update.attachments.map(...)` must
+    // never see this throw.
+    expect(noAttachmentsRow.attachments).toEqual([]);
+  });
+
+  it("28. an update's attachments never include a document attached to a different update on the same action", async () => {
+    const { owner, assignee, meeting, action } = await seedMeetingWithAction({
+      assigneeIsAttendee: true,
+    });
+
+    mockAuthenticatedSession(assignee.user);
+    const { app: assigneeApp } = createApp();
+
+    const firstRes = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "First update",
+    });
+    const firstUpdate = await firstRes.json();
+    const secondRes = await postUpdate(assigneeApp, meeting.id, action.id, {
+      workspaceId: owner.workspace.id,
+      body: "Second update",
+    });
+    const secondUpdate = await secondRes.json();
+
+    const presignedFirst = await (
+      await presignAttachment(assigneeApp, meeting.id, {
+        workspaceId: owner.workspace.id,
+        filename: "for-first.pdf",
+        actionUpdateId: firstUpdate.id,
+      })
+    ).json();
+    await finalizeAttachment(assigneeApp, meeting.id, {
+      workspaceId: owner.workspace.id,
+      objectKey: presignedFirst.key,
+      filename: "for-first.pdf",
+      actionUpdateId: firstUpdate.id,
+    });
+
+    const res = await listUpdates(
+      assigneeApp,
+      meeting.id,
+      action.id,
+      owner.workspace.id,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    const firstRow = body.find((u: { id: string }) => u.id === firstUpdate.id);
+    const secondRow = body.find(
+      (u: { id: string }) => u.id === secondUpdate.id,
+    );
+    expect(firstRow.attachments).toHaveLength(1);
+    expect(firstRow.attachments[0].filename).toBe("for-first.pdf");
+    expect(secondRow.attachments).toEqual([]);
+  });
+
+  it("29. widening the GET payload does not widen access: the gate still refuses a non-page, non-assignee member and a confidential meeting's non-attendee page holder", async () => {
+    // Non-page, non-assignee member on a non-confidential meeting — same
+    // fixture as test 5c.
+    const plain = await seedMeetingWithAction({ assigneeIsAttendee: true });
+    const bystander = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: plain.owner.workspace.id,
+      userId: bystander.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    mockAuthenticatedSession(bystander.user);
+    const { app: bystanderApp } = createApp();
+    const bystanderRes = await listUpdates(
+      bystanderApp,
+      plain.meeting.id,
+      plain.action.id,
+      plain.owner.workspace.id,
+    );
+    expect(bystanderRes.status).toBe(403);
+
+    // Confidential meeting, non-attendee GM page holder — same fixture as
+    // test 5b.
+    const confidential = await seedMeetingWithAction({
+      confidential: true,
+      assigneeIsAttendee: true,
+    });
+    const gmOfficer = await seedGmOfficerNotAttendee(
+      confidential.owner.workspace.id,
+    );
+    mockAuthenticatedSession(gmOfficer.user);
+    const { app: gmApp } = createApp();
+    const gmRes = await listUpdates(
+      gmApp,
+      confidential.meeting.id,
+      confidential.action.id,
+      confidential.owner.workspace.id,
+    );
+    expect(gmRes.status).toBe(403);
+  });
 });
