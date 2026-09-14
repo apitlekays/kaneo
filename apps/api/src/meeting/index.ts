@@ -51,6 +51,7 @@ import {
   keysetCondition,
   visibilityCondition,
 } from "./list-query";
+import { registerMemoRoutes } from "./memo-routes";
 import { validateImportRows } from "./minute-item-import";
 
 // Context variables populated by the auth + workspace-access middleware.
@@ -1419,6 +1420,17 @@ app.post(
 // today, so this is latent rather than live — keep the order correct
 // regardless of what gets added later.
 registerActionUpdateRoutes(app);
+
+// ── Configure -> send memorandum ────────────────────────────────────────
+// `GET`/`POST /:id/actions/:actionId/memo` — see memo-routes.ts for the
+// confidentiality reasoning (highest-risk path in this module: the
+// memorandum subject puts the meeting's name in an outbound email by
+// design). Registered here for the same reason as
+// `registerActionUpdateRoutes` above: Hono matches literal path segments
+// against parameterised ones in registration order, and there is no
+// `POST /:id/actions/:actionId` catch-all today, so this is latent rather
+// than live — keep it ordered correctly regardless.
+registerMemoRoutes(app);
 
 // ── Complete a delegated action (its assignee, or a GM officer) ───────────
 // Deliberately not gated by `pageAccess`: the assignee of a follow-up action

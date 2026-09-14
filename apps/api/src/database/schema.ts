@@ -2742,6 +2742,45 @@ export const meetingActionTable = pgTable(
   ],
 );
 
+// The audit record of one memorandum email sent for an action, via the
+// Configure -> send memorandum feature (see `../meeting/memorandum.ts`).
+// Governance correspondence must be auditable, and this record is also what
+// lets the popup show a memorandum already went out rather than inviting a
+// duplicate — so it stores the fully rendered body actually sent, not just
+// the inputs.
+//
+// `meeting_` prefix per this module's convention (never bare `minute_` —
+// see the "Three kinds of minutes" note in CLAUDE.md). Never renamed to
+// align with `task_mom` or `letter_minute`; those are a different domain.
+export const meetingActionMemoTable = pgTable(
+  "meeting_action_memo",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    actionId: text("action_id")
+      .notNull()
+      .references(() => meetingActionTable.id, { onDelete: "cascade" }),
+    sentBy: text("sent_by").references(() => userTable.id, {
+      onDelete: "set null",
+    }),
+    // Free text: the recipient is often external to the workspace (no
+    // userId to reference), so a name and email are captured directly.
+    recipientName: text("recipient_name").notNull(),
+    recipientEmail: text("recipient_email").notNull(),
+    // Further CC addresses, or null when none were given — same
+    // "list-or-null" jsonb convention as `letter_dispatch.recipients`.
+    cc: jsonb("cc").$type<string[] | null>(),
+    replyTo: text("reply_to").notNull(),
+    subject: text("subject").notNull(),
+    // The fully rendered HTML actually sent, not the Markdown source —
+    // this is the auditable record of what the recipient received.
+    bodyHtml: text("body_html").notNull(),
+    sentAt: timestamp("sent_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("meeting_action_memo_actionId_idx").on(table.actionId)],
+);
+
 // Append-only progress thread on a meeting action. Mirrors
 // `letter_minute_update`, with one addition: `statusAfter`.
 //
