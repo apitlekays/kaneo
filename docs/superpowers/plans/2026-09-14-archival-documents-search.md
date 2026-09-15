@@ -36,9 +36,19 @@
   (`apps/api/src/utils/background-work.ts`). Untracked fire-and-forget DB
   work has deadlocked this repo's integration harness twice. Tests await
   `settleBackgroundWork()`, **never** a sleep.
-- **`objectKey` and `originalObjectKey` never leave the API.** No route
-  returns them in a response body. Downloads go through
+- **No route returns a STORED document's `objectKey` or
+  `originalObjectKey`.** Finalize, the document list and the search results
+  all omit them; bytes are reached only through
   `GET /:id/attachments/:docId/download`.
+  The one deliberate exception is **presign**, which returns the key it has
+  just minted for this caller's own upload (`return c.json(presigned)` —
+  `{ key, uploadUrl, headers }`). That is inherent to presign -> PUT ->
+  finalize: the client cannot upload without knowing where. It is not a
+  leak, because the key is fresh, carries a `createId()`, and finalize
+  re-validates that it is rooted under this meeting's owner segment.
+  So the rule is about reading OTHER rows' keys back out, not about the
+  string never appearing in any response. A blanket grep for `objectKey`
+  near a `c.json` WILL flag presign; that hit is expected.
 - **OCR processes one document at a time**, process-wide. A large scan taking
   minutes is normal, not something to parallelise on a 2-vCPU box that also
   runs Postgres, MinIO and the app.
