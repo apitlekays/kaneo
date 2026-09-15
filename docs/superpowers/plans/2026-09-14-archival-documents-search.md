@@ -1696,6 +1696,19 @@ render each entry as one muted line: the filename, then the snippet. Render
 the snippet as **text** — never `dangerouslySetInnerHTML`; it is document
 content and the server does not escape it for HTML.
 
+Two constraints from Task 8's implementer, both binding:
+
+- **Cap the snippets shown per card at 3**, with a plain "+N more" when
+  there are more. The API deliberately returns every matching document,
+  because the spec requires each to be its own hit — so the cap belongs
+  here, in presentation, not in the route. A meeting with 50 matching
+  archival PDFs would otherwise render 50 snippets on one card.
+- **Never cache a snippet under a key shared between users.** Snippets are
+  confidentiality-filtered per caller: the same `q` returns different
+  `matchedDocuments` to an attendee and to a non-attendee. The existing
+  meetings query key already includes the search term; make sure nothing
+  you add hoists snippet data into a broader or user-independent key.
+
 For case 3, surface the incomplete-results notice when any card carries a
 `pending` document. If the list route does not expose that, add a
 `pendingIndexCount` to its response rather than issuing a second query per
