@@ -1206,6 +1206,15 @@ with `afterEach(resetPdfTextExtractor)`. Write these cases:
 8. `the real extractor reads a generated PDF` — build a PDF with `pdf-lib`,
    run the real `extractPdfText`, assert `source === "layer"`. Guard with a
    probe that `pdftotext` exists and `it.skip` when it does not.
+9. `documents are indexed strictly one at a time` — assert the ORDER
+   directly, not the end state. Have the injected extractor record its call
+   sequence and resolve on a deferred promise, finalize three documents, then
+   assert the recorded sequence shows each call completing before the next
+   begins. **End state is not enough**: replacing the serial queue with
+   `Promise.all` leaves all three rows correctly `indexed`, so a test that
+   only checks the rows passes against the regression it exists to catch.
+   (Raised by Task 5's implementer against its own work — the serial queue is
+   a performance guarantee on a 2-vCPU box, and nothing else asserts it.)
 
 **For each test, check it would fail if the behaviour were removed.** This
 branch's predecessor repeatedly produced tests that passed with the check
