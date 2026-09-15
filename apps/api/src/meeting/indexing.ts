@@ -34,12 +34,23 @@ let queue: Promise<unknown> = Promise.resolve();
  */
 export function classifyExtractionError(raw: string): string {
   const s = raw.toLowerCase();
-  if (s.includes("enoent") || s.includes("not found"))
-    return "Extraction tooling unavailable on the server";
+  // Storage misses are checked BEFORE the tooling branch on purpose. An
+  // object-store error can phrase itself "Object not found", and a generic
+  // `not found` test in the tooling branch swallowed it and told the user
+  // the server was misconfigured — pointing whoever read it at the wrong
+  // system entirely. A missing BINARY always surfaces as ENOENT from
+  // `spawn`, never as a bare "not found", so the two are distinguishable.
+  if (
+    s.includes("nosuchkey") ||
+    s.includes("no such key") ||
+    s.includes("not exist") ||
+    s.includes("not found")
+  )
+    return "The stored file could not be read";
   if (s.includes("timeout") || s.includes("etimedout"))
     return "Extraction timed out";
-  if (s.includes("nosuchkey") || s.includes("not exist"))
-    return "The stored file could not be read";
+  if (s.includes("enoent") || s.includes("spawn"))
+    return "Extraction tooling unavailable on the server";
   if (s.includes("maxbuffer")) return "The document is too large to index";
   if (s.includes("damaged") || s.includes("malformed") || s.includes("syntax"))
     return "The PDF could not be read";

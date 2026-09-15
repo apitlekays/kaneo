@@ -22,6 +22,28 @@ describe("classifyExtractionError", () => {
     );
   });
 
+  it("does not blame the server tooling for an object-store miss", () => {
+    // Regression: the storage branch used to sit AFTER a tooling branch that
+    // tested a bare "not found", so MinIO's "Object not found" reported as
+    // "Extraction tooling unavailable" and sent the reader after the wrong
+    // system. Both phrasings must land on the storage message.
+    for (const raw of [
+      "NoSuchKey: The specified key does not exist.",
+      "Object not found",
+      "S3ServiceException: no such key",
+    ]) {
+      expect(classifyExtractionError(raw)).toMatch(/could not be read/i);
+    }
+  });
+
+  it("still reports a genuinely missing binary as a tooling problem", () => {
+    // The distinguishing signal: a missing binary surfaces as ENOENT from
+    // spawn, never as a bare "not found".
+    for (const raw of ["spawn pdftotext ENOENT", "spawn tesseract ENOENT"]) {
+      expect(classifyExtractionError(raw)).toMatch(/tooling unavailable/i);
+    }
+  });
+
   it("falls back to a generic reason for anything unrecognised", () => {
     expect(classifyExtractionError("weird internal failure 0x8")).toBe(
       "Extraction failed",
