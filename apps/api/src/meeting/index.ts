@@ -43,6 +43,7 @@ import {
 } from "./access";
 import { canAdoptMeeting } from "./action-rules";
 import { registerActionUpdateRoutes } from "./action-updates";
+import { registerMeetingDocumentRoutes } from "./documents";
 import {
   clampLimit,
   decodeCursor,
@@ -1431,6 +1432,14 @@ registerActionUpdateRoutes(app);
 // `POST /:id/actions/:actionId` catch-all today, so this is latent rather
 // than live — keep it ordered correctly regardless.
 registerMemoRoutes(app);
+
+// ── Archival documents on the meeting itself ─────────────────────────────
+// `GET /:id/documents`, `POST /:id/documents/:docId/reindex`. Registered
+// alongside the other "/:id/..." registrars for the same reason the memo
+// routes are: Hono matches literal path segments before parameterised ones
+// in registration order, so "/:id/documents" must not end up behind a
+// "/:id/..." catch-all added later.
+registerMeetingDocumentRoutes(app);
 
 // ── Complete a delegated action (its assignee, or a GM officer) ───────────
 // Deliberately not gated by `pageAccess`: the assignee of a follow-up action

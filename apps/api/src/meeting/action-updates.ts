@@ -28,7 +28,10 @@ type MeetingEnv = { Variables: { userId: string; workspaceId?: string } };
 
 const PAGE_SLUG = "general-management";
 const ACTION_STATUSES = ["open", "done", "cancelled"] as const;
-const MEETING_DOCUMENT_MIME_TYPE = "application/pdf";
+// Exported for Spec D: the reindex route in `documents.ts` takes this same
+// attach gate, and must name the same MIME type rather than repeating the
+// literal.
+export const MEETING_DOCUMENT_MIME_TYPE = "application/pdf";
 const MAX_FILENAME_LENGTH = 255;
 
 // Rejects ASCII control characters (incl. CR/LF — response-splitting into
@@ -116,7 +119,7 @@ function assertPdfOnly(mimeType: string): void {
  * meeting (404 otherwise), and only that action's assignee or a page holder
  * may attach — reusing `canPostActionUpdate` rather than re-deriving it.
  */
-async function assertCanAttachMeetingDocument(
+export async function assertCanAttachMeetingDocument(
   userId: string,
   workspaceId: string,
   meeting: { id: string; confidential: boolean },
