@@ -4,6 +4,7 @@ import {
   desc,
   eq,
   ilike,
+  inArray,
   isNull,
   ne,
   or,
@@ -23,6 +24,7 @@ import {
   meetingAttendeeTable,
   meetingBodyMemberTable,
   meetingBodyTable,
+  meetingDocumentTable,
   meetingMinuteItemTable,
   meetingTable,
   meetingTypeTable,
@@ -47,6 +49,7 @@ import { registerMeetingDocumentRoutes } from "./documents";
 import {
   clampLimit,
   decodeCursor,
+  documentMatchCondition,
   encodeCursor,
   escapeLikePattern,
   keysetCondition,
@@ -54,10 +57,27 @@ import {
 } from "./list-query";
 import { registerMemoRoutes } from "./memo-routes";
 import { validateImportRows } from "./minute-item-import";
+import { buildSnippet } from "./snippet";
 
 // Context variables populated by the auth + workspace-access middleware.
 type MeetingEnv = { Variables: { userId: string; workspaceId?: string } };
 type Row = Record<string, unknown>;
+
+/**
+ * An archival document whose extracted text matched the list route's `q`
+ * term, with the excerpt that explains the match. Exported for the web
+ * fetcher's response type.
+ *
+ * A snippet is CONTENT. One of these is only ever built for a meeting that
+ * has already passed `visibilityCondition` inside the list query — see the
+ * list route.
+ */
+export type MatchedDocument = {
+  id: string;
+  filename: string;
+  kind: string;
+  snippet: string;
+};
 
 const PAGE_SLUG = "general-management";
 const pageAccess = requireWorkspacePageAccess(PAGE_SLUG);
@@ -271,14 +291,22 @@ app.get(
     }
 
     const term = q?.trim();
+    // Hoisted out of the `if` below because the snippet query further down
+    // must match on exactly the same pattern the WHERE clause matched on.
+    const pattern = term ? `%${escapeLikePattern(term)}%` : "";
     if (term) {
-      const pattern = `%${escapeLikePattern(term)}%`;
       conditions.push(
         or(
           ilike(meetingTable.title, pattern),
           ilike(meetingTable.location, pattern),
           ilike(meetingTypeTable.label, pattern),
           ilike(meetingBodyTable.name, pattern),
+          // Matching the text INSIDE the meeting's archival PDFs. An EXISTS
+          // subquery correlated on the meeting, so it sits inside this
+          // `or(...)` and is therefore ANDed with `visibilityCondition`
+          // above — the document match is constrained by confidentiality in
+          // this same query, never afterwards.
+          documentMatchCondition(term),
         ) as SQL,
       );
     }
@@ -348,6 +376,50 @@ app.get(
           })
         : null;
 
+    // Snippets for the page's meetings ONLY, and only now that `page` has
+    // been sliced to `limit`. Every id here has already passed
+    // `visibilityCondition` in the query above, so reading its documents'
+    // text discloses nothing new — but the ORDER of these two steps is
+    // load-bearing, and hoisting this above the slice would fetch (and a
+    // future refactor could return) text for a row about to be discarded.
+    let matched = new Map<string, MatchedDocument[]>();
+    if (term && page.length > 0) {
+      const documentRows = await db
+        .select({
+          id: meetingDocumentTable.id,
+          meetingId: meetingDocumentTable.meetingId,
+          filename: meetingDocumentTable.filename,
+          kind: meetingDocumentTable.kind,
+          extractedText: meetingDocumentTable.extractedText,
+        })
+        .from(meetingDocumentTable)
+        .where(
+          and(
+            inArray(
+              meetingDocumentTable.meetingId,
+              page.map((r) => r.id),
+            ),
+            // Same three predicates as `documentMatchCondition`, so a
+            // document that made the meeting a hit is the same document
+            // that gets a snippet.
+            isNull(meetingDocumentTable.actionUpdateId),
+            eq(meetingDocumentTable.indexStatus, "indexed"),
+            ilike(meetingDocumentTable.extractedText, pattern),
+          ),
+        );
+      matched = documentRows.reduce((acc, r) => {
+        const snippet = buildSnippet(r.extractedText ?? "", term);
+        // Null means the term is not actually in the text — should not
+        // happen given the ilike above, but omit the document rather than
+        // show an empty snippet.
+        if (!snippet) return acc;
+        const list = acc.get(r.meetingId) ?? [];
+        list.push({ id: r.id, filename: r.filename, kind: r.kind, snippet });
+        acc.set(r.meetingId, list);
+        return acc;
+      }, new Map<string, MatchedDocument[]>());
+    }
+
     // The two `*Text` columns exist for the cursor alone; leaving them on
     // the items would change the response shape the web types are built
     // against.
@@ -356,7 +428,12 @@ app.get(
         createdAtText: _createdAtText,
         scheduledAtText: _scheduledAtText,
         ...item
-      }) => item,
+      }) => ({
+        ...item,
+        // Always present, even without a `q`: the web types are built
+        // against a fixed shape.
+        matchedDocuments: matched.get(item.id) ?? [],
+      }),
     );
 
     return c.json({ items, nextCursor });

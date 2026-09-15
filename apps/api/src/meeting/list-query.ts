@@ -1,6 +1,20 @@
-import { and, eq, exists, isNull, lt, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  ilike,
+  isNull,
+  lt,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import db from "../database";
-import { meetingAttendeeTable, meetingTable } from "../database/schema";
+import {
+  meetingAttendeeTable,
+  meetingDocumentTable,
+  meetingTable,
+} from "../database/schema";
 
 /**
  * The sort tuple identifying the last row of a page. Opaque to the client:
@@ -167,6 +181,48 @@ export function visibilityCondition(
         ),
     ),
   );
+}
+
+/**
+ * "This meeting has an indexed archival document whose text matches."
+ *
+ * An EXISTS subquery, deliberately, rather than a join: the list route's
+ * `limit + 1` page detection and its keyset cursor are both meeting-keyed,
+ * so a join that multiplied rows per matching document would corrupt
+ * pagination — the exact class of bug that took three rounds to get right
+ * here. It is also why a search hit is one row per MEETING carrying a
+ * `matchedDocuments` array, rather than one row per document. See R4.
+ *
+ * Correlated on `meetingTable.id`, so it composes inside the route's
+ * existing `or(...)` and is applied in the SAME query as
+ * `visibilityCondition` — never as a post-filter, which would both
+ * reintroduce the short-page pagination bug and mean reading confidential
+ * snippets into memory before discarding them.
+ *
+ * `ilike` rather than the generated `extracted_text_search` tsvector: it is
+ * what makes this behave like the rest of `q` (which is `ilike` on title,
+ * location, type label and body name) and what lets `buildSnippet` find the
+ * same term that matched. The vector and its GIN index stay in place for a
+ * later switch to `@@ websearch_to_tsquery` once corpus size justifies it.
+ */
+export function documentMatchCondition(term: string): SQL {
+  const pattern = `%${escapeLikePattern(term)}%`;
+  return exists(
+    db
+      .select({ one: sql`1` })
+      .from(meetingDocumentTable)
+      .where(
+        and(
+          eq(meetingDocumentTable.meetingId, meetingTable.id),
+          // Archival documents only, and only once indexed: a reply
+          // attachment is not part of the archive, a `pending` row has no
+          // text, and a `failed` one never will until retried.
+          isNull(meetingDocumentTable.actionUpdateId),
+          eq(meetingDocumentTable.indexStatus, "indexed"),
+          ilike(meetingDocumentTable.extractedText, pattern),
+        ),
+      ),
+  ) as SQL;
 }
 
 /**
