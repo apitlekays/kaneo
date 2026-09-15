@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  MIN_MEANINGFUL_CHARS,
   isMeaningfulText,
+  MIN_MEANINGFUL_CHARS,
 } from "../../apps/api/src/meeting/pdf-text";
 
 describe("isMeaningfulText — the OCR fallback decision", () => {

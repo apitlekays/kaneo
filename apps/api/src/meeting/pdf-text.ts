@@ -34,6 +34,15 @@ export function isMeaningfulText(text: string): boolean {
   // Count only non-whitespace: a handful of characters padded with newlines
   // is a watermark, not a text layer. \s misses NUL and the other C0
   // controls that broken producers emit, so strip those too.
+  // Matching C0 control characters is the entire purpose of this
+  // expression. Broken PDF producers emit NUL and friends inside an
+  // otherwise empty text layer, and those bytes must not count toward the
+  // threshold. Biome's rule exists to catch control characters appearing by
+  // ACCIDENT — pasted raw into a literal, which is exactly the bug this
+  // file hit once already — but here they are written as escape sequences
+  // and stripped deliberately. The directive must be the line immediately
+  // above the code, so it goes last.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberate, see above
   const dense = text.replace(/[\s\u0000-\u001f]/g, "");
   return dense.length >= MIN_MEANINGFUL_CHARS;
 }

@@ -31,7 +31,11 @@ describe("buildSnippet", () => {
   });
 
   it("collapses newlines so a snippet stays one line in the UI", () => {
-    const s = buildSnippet("minutes\n\n\tquorum\nreached", "quorum", 40) as string;
+    const s = buildSnippet(
+      "minutes\n\n\tquorum\nreached",
+      "quorum",
+      40,
+    ) as string;
     expect(s).not.toMatch(/[\n\t]/);
   });
 
