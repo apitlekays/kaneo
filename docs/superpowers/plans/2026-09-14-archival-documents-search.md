@@ -817,6 +817,7 @@ export function setPdfTextExtractor(next: PdfTextExtractor): void;
 export function resetPdfTextExtractor(): void;
 export function enqueueDocumentIndexing(documentId: string): void;
 export async function indexDocumentNow(documentId: string): Promise<void>;
+export function classifyExtractionError(raw: string): string;
 ```
 
 Task 6 calls `enqueueDocumentIndexing` from finalize; Task 7's retry route
@@ -853,6 +854,25 @@ export function resetPdfTextExtractor(): void {
  * appended to the tail rather than started immediately.
  */
 let queue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Map a raw extraction failure to something safe to show a user. Never
+ * return the raw string: it carries temp paths and tool version strings.
+ * The operator's copy goes to the server log instead.
+ */
+export function classifyExtractionError(raw: string): string {
+  const s = raw.toLowerCase();
+  if (s.includes("enoent") || s.includes("not found"))
+    return "Extraction tooling unavailable on the server";
+  if (s.includes("timeout") || s.includes("etimedout"))
+    return "Extraction timed out";
+  if (s.includes("nosuchkey") || s.includes("not exist"))
+    return "The stored file could not be read";
+  if (s.includes("maxbuffer")) return "The document is too large to index";
+  if (s.includes("damaged") || s.includes("malformed") || s.includes("syntax"))
+    return "The PDF could not be read";
+  return "Extraction failed";
+}
 
 /**
  * Pull the PDF back out of storage and index it.
@@ -899,16 +919,19 @@ export async function indexDocumentNow(documentId: string): Promise<void> {
       })
       .where(eq(meetingDocumentTable.id, documentId));
   } catch (error) {
-    // A failed index must be VISIBLE and RETRYABLE, never silent. Truncate:
-    // a tesseract or poppler failure can emit a great deal of stderr, and
-    // this string is shown in the UI.
-    const message =
-      error instanceof Error ? error.message : "Extraction failed";
+    // A failed index must be VISIBLE and RETRYABLE, never silent — but
+    // `indexError` is rendered in the browser (Task 7 returns it, Task 9
+    // shows it), and a raw poppler/tesseract failure carries server
+    // filesystem paths (/tmp/kaneo-pdf-*) and binary version strings. The
+    // spec asked for a visible, retryable failure; it never asked for
+    // stderr. So classify for the UI and log the real thing server-side.
+    const raw = error instanceof Error ? error.message : String(error);
+    console.error(`[meeting-document] index failed ${documentId}:`, error);
     await db
       .update(meetingDocumentTable)
       .set({
         indexStatus: "failed",
-        indexError: message.slice(0, 500),
+        indexError: classifyExtractionError(raw),
         indexedAt: null,
       })
       .where(eq(meetingDocumentTable.id, documentId));
@@ -935,17 +958,73 @@ export function enqueueDocumentIndexing(documentId: string): void {
 }
 ```
 
-- [ ] **Step 2: Typecheck**
+- [ ] **Step 2: Unit-test the classifier**
+
+Create `tests/api/meeting-index-error.test.ts`. The classifier is pure, so
+it is the one part of this task testable without a database:
+
+```ts
+import { describe, expect, it } from "vitest";
+import { classifyExtractionError } from "../../apps/api/src/meeting/indexing";
+
+describe("classifyExtractionError", () => {
+  it("never returns the raw message", () => {
+    const raw =
+      "Error: ENOENT: no such file or directory, open '/tmp/kaneo-pdf-Xa9/input.pdf'";
+    const out = classifyExtractionError(raw);
+    expect(out).not.toContain("/tmp/");
+    expect(out).not.toContain("ENOENT");
+  });
+
+  it("classifies a missing binary as a server-side tooling problem", () => {
+    expect(classifyExtractionError("spawn pdftotext ENOENT")).toMatch(
+      /tooling unavailable/i,
+    );
+  });
+
+  it("classifies an unreadable stored object", () => {
+    expect(classifyExtractionError("NoSuchKey: key does not exist")).toMatch(
+      /could not be read/i,
+    );
+  });
+
+  it("falls back to a generic reason for anything unrecognised", () => {
+    expect(classifyExtractionError("weird internal failure 0x8")).toBe(
+      "Extraction failed",
+    );
+  });
+
+  it("returns a short single-line string for every branch", () => {
+    for (const raw of [
+      "spawn tesseract ENOENT",
+      "ETIMEDOUT",
+      "NoSuchKey",
+      "stdout maxBuffer length exceeded",
+      "PDF file is damaged",
+      "something else",
+    ]) {
+      const out = classifyExtractionError(raw);
+      expect(out.length).toBeLessThan(80);
+      expect(out).not.toMatch(/[\n\r]/);
+    }
+  });
+});
+```
+
+Run: `pnpm --filter @kaneo/api test -- meeting-index-error`
+Expected: PASS, 5 tests.
+
+- [ ] **Step 3: Typecheck**
 
 Run: `pnpm --filter @kaneo/api exec tsc --noEmit`
 Expected: exit 0. If `object.body` does not satisfy `AsyncIterable`, check
 `AssetObject`'s declared body type in `storage/s3.ts` and adapt — do not
 cast through `any`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add apps/api/src/meeting/indexing.ts
+git add apps/api/src/meeting/indexing.ts tests/api/meeting-index-error.test.ts
 git commit -m "feat(meeting): serial document indexing queue"
 ```
 
