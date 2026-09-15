@@ -106,6 +106,11 @@ vi.mock("@/fetchers/meeting", async (importOriginal) => {
   return {
     ...actual,
     listActionUpdates: vi.fn().mockResolvedValue([]),
+    // The Overview tab now mounts MeetingDocuments, whose list query would
+    // otherwise hit the network from here. Its own suite
+    // (meeting-documents.test.tsx) covers the shelf; this one only needs the
+    // query to resolve quietly.
+    listMeetingDocuments: vi.fn().mockResolvedValue([]),
   };
 });
 

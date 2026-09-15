@@ -1,4 +1,9 @@
 import { getApiUrl } from "@/fetchers/get-api-url";
+import {
+  type CompressionResult,
+  compressPdfIfScanned,
+  type PdfEngine,
+} from "@/lib/compress-pdf";
 import { isPdfUpload } from "@/lib/is-pdf-upload";
 
 /** A single spreadsheet row's validation problem, as `POST
@@ -461,12 +466,21 @@ export type PresignMeetingDocumentInput = {
   actionUpdateId?: string;
 };
 
+/** The three archival kinds the finalize route's `v.picklist` accepts. A
+ * reply attachment sends none of them and keeps the server's "original"
+ * default. */
+export type MeetingDocumentKind = "transcript" | "minutes" | "other";
+
 export type FinalizeMeetingDocumentInput = {
   objectKey: string;
   filename: string;
   mimeType: string;
   size: number;
   actionUpdateId?: string;
+  kind?: MeetingDocumentKind;
+  /** The uncompressed copy, when the client actually compressed. Left out
+   * means `objectKey` IS the original — see `uploadArchivalMeetingDocument`. */
+  originalObjectKey?: string;
 };
 
 export const presignMeetingDocument = (
@@ -609,10 +623,32 @@ export async function uploadMeetingDocument(
   if (!isPdfUpload(file)) {
     throw new Error("Only PDF files can be attached");
   }
-  // Given the gate above this resolves to "application/pdf" for every file
-  // that reaches it: `file.type` is either that already, or empty for the
-  // typeless `.pdf` case (how several Android file providers report a
-  // perfectly good PDF), where sending "" would have the server 400 a file
+  const served = await putOne(workspaceId, id, file, actionUpdateId);
+  return finalizeMeetingDocument(workspaceId, id, {
+    objectKey: served.key,
+    filename: file.name,
+    mimeType: served.contentType,
+    size: file.size,
+    actionUpdateId,
+  });
+}
+
+/**
+ * One presign + one direct PUT: the byte-moving half of an upload, with no
+ * opinion about the row that records it. Extracted because an archival
+ * document uploads the same bytes twice — compressed and original — and
+ * finalizes once with both keys.
+ */
+async function putOne(
+  workspaceId: string,
+  id: string,
+  file: File,
+  actionUpdateId?: string,
+): Promise<{ key: string; contentType: string }> {
+  // Given `isPdfUpload` upstream this resolves to "application/pdf" for
+  // every file that reaches it: `file.type` is either that already, or empty
+  // for the typeless `.pdf` case (how several Android file providers report
+  // a perfectly good PDF), where sending "" would have the server 400 a file
   // the client had just accepted.
   //
   // Written as the expression rather than the literal on purpose: it is
@@ -632,11 +668,104 @@ export async function uploadMeetingDocument(
     body: file,
   });
   if (!put.ok) throw new Error("Upload to storage failed");
+  return { key: presign.key, contentType };
+}
+
+// ── Archival documents (Spec D) ─────────────────────────────────────────
+// Meeting-level PDFs, indexed for search. `GET /:id/documents` and
+// `POST /:id/documents/:docId/reindex` — see the server's
+// `apps/api/src/meeting/documents.ts`. Reply attachments are excluded from
+// both by an `actionUpdateId IS NULL` term, so nothing here ever sees one.
+
+export type MeetingDocumentIndexStatus = "pending" | "indexed" | "failed";
+
+/**
+ * One row of the archival shelf, exactly as the list route narrows it. No
+ * `objectKey`/`originalObjectKey`: they are internal storage detail and the
+ * download route is the only way to the bytes.
+ */
+export type MeetingArchivalDocument = {
+  id: string;
+  filename: string;
+  size: number;
+  kind: string;
+  indexStatus: MeetingDocumentIndexStatus;
+  indexedAt: string | null;
+  indexError: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export async function listMeetingDocuments(
+  workspaceId: string,
+  id: string,
+): Promise<MeetingArchivalDocument[]> {
+  return jsonOrThrow(
+    await fetch(
+      url(`${id}/documents?workspaceId=${encodeURIComponent(workspaceId)}`),
+      { credentials: "include" },
+    ),
+  );
+}
+
+/**
+ * Queue a document for extraction again. `workspaceId` travels in the QUERY
+ * STRING, not the body: the route is `workspaceAccess.fromQuery`, so a body
+ * is rejected by the query validator before the handler runs.
+ */
+export async function reindexMeetingDocument(
+  workspaceId: string,
+  id: string,
+  docId: string,
+): Promise<MeetingArchivalDocument> {
+  return jsonOrThrow(
+    await fetch(
+      url(
+        `${id}/documents/${docId}/reindex?workspaceId=${encodeURIComponent(workspaceId)}`,
+      ),
+      { method: "POST", credentials: "include" },
+    ),
+  );
+}
+
+/**
+ * Compress, then upload one or two copies.
+ *
+ * `compressPdfIfScanned` SKIPS a PDF that already has a text layer, so a
+ * digital PDF yields ONE copy and `originalObjectKey` stays undefined; only
+ * a true scan, actually rasterised, produces two. That is why the server
+ * treats a null original as "objectKey is the original" rather than
+ * requiring both — and why this must not upload twice unconditionally,
+ * which would double storage for every digital PDF for no benefit.
+ *
+ * `opts.compression` lets a caller that already ran the compression pass
+ * its result in. The uploader component does exactly that: it drives
+ * `usePdfCompression` itself for the per-page progress it shows, and
+ * compressing the same file a second time here would be pure waste.
+ */
+export async function uploadArchivalMeetingDocument(
+  workspaceId: string,
+  id: string,
+  file: File,
+  kind: MeetingDocumentKind,
+  opts: { compression?: CompressionResult; engine?: PdfEngine } = {},
+): Promise<MeetingDocument> {
+  if (!isPdfUpload(file)) {
+    throw new Error("Only PDF files can be attached");
+  }
+  const result =
+    opts.compression ??
+    (await compressPdfIfScanned(file, { engine: opts.engine }));
+  const served = await putOne(workspaceId, id, result.file);
+  // Only upload a second copy when compression actually changed the bytes.
+  const original =
+    result.skipped === null ? await putOne(workspaceId, id, file) : null;
   return finalizeMeetingDocument(workspaceId, id, {
-    objectKey: presign.key,
+    objectKey: served.key,
+    originalObjectKey: original?.key,
     filename: file.name,
-    mimeType: contentType,
-    size: file.size,
-    actionUpdateId,
+    mimeType: served.contentType,
+    size: result.file.size,
+    kind,
   });
 }
