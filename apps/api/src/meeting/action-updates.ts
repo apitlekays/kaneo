@@ -20,6 +20,7 @@ import { buildContentDisposition } from "../utils/content-disposition";
 import { hasWorkspacePageAccess } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { assertCanReadMeeting, loadMeeting } from "./access";
+import { enqueueDocumentIndexing } from "./indexing";
 import { canPostActionUpdate } from "./update-access";
 
 // Context variables populated by the auth + workspace-access middleware.
@@ -48,6 +49,13 @@ const meetingDocumentFilename = v.pipe(
   v.maxLength(MAX_FILENAME_LENGTH, "Filename is too long"),
   v.regex(SAFE_FILENAME_PATTERN, "Filename contains invalid characters"),
 );
+/**
+ * R1: Spec C shipped `kind` defaulting to "original" and never wrote it, so
+ * every existing row reads "original" — that stays the reply-attachment
+ * value. A meeting-level archival document must declare what it is.
+ * Nothing in the database enforces this, so the API layer must.
+ */
+const meetingDocumentKind = v.picklist(["transcript", "minutes", "other"]);
 // `v.optional(v.string())` would accept `""`, which `?? null` at the
 // finalize write site does NOT map to null — it would persist as a value
 // that is neither a valid reply attachment (no matching update) nor a
@@ -484,6 +492,12 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         mimeType: v.string(),
         size: v.number(),
         actionUpdateId: optionalActionUpdateId,
+        // Present only for a meeting-level archival document; a reply
+        // attachment keeps the "original" default.
+        kind: v.optional(meetingDocumentKind),
+        // The uncompressed copy, when the client actually compressed. NULL
+        // means objectKey IS the original — see R3.
+        originalObjectKey: v.optional(v.string()),
       }),
     ),
     workspaceAccess.fromBody("workspaceId"),
@@ -520,6 +534,16 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         !b.objectKey.startsWith(ownerSegmentPrefix)
       )
         throw new HTTPException(400, { message: "Invalid object key" });
+      // Identical guard to objectKey's above. A second key is a second
+      // chance to claim someone else's uploaded object, so it gets the same
+      // `startsWith` (not `includes`) rooting check and the same `..`
+      // rejection.
+      if (
+        b.originalObjectKey &&
+        (b.originalObjectKey.includes("..") ||
+          !b.originalObjectKey.startsWith(ownerSegmentPrefix))
+      )
+        throw new HTTPException(400, { message: "Invalid object key" });
 
       const [row] = await db
         .insert(meetingDocumentTable)
@@ -535,9 +559,40 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
           mimeType: b.mimeType,
           size: b.size,
           createdBy: userId,
+          kind: b.kind ?? "original",
+          originalObjectKey: b.originalObjectKey ?? null,
         })
         .returning();
-      return c.json(row, 201);
+      if (!row)
+        throw new HTTPException(500, {
+          message: "Failed to record document",
+        });
+
+      // Meeting-level archival documents get indexed for search. A reply
+      // attachment does not: the spec's search covers the archive, and
+      // indexing every thread attachment would spend OCR minutes on a
+      // 2-vCPU box for text nothing queries.
+      if (!b.actionUpdateId) enqueueDocumentIndexing(row.id);
+
+      // Narrowed so neither storage key (`objectKey`, `originalObjectKey`)
+      // ever leaves the server — they are internal storage details, same
+      // rationale as the exclusion in the updates-list attachment fold
+      // above.
+      return c.json(
+        {
+          id: row.id,
+          meetingId: row.meetingId,
+          actionUpdateId: row.actionUpdateId,
+          filename: row.filename,
+          mimeType: row.mimeType,
+          size: row.size,
+          kind: row.kind,
+          indexStatus: row.indexStatus,
+          createdBy: row.createdBy,
+          createdAt: row.createdAt,
+        },
+        201,
+      );
     },
   );
 
