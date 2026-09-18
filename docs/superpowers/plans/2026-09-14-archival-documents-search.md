@@ -36,9 +36,19 @@
   (`apps/api/src/utils/background-work.ts`). Untracked fire-and-forget DB
   work has deadlocked this repo's integration harness twice. Tests await
   `settleBackgroundWork()`, **never** a sleep.
-- **`objectKey` and `originalObjectKey` never leave the API.** No route
-  returns them in a response body. Downloads go through
+- **No route returns a STORED document's `objectKey` or
+  `originalObjectKey`.** Finalize, the document list and the search results
+  all omit them; bytes are reached only through
   `GET /:id/attachments/:docId/download`.
+  The one deliberate exception is **presign**, which returns the key it has
+  just minted for this caller's own upload (`return c.json(presigned)` —
+  `{ key, uploadUrl, headers }`). That is inherent to presign -> PUT ->
+  finalize: the client cannot upload without knowing where. It is not a
+  leak, because the key is fresh, carries a `createId()`, and finalize
+  re-validates that it is rooted under this meeting's owner segment.
+  So the rule is about reading OTHER rows' keys back out, not about the
+  string never appearing in any response. A blanket grep for `objectKey`
+  near a `c.json` WILL flag presign; that hit is expected.
 - **OCR processes one document at a time**, process-wide. A large scan taking
   minutes is normal, not something to parallelise on a 2-vCPU box that also
   runs Postgres, MinIO and the app.
@@ -817,6 +827,7 @@ export function setPdfTextExtractor(next: PdfTextExtractor): void;
 export function resetPdfTextExtractor(): void;
 export function enqueueDocumentIndexing(documentId: string): void;
 export async function indexDocumentNow(documentId: string): Promise<void>;
+export function classifyExtractionError(raw: string): string;
 ```
 
 Task 6 calls `enqueueDocumentIndexing` from finalize; Task 7's retry route
@@ -853,6 +864,25 @@ export function resetPdfTextExtractor(): void {
  * appended to the tail rather than started immediately.
  */
 let queue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Map a raw extraction failure to something safe to show a user. Never
+ * return the raw string: it carries temp paths and tool version strings.
+ * The operator's copy goes to the server log instead.
+ */
+export function classifyExtractionError(raw: string): string {
+  const s = raw.toLowerCase();
+  if (s.includes("enoent") || s.includes("not found"))
+    return "Extraction tooling unavailable on the server";
+  if (s.includes("timeout") || s.includes("etimedout"))
+    return "Extraction timed out";
+  if (s.includes("nosuchkey") || s.includes("not exist"))
+    return "The stored file could not be read";
+  if (s.includes("maxbuffer")) return "The document is too large to index";
+  if (s.includes("damaged") || s.includes("malformed") || s.includes("syntax"))
+    return "The PDF could not be read";
+  return "Extraction failed";
+}
 
 /**
  * Pull the PDF back out of storage and index it.
@@ -899,16 +929,19 @@ export async function indexDocumentNow(documentId: string): Promise<void> {
       })
       .where(eq(meetingDocumentTable.id, documentId));
   } catch (error) {
-    // A failed index must be VISIBLE and RETRYABLE, never silent. Truncate:
-    // a tesseract or poppler failure can emit a great deal of stderr, and
-    // this string is shown in the UI.
-    const message =
-      error instanceof Error ? error.message : "Extraction failed";
+    // A failed index must be VISIBLE and RETRYABLE, never silent — but
+    // `indexError` is rendered in the browser (Task 7 returns it, Task 9
+    // shows it), and a raw poppler/tesseract failure carries server
+    // filesystem paths (/tmp/kaneo-pdf-*) and binary version strings. The
+    // spec asked for a visible, retryable failure; it never asked for
+    // stderr. So classify for the UI and log the real thing server-side.
+    const raw = error instanceof Error ? error.message : String(error);
+    console.error(`[meeting-document] index failed ${documentId}:`, error);
     await db
       .update(meetingDocumentTable)
       .set({
         indexStatus: "failed",
-        indexError: message.slice(0, 500),
+        indexError: classifyExtractionError(raw),
         indexedAt: null,
       })
       .where(eq(meetingDocumentTable.id, documentId));
@@ -935,17 +968,73 @@ export function enqueueDocumentIndexing(documentId: string): void {
 }
 ```
 
-- [ ] **Step 2: Typecheck**
+- [ ] **Step 2: Unit-test the classifier**
+
+Create `tests/api/meeting-index-error.test.ts`. The classifier is pure, so
+it is the one part of this task testable without a database:
+
+```ts
+import { describe, expect, it } from "vitest";
+import { classifyExtractionError } from "../../apps/api/src/meeting/indexing";
+
+describe("classifyExtractionError", () => {
+  it("never returns the raw message", () => {
+    const raw =
+      "Error: ENOENT: no such file or directory, open '/tmp/kaneo-pdf-Xa9/input.pdf'";
+    const out = classifyExtractionError(raw);
+    expect(out).not.toContain("/tmp/");
+    expect(out).not.toContain("ENOENT");
+  });
+
+  it("classifies a missing binary as a server-side tooling problem", () => {
+    expect(classifyExtractionError("spawn pdftotext ENOENT")).toMatch(
+      /tooling unavailable/i,
+    );
+  });
+
+  it("classifies an unreadable stored object", () => {
+    expect(classifyExtractionError("NoSuchKey: key does not exist")).toMatch(
+      /could not be read/i,
+    );
+  });
+
+  it("falls back to a generic reason for anything unrecognised", () => {
+    expect(classifyExtractionError("weird internal failure 0x8")).toBe(
+      "Extraction failed",
+    );
+  });
+
+  it("returns a short single-line string for every branch", () => {
+    for (const raw of [
+      "spawn tesseract ENOENT",
+      "ETIMEDOUT",
+      "NoSuchKey",
+      "stdout maxBuffer length exceeded",
+      "PDF file is damaged",
+      "something else",
+    ]) {
+      const out = classifyExtractionError(raw);
+      expect(out.length).toBeLessThan(80);
+      expect(out).not.toMatch(/[\n\r]/);
+    }
+  });
+});
+```
+
+Run: `pnpm --filter @kaneo/api test -- meeting-index-error`
+Expected: PASS, 5 tests.
+
+- [ ] **Step 3: Typecheck**
 
 Run: `pnpm --filter @kaneo/api exec tsc --noEmit`
 Expected: exit 0. If `object.body` does not satisfy `AsyncIterable`, check
 `AssetObject`'s declared body type in `storage/s3.ts` and adapt — do not
 cast through `any`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add apps/api/src/meeting/indexing.ts
+git add apps/api/src/meeting/indexing.ts tests/api/meeting-index-error.test.ts
 git commit -m "feat(meeting): serial document indexing queue"
 ```
 
@@ -1127,6 +1216,15 @@ with `afterEach(resetPdfTextExtractor)`. Write these cases:
 8. `the real extractor reads a generated PDF` — build a PDF with `pdf-lib`,
    run the real `extractPdfText`, assert `source === "layer"`. Guard with a
    probe that `pdftotext` exists and `it.skip` when it does not.
+9. `documents are indexed strictly one at a time` — assert the ORDER
+   directly, not the end state. Have the injected extractor record its call
+   sequence and resolve on a deferred promise, finalize three documents, then
+   assert the recorded sequence shows each call completing before the next
+   begins. **End state is not enough**: replacing the serial queue with
+   `Promise.all` leaves all three rows correctly `indexed`, so a test that
+   only checks the rows passes against the regression it exists to catch.
+   (Raised by Task 5's implementer against its own work — the serial queue is
+   a performance guarantee on a 2-vCPU box, and nothing else asserts it.)
 
 **For each test, check it would fail if the behaviour were removed.** This
 branch's predecessor repeatedly produced tests that passed with the check
@@ -1597,6 +1695,19 @@ Add `matchedDocuments` to the list row type. When the array is non-empty,
 render each entry as one muted line: the filename, then the snippet. Render
 the snippet as **text** — never `dangerouslySetInnerHTML`; it is document
 content and the server does not escape it for HTML.
+
+Two constraints from Task 8's implementer, both binding:
+
+- **Cap the snippets shown per card at 3**, with a plain "+N more" when
+  there are more. The API deliberately returns every matching document,
+  because the spec requires each to be its own hit — so the cap belongs
+  here, in presentation, not in the route. A meeting with 50 matching
+  archival PDFs would otherwise render 50 snippets on one card.
+- **Never cache a snippet under a key shared between users.** Snippets are
+  confidentiality-filtered per caller: the same `q` returns different
+  `matchedDocuments` to an attendee and to a non-attendee. The existing
+  meetings query key already includes the search term; make sure nothing
+  you add hoists snippet data into a broader or user-independent key.
 
 For case 3, surface the incomplete-results notice when any card carries a
 `pending` document. If the list route does not expose that, add a

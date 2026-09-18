@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { CreateMeetingInput } from "@/fetchers/meeting";
+import type { CreateMeetingInput, MatchedDocument } from "@/fetchers/meeting";
 import { useMeetingMutations } from "@/hooks/queries/meeting/use-meeting-mutations";
 import { useMeetings } from "@/hooks/queries/meeting/use-meetings";
 import { MeetingCard } from "./meeting-card";
@@ -54,6 +54,12 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
     [data],
   );
 
+  // Workspace-wide, not per-page — every page carries the same count, so the
+  // first page's value is enough. A `pending` archival document is invisible
+  // to search; without this notice a user whose scan is still indexing sees
+  // what looks like a complete, but silently wrong, result set.
+  const pendingIndexCount = data?.pages[0]?.pendingIndexCount ?? 0;
+
   // Auto-load on scroll, with the button below as the accessible and
   // testable path. jsdom has no IntersectionObserver, hence the guard.
   const sentinel = useRef<HTMLDivElement | null>(null);
@@ -95,6 +101,13 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
           className="pl-9"
         />
       </div>
+
+      {pendingIndexCount > 0 && (
+        <p className="text-muted-foreground text-xs">
+          Search results may be incomplete while documents are still being
+          indexed.
+        </p>
+      )}
 
       {isLoading ? (
         <div
@@ -166,11 +179,13 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
         <>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {meetings.map((meeting) => (
-              <MeetingCard
-                key={meeting.id}
-                meeting={meeting}
-                onOpen={() => setOpenMeetingId(meeting.id)}
-              />
+              <div key={meeting.id} className="flex flex-col gap-1">
+                <MeetingCard
+                  meeting={meeting}
+                  onOpen={() => setOpenMeetingId(meeting.id)}
+                />
+                <MatchedDocumentHits documents={meeting.matchedDocuments} />
+              </div>
             ))}
           </div>
           <div ref={sentinel} />
@@ -208,6 +223,39 @@ export function MinutesManager({ workspaceId }: { workspaceId: string }) {
         meetingId={openMeetingId}
         onClose={() => setOpenMeetingId(null)}
       />
+    </div>
+  );
+}
+
+// The route deliberately returns every matching archival document — the
+// spec requires each to be its own hit — so the cap on how many snippets a
+// single card shows belongs here, in presentation, not in the API. Without
+// it a meeting with 50 matching PDFs would render 50 snippets on one card.
+const MAX_SNIPPETS_PER_CARD = 3;
+
+/**
+ * Which document(s) matched this meeting on a search hit, and why: the
+ * filename plus a snippet of the matching text. Nothing renders when the
+ * hit matched on metadata (title, location, type label, body name) instead
+ * — `matchedDocuments` is empty in that case.
+ *
+ * The snippet is document content the server does not escape for HTML, so
+ * it is rendered as plain text — never `dangerouslySetInnerHTML`.
+ */
+function MatchedDocumentHits({ documents }: { documents: MatchedDocument[] }) {
+  if (documents.length === 0) return null;
+  const shown = documents.slice(0, MAX_SNIPPETS_PER_CARD);
+  const remaining = documents.length - shown.length;
+  return (
+    <div className="space-y-0.5 px-1 text-muted-foreground text-xs">
+      {shown.map((doc) => (
+        <p key={doc.id} className="truncate">
+          <span className="font-medium">{doc.filename}</span>
+          {": "}
+          <span>{doc.snippet}</span>
+        </p>
+      ))}
+      {remaining > 0 && <p>+{remaining} more</p>}
     </div>
   );
 }

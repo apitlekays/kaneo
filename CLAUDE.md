@@ -282,6 +282,21 @@ in `docs/superpowers/specs/2026-08-27-minutes-manager-refinements-REQUIREMENTS.m
 - **Web component tests**: `apps/web/vitest.config.ts` deliberately does NOT set `globals: true`, so Testing Library cannot auto-unmount. `apps/web/src/test/setup.ts` registers `afterEach(cleanup)` for every file — do not remove it, and no test file needs its own (several still have one; it is harmless but redundant). `apps/web/src/test/cleanup.test.tsx` guards this: drop the registration and its second case fails with "found multiple elements".
 - **Asserting a disabled Base UI control**: `Checkbox` renders `<span role="checkbox">`, not a native input, so jest-dom's `toBeDisabled()` **fails** against it even when it is genuinely disabled — a confusing false negative, not a silent pass. Assert `toHaveAttribute("aria-disabled", "true")` instead. Native `<button>` targets are unaffected; `toBeDisabled()` is correct there.
 - **Security**: Never commit secrets, always validate inputs, sanitize outputs
+- **PDF extraction binaries (Spec D)**: archival document indexing shells out
+  to `pdftotext`, `pdftoppm` (poppler-utils) and `tesseract`. The production
+  image and CI install them; for local work run
+  `brew install poppler tesseract tesseract-lang`. Without them, indexing
+  lands in `failed` with a "not installed" error and the ONE integration test
+  that exercises the real binaries skips itself — the rest of the suite
+  injects a fake extractor and passes regardless.
+  **The language-data packages are named differently on the two platforms**,
+  and both names are correct where they appear: Alpine (the runtime image)
+  calls them `tesseract-ocr-data-eng` / `tesseract-ocr-data-msa`, Ubuntu (CI
+  runners) calls them `tesseract-ocr-eng` / `tesseract-ocr-msa`. Copying one
+  form into the other file fails the build or the CI job. Verified 2026-09-15
+  against `node:20.20.2-alpine` and `ubuntu:24.04`; both list `eng` and
+  `msa`, so OCR really does run `-l eng+msa` rather than degrading to
+  English.
 
 ## Pushing and Deploying
 

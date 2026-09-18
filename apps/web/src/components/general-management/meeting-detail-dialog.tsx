@@ -51,6 +51,7 @@ import { formatDateMedium } from "@/lib/format";
 import { onSelectValueChange } from "@/lib/select-value";
 import { ActionConfigureDialog } from "./action-configure-dialog";
 import { ActionThread } from "./action-thread";
+import { MeetingDocuments } from "./meeting-documents";
 import { MinuteItemImport } from "./minute-item-import";
 
 type Mutations = ReturnType<typeof useMeetingMutations>;
@@ -214,8 +215,10 @@ function Body({
       >
         <DialogSidebarPanel value="overview">
           <OverviewSection
+            workspaceId={workspaceId}
             meeting={meeting}
             m={m}
+            canUploadDocuments={hasGeneralManagementAccess}
             meetings={meetings}
             isMeetingsError={isMeetingsError}
             isTruncated={isTruncated}
@@ -249,6 +252,7 @@ function Body({
 }
 
 function OverviewSection({
+  workspaceId,
   meeting,
   m,
   meetings,
@@ -256,7 +260,9 @@ function OverviewSection({
   isTruncated,
   adoptSearch,
   setAdoptSearch,
+  canUploadDocuments,
 }: {
+  workspaceId: string;
   meeting: MeetingDetail;
   m: Mutations;
   meetings: Meeting[];
@@ -264,6 +270,7 @@ function OverviewSection({
   isTruncated: boolean;
   adoptSearch: string;
   setAdoptSearch: (v: string) => void;
+  canUploadDocuments: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -329,6 +336,17 @@ function OverviewSection({
           setAdoptSearch={setAdoptSearch}
         />
       )}
+
+      {/* `workspaceId` is threaded down rather than read from a store inside
+          the list: this dialog already has it, and a component that reads
+          ambient state is untestable in isolation. `canUploadDocuments`
+          mirrors the server's meeting-level attach gate — holding the
+          General Management page — which also guards re-indexing. */}
+      <MeetingDocuments
+        meetingId={meeting.id}
+        workspaceId={workspaceId}
+        canUpload={canUploadDocuments}
+      />
     </div>
   );
 }

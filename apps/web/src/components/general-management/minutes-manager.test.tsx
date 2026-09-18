@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MeetingListItem } from "@/fetchers/meeting";
+import type { MatchedDocument, MeetingListItem } from "@/fetchers/meeting";
 import { MinutesManager } from "./minutes-manager";
 
 // Mock the query hooks this component uses (read from the component's own
@@ -9,7 +9,13 @@ import { MinutesManager } from "./minutes-manager";
 // does for its sibling manager.
 
 const state = vi.hoisted(() => ({
-  pages: [] as { items: MeetingListItem[]; nextCursor: string | null }[],
+  pages: [] as {
+    items: MeetingListItem[];
+    nextCursor: string | null;
+    // Optional here (unlike the real `MeetingPage`): most cases below don't
+    // care about it, and the component treats a missing value as 0 anyway.
+    pendingIndexCount?: number;
+  }[],
   isLoading: false,
   isError: false,
   hasNextPage: false,
@@ -65,6 +71,19 @@ function makeMeeting(
     updatedAt: "2026-01-01T00:00:00.000Z",
     meetingTypeLabel: "Committee Meeting",
     bodyName: null,
+    matchedDocuments: [],
+    ...overrides,
+  };
+}
+
+function makeMatchedDocument(
+  overrides: Partial<MatchedDocument> = {},
+): MatchedDocument {
+  return {
+    id: "doc-1",
+    filename: "Q3 minutes.pdf",
+    kind: "minutes",
+    snippet: "…the committee resolved to adopt the revised budget…",
     ...overrides,
   };
 }
@@ -297,5 +316,117 @@ describe("MinutesManager", () => {
     expect(screen.getByText("Already loaded")).toBeInTheDocument();
     expect(screen.getByText(/loading more/i)).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/loading more/i);
+  });
+
+  it("a hit that matched inside a PDF shows the filename and the snippet", () => {
+    state.pages = [
+      {
+        items: [
+          makeMeeting({
+            id: "meeting-doc-hit",
+            title: "Q3 Committee Meeting",
+            matchedDocuments: [
+              makeMatchedDocument({
+                filename: "Q3 minutes.pdf",
+                snippet: "…the committee resolved to adopt the revised budget…",
+              }),
+            ],
+          }),
+        ],
+        nextCursor: null,
+      },
+    ];
+
+    render(<MinutesManager workspaceId="ws-1" />);
+
+    expect(screen.getByText("Q3 minutes.pdf")).toBeVisible();
+    expect(
+      screen.getByText(/the committee resolved to adopt the revised budget/),
+    ).toBeVisible();
+  });
+
+  it("a hit that matched on metadata shows no document line", () => {
+    state.pages = [
+      {
+        items: [
+          makeMeeting({
+            id: "meeting-metadata-hit",
+            title: "Q3 Committee Meeting",
+            matchedDocuments: [],
+          }),
+        ],
+        nextCursor: null,
+      },
+    ];
+
+    render(<MinutesManager workspaceId="ws-1" />);
+
+    expect(screen.getByText("Q3 Committee Meeting")).toBeVisible();
+    expect(
+      screen.queryByText(".pdf", { exact: false }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("caps the snippets shown per card at 3, with a plain +N more for the rest", () => {
+    state.pages = [
+      {
+        items: [
+          makeMeeting({
+            id: "meeting-many-hits",
+            matchedDocuments: [
+              makeMatchedDocument({ id: "d1", filename: "doc-1.pdf" }),
+              makeMatchedDocument({ id: "d2", filename: "doc-2.pdf" }),
+              makeMatchedDocument({ id: "d3", filename: "doc-3.pdf" }),
+              makeMatchedDocument({ id: "d4", filename: "doc-4.pdf" }),
+              makeMatchedDocument({ id: "d5", filename: "doc-5.pdf" }),
+            ],
+          }),
+        ],
+        nextCursor: null,
+      },
+    ];
+
+    render(<MinutesManager workspaceId="ws-1" />);
+
+    expect(screen.getByText("doc-1.pdf")).toBeVisible();
+    expect(screen.getByText("doc-2.pdf")).toBeVisible();
+    expect(screen.getByText("doc-3.pdf")).toBeVisible();
+    expect(screen.queryByText("doc-4.pdf")).not.toBeInTheDocument();
+    expect(screen.queryByText("doc-5.pdf")).not.toBeInTheDocument();
+    expect(screen.getByText("+2 more")).toBeVisible();
+  });
+
+  it("the grid says results may be incomplete while any document is indexing", () => {
+    state.pages = [
+      {
+        items: [makeMeeting()],
+        nextCursor: null,
+        pendingIndexCount: 2,
+      },
+    ];
+
+    render(<MinutesManager workspaceId="ws-1" />);
+
+    expect(
+      screen.getByText(
+        /results may be incomplete while documents are still being indexed/i,
+      ),
+    ).toBeVisible();
+  });
+
+  it("says nothing about incomplete indexing when nothing is pending", () => {
+    state.pages = [
+      {
+        items: [makeMeeting()],
+        nextCursor: null,
+        pendingIndexCount: 0,
+      },
+    ];
+
+    render(<MinutesManager workspaceId="ws-1" />);
+
+    expect(
+      screen.queryByText(/results may be incomplete/i),
+    ).not.toBeInTheDocument();
   });
 });

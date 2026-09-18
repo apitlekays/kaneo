@@ -3,6 +3,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigserial,
   boolean,
+  customType,
   foreignKey,
   index,
   integer,
@@ -2813,14 +2814,24 @@ export const meetingActionUpdateTable = pgTable(
   (table) => [index("meeting_action_update_actionId_idx").on(table.actionId)],
 );
 
+// Postgres full-text search vector. Drizzle has no built-in tsvector, and a
+// GENERATED column requires an IMMUTABLE expression — which rules out the
+// one-argument `to_tsvector(text)` (it is only STABLE, since it reads
+// `default_text_search_config`). Hence the explicit two-argument form.
+// 'simple' rather than 'english': these documents mix Malay and English, and
+// the English stemmer mangles Malay words. 'simple' lowercases and splits
+// without stemming.
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
+
 // A PDF attached either to a meeting (archival, Spec D) or to one action
 // thread update (`actionUpdateId` set). `meetingId` is NOT NULL on both
 // kinds: it is what makes a single confidentiality check cover every
 // attachment path rather than two rules that can drift apart.
 //
-// Spec D extends this table with its storage and indexing fields
-// (`originalObjectKey`, `indexStatus`, `extractedText`, …). Do not add
-// those here.
 export const meetingDocumentTable = pgTable(
   "meeting_document",
   {
@@ -2841,6 +2852,25 @@ export const meetingDocumentTable = pgTable(
     size: integer("size").notNull(),
     sha256: text("sha256"),
     kind: text("kind").notNull().default("original"),
+    // The UNCOMPRESSED archival copy, when one exists separately. NULL means
+    // `objectKey` IS the original — which is the common case, because
+    // `compressPdfIfScanned` skips compression entirely for a PDF that
+    // already has a text layer, so only scans ever produce two copies.
+    // Minutes are legal records: a compression artefact that eats a
+    // signature must never be the only surviving copy.
+    originalObjectKey: text("original_object_key"),
+    // pending | indexed | failed. Extraction is asynchronous, so a document
+    // is invisible to search until it reaches `indexed` — the UI MUST say so
+    // rather than letting a user conclude search is broken.
+    indexStatus: text("index_status").notNull().default("pending"),
+    indexedAt: timestamp("indexed_at", { mode: "date" }),
+    indexError: text("index_error"),
+    // The extracted text itself is stored alongside the vector because a
+    // snippet needs the original characters; a tsvector cannot produce one.
+    extractedText: text("extracted_text"),
+    extractedTextSearch: tsvector("extracted_text_search").generatedAlwaysAs(
+      sql`to_tsvector('simple', coalesce(extracted_text, ''))`,
+    ),
     createdBy: text("created_by").references(() => userTable.id, {
       onDelete: "set null",
     }),
@@ -2849,5 +2879,10 @@ export const meetingDocumentTable = pgTable(
   (table) => [
     index("meeting_document_meetingId_idx").on(table.meetingId),
     index("meeting_document_actionUpdateId_idx").on(table.actionUpdateId),
+    index("meeting_document_extractedTextSearch_idx").using(
+      "gin",
+      table.extractedTextSearch,
+    ),
+    index("meeting_document_indexStatus_idx").on(table.indexStatus),
   ],
 );
