@@ -1,6 +1,7 @@
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   ilike,
@@ -436,7 +437,43 @@ app.get(
       }),
     );
 
-    return c.json({ items, nextCursor });
+    // Spec D: a document still `pending` extraction is INVISIBLE to search,
+    // so a result set can be legitimately incomplete and the grid has to be
+    // able to say so. Without that, a user whose scan has not finished
+    // indexing concludes search is broken — the same failure class as this
+    // module's errored list once rendering identically to an empty one.
+    //
+    // Visibility-filtered like every other read here. A bare workspace count
+    // would tell a non-attendee that SOME confidential meeting is holding
+    // unindexed documents, which is exactly the kind of oblique disclosure
+    // this module has leaked through three times. Reuses the same
+    // `visibility` predicate already computed above, which is why this joins
+    // `meetingTable` rather than counting `meeting_document` alone.
+    //
+    // One indexed count per list request (`meeting_document_indexStatus_idx`),
+    // and only archival rows: a reply attachment sits at `pending` forever by
+    // design and must never inflate this.
+    const [pendingRow] = await db
+      .select({ n: count() })
+      .from(meetingDocumentTable)
+      .innerJoin(
+        meetingTable,
+        eq(meetingTable.id, meetingDocumentTable.meetingId),
+      )
+      .where(
+        and(
+          eq(meetingDocumentTable.workspaceId, ws),
+          isNull(meetingDocumentTable.actionUpdateId),
+          eq(meetingDocumentTable.indexStatus, "pending"),
+          ...(visibility ? [visibility] : []),
+        ),
+      );
+
+    return c.json({
+      items,
+      nextCursor,
+      pendingIndexCount: pendingRow?.n ?? 0,
+    });
   },
 );
 
