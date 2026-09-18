@@ -193,6 +193,25 @@ export type MeetingDetail = Meeting & {
 };
 
 /**
+ * An archival document whose extracted text matched the list route's `q`
+ * term, with the excerpt that explains the match — mirrors the API's
+ * `MatchedDocument` (apps/api/src/meeting/index.ts).
+ *
+ * A snippet is CONTENT, confidentiality-filtered per caller inside the
+ * search query itself: the same `q` returns different `matchedDocuments` to
+ * an attendee and a non-attendee. It rides inside the already
+ * per-search-term `["meetings", workspaceId, { q }]` query key (see
+ * `use-meetings.ts`) — never hoist it into a broader or user-independent
+ * cache key.
+ */
+export type MatchedDocument = {
+  id: string;
+  filename: string;
+  kind: string;
+  snippet: string;
+};
+
+/**
  * The list route joins `meeting_type` and `meeting_body` to search their
  * names, so it can return the labels too — which is what the cards display.
  * The detail route does not join, so `MeetingDetail` has no such fields.
@@ -200,11 +219,20 @@ export type MeetingDetail = Meeting & {
 export type MeetingListItem = Meeting & {
   meetingTypeLabel: string | null;
   bodyName: string | null;
+  /** Always present; empty when the hit matched on metadata (title,
+   * location, type label, body name) rather than document text. One entry
+   * per matching archival document — the route deliberately returns every
+   * match, so any cap on how many to show belongs in the UI. */
+  matchedDocuments: MatchedDocument[];
 };
 
 export type MeetingPage = {
   items: MeetingListItem[];
   nextCursor: string | null;
+  /** Workspace-wide count of archival documents still awaiting extraction,
+   * visibility-filtered. Non-zero means search may be missing matches from
+   * documents not yet indexed. */
+  pendingIndexCount: number;
 };
 
 export type CreateMeetingInput = {
