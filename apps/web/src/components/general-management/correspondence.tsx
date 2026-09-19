@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { Badge, type badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MarqueeText } from "@/components/ui/marquee-text";
 import {
   Select,
   SelectContent,
@@ -226,7 +227,12 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
                   <TableCell className="font-mono text-xs">
                     {letterReference(item)}
                   </TableCell>
-                  <TableCell className="font-medium">{item.subject}</TableCell>
+                  <TableCell className="font-medium">
+                    <MarqueeText
+                      className="max-w-[18rem]"
+                      text={item.subject}
+                    />
+                  </TableCell>
                   <TableCell>
                     <Badge
                       variant={
@@ -307,7 +313,10 @@ export function Correspondence({ workspaceId }: { workspaceId: string }) {
                         )}
                       </TableCell>
                       <TableCell className="font-medium">
-                        {letter.subject}
+                        <MarqueeText
+                          className="max-w-[26rem]"
+                          text={letter.subject}
+                        />
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {(direction === "in"

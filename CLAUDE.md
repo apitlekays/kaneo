@@ -281,6 +281,24 @@ in `docs/superpowers/specs/2026-08-27-minutes-manager-refinements-REQUIREMENTS.m
 - **Typecheck**: `pnpm typecheck` (`turbo typecheck`) runs in CI (`ci.yml`, its own job) and `tsc --noEmit` per package — currently `@kaneo/api` and `@kaneo/web`; packages whose `build` script is already `tsc` (email, mcp, permissions) are redundant to typecheck separately and don't get their own script. The turbo task **must** declare `dependsOn: ["^build"]`: `apps/web` (and `apps/api`) typecheck against the *built* `dist/*.d.ts` of `@kaneo/permissions`/`@kaneo/email`, not their source, so a stale or missing `dist` produces confusing, unrelated-looking errors rather than a clean pass/fail — this bit stage 2b of the effort that added this gate. `@kaneo/libs` is deliberately not wired in: it has no build step and its one consumer (`apps/web`) already typechecks it in context; a standalone `tsc --noEmit` on its own tsconfig surfaces 6 phantom errors in `apps/api/src/redis/*` and `ws/redis-broadcast-adapter.ts` caused by @types/node version skew across workspaces (not real bugs — those files pass clean under every tsconfig that actually ships them).
 - **Web component tests**: `apps/web/vitest.config.ts` deliberately does NOT set `globals: true`, so Testing Library cannot auto-unmount. `apps/web/src/test/setup.ts` registers `afterEach(cleanup)` for every file — do not remove it, and no test file needs its own (several still have one; it is harmless but redundant). `apps/web/src/test/cleanup.test.tsx` guards this: drop the registration and its second case fails with "found multiple elements".
 - **Asserting a disabled Base UI control**: `Checkbox` renders `<span role="checkbox">`, not a native input, so jest-dom's `toBeDisabled()` **fails** against it even when it is genuinely disabled — a confusing false negative, not a silent pass. Assert `toHaveAttribute("aria-disabled", "true")` instead. Native `<button>` targets are unaffected; `toBeDisabled()` is correct there.
+- **Dialogs and sheets close explicitly, never on a backdrop click**: every
+  dialog goes through `apps/web/src/components/ui/dialog.tsx` and every sheet
+  through `ui/sheet.tsx`, both of which invert Base UI's default by passing
+  `disablePointerDismissal = true`. The rule lives in those two wrappers, not
+  at the ~20 call sites, so **a new dialog gets it for free — do not pass the
+  prop yourself**. The reason is data loss: these dialogs hold half-finished
+  letters, minute items and memoranda, and a stray backdrop click discarded
+  the lot with no warning and no undo.
+  **Escape still closes, deliberately.** It is a deliberate keystroke rather
+  than a slip, so it does not cause that loss, and WAI-ARIA expects a modal to
+  close on Escape — blocking it strands keyboard and screen-reader users.
+  `apps/web/src/components/ui/explicit-dismissal.test.tsx` guards both halves:
+  remove the default and the backdrop case fails; block Escape and the Escape
+  case fails. A dialog that genuinely needs backdrop dismissal can still pass
+  `disablePointerDismissal={false}`, but nothing does today — make it argue
+  its case in review. Base UI's `AlertDialog` is already non-dismissible and
+  omits the prop entirely. Popovers, dropdowns and select menus are NOT in
+  scope and keep closing on outside click.
 - **Security**: Never commit secrets, always validate inputs, sanitize outputs
 - **PDF extraction binaries (Spec D)**: archival document indexing shells out
   to `pdftotext`, `pdftoppm` (poppler-utils) and `tesseract`. The production
