@@ -10,7 +10,37 @@ import { i18n } from "@/lib/i18n";
 
 const DialogCreateHandle = DialogPrimitive.createHandle;
 
-const Dialog = DialogPrimitive.Root;
+/**
+ * Every dialog in this app must be dismissed deliberately — the Cancel,
+ * Close or X button — never by clicking the backdrop. Base UI's default is
+ * the opposite, so the default is inverted HERE rather than at each of the
+ * ~20 call sites, which is the only way the rule survives the next feature.
+ *
+ * The reason is data loss: these dialogs hold half-finished letters, minute
+ * items and memoranda, and a stray click on the backdrop discarded the lot
+ * with no warning and no undo.
+ *
+ * Escape still closes. That is deliberate and is NOT an oversight: Escape is
+ * a deliberate keystroke rather than a slip, so it does not cause the loss
+ * this guards against, and WAI-ARIA expects a modal to close on Escape —
+ * removing it would strand keyboard and screen-reader users who have no
+ * pointer to reach the X with.
+ *
+ * A dialog that genuinely wants click-outside dismissal can still pass
+ * `disablePointerDismissal={false}` explicitly. Nothing does today; make it
+ * argue its case in review.
+ */
+function Dialog<Payload>({
+  disablePointerDismissal = true,
+  ...props
+}: DialogPrimitive.Root.Props<Payload>) {
+  return (
+    <DialogPrimitive.Root
+      disablePointerDismissal={disablePointerDismissal}
+      {...props}
+    />
+  );
+}
 
 const DialogPortal = DialogPrimitive.Portal;
 

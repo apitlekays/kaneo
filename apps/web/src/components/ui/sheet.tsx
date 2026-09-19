@@ -7,7 +7,27 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/cn";
 import { i18n } from "@/lib/i18n";
 
-const Sheet = SheetPrimitive.Root;
+/**
+ * Same rule as `ui/dialog.tsx`: a sheet is dismissed by its Close or X
+ * button, never by clicking the backdrop, because sheets here carry
+ * in-progress form state. Escape still closes, for the accessibility reason
+ * spelled out on `Dialog`.
+ *
+ * A sheet is a Base UI Dialog underneath, so it takes the same prop and the
+ * same escape hatch (`disablePointerDismissal={false}`) if one is ever
+ * justified.
+ */
+function Sheet<Payload>({
+  disablePointerDismissal = true,
+  ...props
+}: SheetPrimitive.Root.Props<Payload>) {
+  return (
+    <SheetPrimitive.Root
+      disablePointerDismissal={disablePointerDismissal}
+      {...props}
+    />
+  );
+}
 
 const SheetPortal = SheetPrimitive.Portal;
 
