@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { MeetingListItem } from "@/fetchers/meeting";
+import { getAvatarTone } from "@/lib/avatar";
 import { MeetingCard } from "./meeting-card";
 
 function makeMeeting(
@@ -65,6 +66,25 @@ describe("MeetingCard", () => {
     const card = screen.getByRole("button", { name: /Q3 Committee Meeting/ });
     await userEvent.click(card);
     expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("generates the thumbnail from the title", () => {
+    render(
+      <MeetingCard
+        meeting={makeMeeting({ title: "Annual General Meeting" })}
+        onOpen={vi.fn()}
+      />,
+    );
+    const thumbnail = screen.getByTestId("meeting-thumbnail");
+    expect(thumbnail.className).toContain(
+      getAvatarTone("Annual General Meeting"),
+    );
+    expect(thumbnail).toHaveTextContent("AG");
+  });
+
+  it("keeps the monogram out of the button's accessible name", () => {
+    render(<MeetingCard meeting={makeMeeting()} onOpen={vi.fn()} />);
+    expect(screen.getByText("QC")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("renders an em dash rather than blank metadata when unset", () => {
