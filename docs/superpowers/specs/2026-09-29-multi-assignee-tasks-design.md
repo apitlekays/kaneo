@@ -193,8 +193,11 @@ Reported for a decision; each is small and separate.
 1. **Offers are silent.** No notification, email or live refresh reaches the
    person offered a task — they find out only when the pending dialog next
    refetches. Worse once several people are offered at once.
-2. **Wrong accept notification.** On accept, the *accepter* receives
-   "X assigned you"; the assigner is never told it was accepted.
+2. **Assigner never told of an acceptance.** They are told when an offer
+   is declined, not when it is taken up. (First written up as "the accepter
+   gets the wrong notification" — on inspection that is deliberate: it is
+   the accepter's Home activity-feed entry, with careful handling for
+   grandfathered rows, and is left as is.)
 3. **Weak guards on two assign paths.** Bulk update and full `PUT` don't
    require project manager or project membership, unlike
    `PUT /task/assignee/:id`. Import also skips the membership check.
@@ -206,6 +209,10 @@ Reported for a decision; each is small and separate.
    tagged person is a project member, so it can 400.
 
 ## Changes made during implementation
+
+- **Issues 1 and 2 fixed**, as separate commits after the feature:
+  `task_offered` to each offeree (plus a live refresh of their pending
+  dialog), and `task_accepted` to the assigner.
 
 - **`task_assignment.exclusive`.** Keeping the single-value routes' old
   meaning ("make this person the assignee") needs the accept step to know

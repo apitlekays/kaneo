@@ -436,6 +436,19 @@ describe("API integration: multiple assignees per task", () => {
     ).toHaveLength(0);
   });
 
+  it("tells the assigner when their offer is accepted", async () => {
+    const ctx = await setup();
+    const task = await (await createTask(ctx.app, ctx.project.id)).json();
+    await offerAndAccept(ctx, task.id, ctx.a);
+
+    const accepted = await notificationsFor(ctx.owner.user.id, "task_accepted");
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]?.content).toContain(ctx.a.name);
+    expect(accepted[0]?.resourceId).toBe(task.id);
+    // The accepter is not told their own acceptance.
+    expect(await notificationsFor(ctx.a.id, "task_accepted")).toEqual([]);
+  });
+
   it("a subtask is a task: it takes several assignees the same way", async () => {
     const ctx = await setup();
     const parent = await (await createTask(ctx.app, ctx.project.id)).json();

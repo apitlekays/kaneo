@@ -215,6 +215,20 @@ export const taskProvider: PendingDecisionProvider = {
         title: assignment.taskTitle,
         type: "assignee_changed",
       });
+
+      // The assigner is told when an offer is declined (below); they are
+      // told when it is taken up too, so both outcomes close the loop.
+      // Grandfathered rows with no recorded assigner notify nobody.
+      if (assignment.fromUserId && assignment.fromUserId !== userId) {
+        await createNotification({
+          userId: assignment.fromUserId,
+          type: "task_accepted",
+          title: `Assignment accepted — ${assignment.taskTitle}`,
+          content: `${assignee?.name ?? "The assignee"} accepted the task.`,
+          resourceId: assignment.taskId,
+          resourceType: "task",
+        }).catch(() => {});
+      }
     }
 
     if (decision === "rejected") {
