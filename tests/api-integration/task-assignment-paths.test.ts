@@ -230,7 +230,7 @@ describe("API integration: further task.userId assignment paths", () => {
       expect(assignments[0].decidedAt).not.toBeNull();
     });
 
-    it("supersedes an existing pending assignment; exactly one pending row remains", async () => {
+    it("adds a second person alongside the first instead of superseding their offer", async () => {
       const owner = await createWorkspaceMember({ role: "owner" });
       const first = await createWorkspaceMember({ role: "member" });
       const second = await createWorkspaceMember({ role: "member" });
@@ -259,16 +259,19 @@ describe("API integration: further task.userId assignment paths", () => {
       const task = await getTaskRow(created.id);
       expect(task.userId).toBeNull();
 
+      // Bulk assign adds: both people hold a live, non-exclusive offer.
       const assignments = await getAssignments(created.id);
       expect(assignments).toHaveLength(2);
 
       const pending = assignments.filter((a) => a.status === "pending");
-      expect(pending).toHaveLength(1);
-      expect(pending[0].toUserId).toBe(second.user.id);
+      expect(pending.map((a) => a.toUserId).sort()).toEqual(
+        [first.user.id, second.user.id].sort(),
+      );
+      expect(pending.every((a) => a.exclusive === false)).toBe(true);
 
-      const superseded = assignments.filter((a) => a.status === "superseded");
-      expect(superseded).toHaveLength(1);
-      expect(superseded[0].toUserId).toBe(first.user.id);
+      // Re-assigning someone who already holds an offer is a no-op.
+      await bulkAssign(app, [created.id], second.user.id);
+      expect(await getAssignments(created.id)).toHaveLength(2);
     });
   });
 

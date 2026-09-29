@@ -4,12 +4,12 @@ import db from "../../database";
 import {
   columnTable,
   projectTable,
-  taskAssignmentTable,
   taskTable,
   userTable,
 } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { canAccessProject } from "../../utils/project-access";
+import { addAssignee } from "../assignees-write";
 import { assertValidTaskStatus } from "../validate-task-fields";
 import getNextTaskNumber from "./get-next-task-number";
 
@@ -17,6 +17,7 @@ async function createTask({
   projectId,
   currentUserId,
   userId,
+  userIds,
   title,
   status,
   startDate,
@@ -27,6 +28,9 @@ async function createTask({
   projectId: string;
   currentUserId: string;
   userId?: string;
+  // Several people at once. `userId` alone is the single-assignee form and
+  // is folded in first, so it becomes the lead if it takes effect.
+  userIds?: string[];
   title: string;
   status: string;
   startDate?: Date;
@@ -39,27 +43,33 @@ async function createTask({
 
   await assertValidTaskStatus(resolvedStatus, projectId);
 
+  const assigneeIds = [
+    ...new Set([...(userId ? [userId] : []), ...(userIds ?? [])]),
+  ].filter(Boolean);
+
   // A user can only be assigned a task in a project they belong to.
-  if (userId) {
+  if (assigneeIds.length > 0) {
     const [project] = await db
       .select({ workspaceId: projectTable.workspaceId })
       .from(projectTable)
       .where(eq(projectTable.id, projectId))
       .limit(1);
-    if (
-      project &&
-      !(await canAccessProject(userId, projectId, project.workspaceId))
-    ) {
-      throw new HTTPException(400, {
-        message: "User must be a member of the project to be assigned",
-      });
+    for (const assigneeId of assigneeIds) {
+      if (
+        project &&
+        !(await canAccessProject(assigneeId, projectId, project.workspaceId))
+      ) {
+        throw new HTTPException(400, {
+          message: "User must be a member of the project to be assigned",
+        });
+      }
     }
   }
 
   const [assignee] = await db
     .select({ name: userTable.name })
     .from(userTable)
-    .where(eq(userTable.id, userId ?? ""));
+    .where(eq(userTable.id, assigneeIds[0] ?? ""));
 
   const nextTaskNumber = await getNextTaskNumber(projectId);
 
@@ -84,18 +94,12 @@ async function createTask({
 
   const nextPosition = (maxPositionResult?.maxPosition ?? 0) + 1;
 
-  // Assigning someone other than the creator only offers the task to them;
-  // task.userId (the accepted assignee) stays empty until they accept.
-  // Self-assignment is auto-accepted, so it takes effect immediately.
-  const isSelfAssignment = !!userId && userId === currentUserId;
-  const isOffer = !!userId && !isSelfAssignment;
-
   const createdTask = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(taskTable)
       .values({
         projectId,
-        userId: isOffer ? null : userId || null,
+        userId: null,
         title: title || "",
         status: resolvedStatus,
         columnId: column?.id ?? null,
@@ -114,17 +118,27 @@ async function createTask({
       });
     }
 
-    if (userId) {
-      await tx.insert(taskAssignmentTable).values({
+    // Assigning someone other than the creator only offers the task to
+    // them; they are on it once they accept. Self-assignment is
+    // auto-accepted, so it takes effect immediately (and makes the creator
+    // the lead).
+    let applied = false;
+    for (const assigneeId of assigneeIds) {
+      const result = await addAssignee(tx, {
         taskId: inserted.id,
-        fromUserId: currentUserId,
-        toUserId: userId,
-        status: isSelfAssignment ? "accepted" : "pending",
-        decidedAt: isSelfAssignment ? new Date() : null,
+        userId: assigneeId,
+        currentUserId,
       });
+      if (result === "applied") applied = true;
     }
 
-    return inserted;
+    if (!applied) return inserted;
+    const [withLead] = await tx
+      .select()
+      .from(taskTable)
+      .where(eq(taskTable.id, inserted.id))
+      .limit(1);
+    return withLead ?? inserted;
   });
 
   await publishEvent("task.created", {

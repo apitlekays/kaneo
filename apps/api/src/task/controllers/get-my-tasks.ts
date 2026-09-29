@@ -8,6 +8,11 @@ import {
   userTable,
 } from "../../database/schema";
 import { getMemberProjectIds, isGlobalAdmin } from "../../utils/project-access";
+import {
+  assigneesFor,
+  isAssignedTo,
+  loadTaskAssignees,
+} from "../assignees-read";
 
 const priorityCaseExpr = sql<number>`CASE
   WHEN ${taskTable.priority} = 'urgent' THEN 4
@@ -34,7 +39,7 @@ async function getMyTasks(workspaceId: string, userId: string) {
     return { data: { workspaceId, total: 0, projects: [] } };
   }
 
-  const tasks = await db
+  const taskRows = await db
     .select({
       id: taskTable.id,
       title: taskTable.title,
@@ -67,7 +72,8 @@ async function getMyTasks(workspaceId: string, userId: string) {
     )
     .where(
       and(
-        eq(taskTable.userId, userId),
+        // Every task the user has accepted, as lead or alongside others.
+        isAssignedTo(userId),
         eq(projectTable.workspaceId, workspaceId),
         ne(taskTable.status, "archived"),
         // Exclude tasks sitting in a final/done column. IS NOT TRUE also keeps
@@ -83,6 +89,12 @@ async function getMyTasks(workspaceId: string, userId: string) {
       asc(taskTable.dueDate),
       asc(taskTable.position),
     );
+
+  const assigneesMap = await loadTaskAssignees(taskRows.map((t) => t.id));
+  const tasks = taskRows.map((task) => ({
+    ...task,
+    ...assigneesFor(assigneesMap, task.id),
+  }));
 
   const taskIds = tasks.map((task) => task.id);
 

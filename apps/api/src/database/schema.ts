@@ -977,15 +977,63 @@ export const taskAssignmentTable = pgTable(
     // pending | accepted | rejected | superseded
     status: text("status").notNull().default("pending"),
     reason: text("reason"),
+    // An exclusive offer came from a single-value route ("make this person
+    // the assignee"): accepting it replaces everyone else on the task, as
+    // assignment did before tasks could have several people. A
+    // non-exclusive offer adds the person alongside whoever is there.
+    exclusive: boolean("exclusive").notNull().default(false),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     decidedAt: timestamp("decided_at", { mode: "date" }),
   },
   (table) => [
     index("task_assignment_taskId_idx").on(table.taskId),
     index("task_assignment_toUserId_idx").on(table.toUserId),
-    uniqueIndex("task_assignment_one_pending_idx")
-      .on(table.taskId)
+    // One live offer per person per task — several people can be offered
+    // the same task at once, each deciding independently.
+    uniqueIndex("task_assignment_one_pending_per_user_idx")
+      .on(table.taskId, table.toUserId)
       .where(sql`${table.status} = 'pending'`),
+  ],
+);
+
+/**
+ * Everyone who has accepted a task, lead included. `task.assignee_id` is
+ * the lead and always mirrors the `is_lead` row (null when nobody is on
+ * the task) — `task/assignees-write.ts` is the only writer of either, so
+ * single-assignee consumers (calendar sync, export, integrations) keep
+ * reading one column.
+ */
+export const taskAssigneeTable = pgTable(
+  "task_assignee",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => taskTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => userTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    isLead: boolean("is_lead").notNull().default(false),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("task_assignee_task_user_unique").on(table.taskId, table.userId),
+    uniqueIndex("task_assignee_one_lead_idx")
+      .on(table.taskId)
+      .where(sql`${table.isLead}`),
+    index("task_assignee_userId_idx").on(table.userId),
   ],
 );
 

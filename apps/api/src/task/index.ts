@@ -33,6 +33,11 @@ import getTask from "./controllers/get-task";
 import getTasks from "./controllers/get-tasks";
 import importTasks from "./controllers/import-tasks";
 import moveTask from "./controllers/move-task";
+import {
+  addTaskAssignee,
+  removeTaskAssignee,
+  setTaskLead,
+} from "./controllers/task-assignees";
 import updateTask from "./controllers/update-task";
 import updateTaskAssignee from "./controllers/update-task-assignee";
 import updateTaskDescription from "./controllers/update-task-description";
@@ -220,6 +225,7 @@ const task = new Hono<{
         priority: v.picklist(VALID_PRIORITIES),
         status: v.string(),
         userId: v.optional(v.string()),
+        userIds: v.optional(v.array(v.string())),
       }),
     ),
     workspaceAccess.fromProject("projectId"),
@@ -234,12 +240,14 @@ const task = new Hono<{
         priority,
         status,
         userId,
+        userIds,
       } = c.req.valid("json");
 
       const task = await createTask({
         projectId,
         currentUserId: c.get("userId"),
         userId: userId,
+        userIds,
         title,
         description,
         startDate: startDate ? new Date(startDate) : undefined,
@@ -573,6 +581,76 @@ const task = new Hono<{
       const task = await updateTaskAssignee({ id, userId, currentUserId });
 
       return c.json(task);
+    },
+  )
+  .post(
+    "/:id/assignees",
+    describeRoute({
+      operationId: "addTaskAssignee",
+      tags: ["Tasks"],
+      description:
+        "Add a person to a task alongside its current assignees. Adding yourself takes effect at once; anyone else is offered the task.",
+      responses: {
+        200: { description: "Assignee added or offered" },
+      },
+    }),
+    validator("param", v.object({ id: v.string() })),
+    validator("json", v.object({ userId: v.pipe(v.string(), v.minLength(1)) })),
+    workspaceAccess.fromTask(),
+    requireProjectManagerFromTask("id"),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const { userId } = c.req.valid("json");
+      return c.json(
+        await addTaskAssignee({ id, userId, currentUserId: c.get("userId") }),
+      );
+    },
+  )
+  .delete(
+    "/:id/assignees/:userId",
+    describeRoute({
+      operationId: "removeTaskAssignee",
+      tags: ["Tasks"],
+      description:
+        "Take a person off a task, or withdraw the offer waiting on them",
+      responses: {
+        200: { description: "Assignee removed" },
+      },
+    }),
+    validator("param", v.object({ id: v.string(), userId: v.string() })),
+    workspaceAccess.fromTask(),
+    requireProjectManagerFromTask("id"),
+    async (c) => {
+      const { id, userId } = c.req.valid("param");
+      return c.json(
+        await removeTaskAssignee({
+          id,
+          userId,
+          currentUserId: c.get("userId"),
+        }),
+      );
+    },
+  )
+  .put(
+    "/:id/lead",
+    describeRoute({
+      operationId: "setTaskLead",
+      tags: ["Tasks"],
+      description: "Make an accepted assignee the lead of a task",
+      responses: {
+        200: { description: "Lead updated" },
+      },
+    }),
+    validator("param", v.object({ id: v.string() })),
+    validator("json", v.object({ userId: v.pipe(v.string(), v.minLength(1)) })),
+    workspaceAccess.fromTask(),
+    requireProjectManagerFromTask("id"),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const { userId } = c.req.valid("json");
+      return c.json(
+        await setTaskLead({ id, userId, currentUserId: c.get("userId") }),
+      );
     },
   )
   .put(

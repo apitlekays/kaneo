@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import db from "../../database";
 import { projectTable, taskTable, userTable } from "../../database/schema";
+import { assigneesFor, loadTaskAssignees } from "../assignees-read";
 
 async function exportTasks(projectId: string) {
   const project = await db.query.projectTable.findFirst({
@@ -35,6 +36,8 @@ async function exportTasks(projectId: string) {
     .where(eq(taskTable.projectId, projectId))
     .orderBy(taskTable.position);
 
+  const assigneesMap = await loadTaskAssignees(tasks.map((t) => t.id));
+
   return {
     project: {
       name: project.name,
@@ -49,7 +52,12 @@ async function exportTasks(projectId: string) {
       priority: task.priority || "low",
       dueDate: task.dueDate ? new Date(task.dueDate).toISOString() : null,
       startDate: task.startDate ? new Date(task.startDate).toISOString() : null,
+      // The lead, which is what import reads back.
       userId: task.userId || null,
+      // Everyone on the task, lead first.
+      assigneeIds: assigneesFor(assigneesMap, task.id).assignees.map(
+        (a) => a.userId,
+      ),
     })),
   };
 }

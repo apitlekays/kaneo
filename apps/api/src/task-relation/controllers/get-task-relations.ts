@@ -1,14 +1,11 @@
-import { and, eq, inArray, or } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { eq, inArray, or } from "drizzle-orm";
 import db from "../../database";
+import { taskRelationTable, taskTable, userTable } from "../../database/schema";
 import {
-  taskAssignmentTable,
-  taskRelationTable,
-  taskTable,
-  userTable,
-} from "../../database/schema";
-
-const pendingAssigneeUserTable = alias(userTable, "pendingAssigneeUserTable");
+  assigneesFor,
+  loadTaskAssignees,
+  type TaskAssigneesFields,
+} from "../../task/assignees-read";
 
 async function getTaskRelations(taskId: string) {
   const relations = await db
@@ -44,8 +41,7 @@ async function getTaskRelations(taskId: string) {
       projectId: string;
       userId: string | null;
       assigneeName: string | null;
-      pendingAssigneeName: string | null;
-    }
+    } & TaskAssigneesFields
   >();
 
   if (taskIds.size > 0) {
@@ -59,25 +55,14 @@ async function getTaskRelations(taskId: string) {
         projectId: taskTable.projectId,
         userId: taskTable.userId,
         assigneeName: userTable.name,
-        pendingAssigneeName: pendingAssigneeUserTable.name,
       })
       .from(taskTable)
       .leftJoin(userTable, eq(taskTable.userId, userTable.id))
-      .leftJoin(
-        taskAssignmentTable,
-        and(
-          eq(taskAssignmentTable.taskId, taskTable.id),
-          eq(taskAssignmentTable.status, "pending"),
-        ),
-      )
-      .leftJoin(
-        pendingAssigneeUserTable,
-        eq(taskAssignmentTable.toUserId, pendingAssigneeUserTable.id),
-      )
       .where(inArray(taskTable.id, [...taskIds]));
 
+    const assigneesMap = await loadTaskAssignees([...taskIds]);
     for (const task of taskRows) {
-      tasks.set(task.id, task);
+      tasks.set(task.id, { ...task, ...assigneesFor(assigneesMap, task.id) });
     }
   }
 

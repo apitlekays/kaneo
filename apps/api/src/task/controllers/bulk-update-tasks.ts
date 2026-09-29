@@ -9,6 +9,7 @@ import {
   workspaceUserTable,
 } from "../../database/schema";
 import { publishEvent } from "../../events";
+import { addAssignee } from "../assignees-write";
 import { writeTaskAssignment } from "../assignment-write";
 import {
   assertValidPriority,
@@ -167,13 +168,23 @@ async function bulkUpdateTasks({
           string,
           "no-op" | "offered" | "applied"
         >();
+        // Assigning in bulk adds the person alongside whoever is already on
+        // each task; clearing in bulk takes everyone off.
         for (const task of tasks) {
-          const { status } = await writeTaskAssignment(tx, {
-            taskId: task.id,
-            existingAssigneeId: task.userId,
-            nextAssigneeId,
-            currentUserId: userId,
-          });
+          const status = nextAssigneeId
+            ? await addAssignee(tx, {
+                taskId: task.id,
+                userId: nextAssigneeId,
+                currentUserId: userId,
+              })
+            : (
+                await writeTaskAssignment(tx, {
+                  taskId: task.id,
+                  existingAssigneeId: task.userId,
+                  nextAssigneeId: null,
+                  currentUserId: userId,
+                })
+              ).status;
           perTaskStatus.set(task.id, status);
         }
         return perTaskStatus;

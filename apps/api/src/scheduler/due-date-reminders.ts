@@ -6,6 +6,7 @@ import {
   taskTable,
 } from "../database/schema";
 import createNotification from "../notification/controllers/create-notification";
+import { taskRecipients } from "../task/assignees-read";
 
 type ReminderType = "one_day_before" | "one_hour_before" | "overdue";
 
@@ -107,17 +108,22 @@ async function processReminder(
     return;
   }
 
-  await createNotification({
-    userId: task.userId,
-    type: notificationType,
-    eventData: {
-      taskTitle: task.title,
-      reminderType,
-      dueDate: task.dueDate?.toISOString() ?? null,
-    },
-    resourceId: task.id,
-    resourceType: "task",
-  });
+  // The sent record is claimed once per task and window; the reminder
+  // itself goes to everyone on the task at that moment.
+  const recipients = await taskRecipients(task.id, null, task.userId);
+  for (const recipientId of recipients) {
+    await createNotification({
+      userId: recipientId,
+      type: notificationType,
+      eventData: {
+        taskTitle: task.title,
+        reminderType,
+        dueDate: task.dueDate?.toISOString() ?? null,
+      },
+      resourceId: task.id,
+      resourceType: "task",
+    });
+  }
 }
 
 export async function checkDueDateReminders(): Promise<void> {

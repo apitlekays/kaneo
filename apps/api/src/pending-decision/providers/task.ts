@@ -9,10 +9,8 @@ import {
 } from "../../database/schema";
 import { publishEvent } from "../../events";
 import createNotification from "../../notification/controllers/create-notification";
-import {
-  assertCanDecideTask,
-  taskAssigneeAfterDecision,
-} from "../../task/assignment-rules";
+import { acceptOffer } from "../../task/assignees-write";
+import { assertCanDecideTask } from "../../task/assignment-rules";
 import { getMemberProjectIds, isGlobalAdmin } from "../../utils/project-access";
 import type { PendingDecisionItem, PendingDecisionProvider } from "../types";
 
@@ -116,6 +114,7 @@ export const taskProvider: PendingDecisionProvider = {
         fromUserId: taskAssignmentTable.fromUserId,
         toUserId: taskAssignmentTable.toUserId,
         status: taskAssignmentTable.status,
+        exclusive: taskAssignmentTable.exclusive,
         taskTitle: taskTable.title,
         projectId: taskTable.projectId,
         // task.userId as it stood immediately before this decision. An
@@ -137,11 +136,6 @@ export const taskProvider: PendingDecisionProvider = {
     assertCanDecideTask(assignment, userId);
 
     const decidedAt = new Date();
-    const nextAssigneeId = taskAssigneeAfterDecision(
-      decision,
-      assignment.toUserId,
-      assignment.currentAssigneeId,
-    );
 
     await db.transaction(async (tx) => {
       // The `pending` predicate is the concurrency guard: the assignment was
@@ -167,11 +161,28 @@ export const taskProvider: PendingDecisionProvider = {
           message: "This assignment was already decided",
         });
 
+      // Accepting puts the person on the task (replacing everyone else if
+      // the offer was exclusive). Rejecting leaves the task exactly as it
+      // was: the people on it declined nothing.
+      if (decision === "accepted" && assignment.toUserId) {
+        await acceptOffer(tx, {
+          taskId: assignment.taskId,
+          userId: assignment.toUserId,
+          exclusive: assignment.exclusive,
+        });
+      }
       await tx
         .update(taskTable)
-        .set({ userId: nextAssigneeId, updatedAt: decidedAt })
+        .set({ updatedAt: decidedAt })
         .where(eq(taskTable.id, assignment.taskId));
     });
+
+    const [afterDecision] = await db
+      .select({ userId: taskTable.userId })
+      .from(taskTable)
+      .where(eq(taskTable.id, assignment.taskId))
+      .limit(1);
+    const nextAssigneeId = afterDecision?.userId ?? null;
 
     if (decision === "accepted") {
       // The offer path no longer announces "assigned to you" — the task

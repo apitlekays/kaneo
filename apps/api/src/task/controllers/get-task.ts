@@ -1,14 +1,8 @@
-import { and, eq } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import db from "../../database";
-import {
-  taskAssignmentTable,
-  taskTable,
-  userTable,
-} from "../../database/schema";
-
-const pendingAssigneeUserTable = alias(userTable, "pendingAssigneeUserTable");
+import { taskTable, userTable } from "../../database/schema";
+import { assigneesFor, loadTaskAssignees } from "../assignees-read";
 
 async function getTask(taskId: string) {
   const task = await db
@@ -26,22 +20,11 @@ async function getTask(taskId: string) {
       userId: taskTable.userId,
       assigneeName: userTable.name,
       assigneeId: userTable.id,
+      assigneeImage: userTable.image,
       projectId: taskTable.projectId,
-      pendingAssigneeName: pendingAssigneeUserTable.name,
     })
     .from(taskTable)
     .leftJoin(userTable, eq(taskTable.userId, userTable.id))
-    .leftJoin(
-      taskAssignmentTable,
-      and(
-        eq(taskAssignmentTable.taskId, taskTable.id),
-        eq(taskAssignmentTable.status, "pending"),
-      ),
-    )
-    .leftJoin(
-      pendingAssigneeUserTable,
-      eq(taskAssignmentTable.toUserId, pendingAssigneeUserTable.id),
-    )
     .where(eq(taskTable.id, taskId))
     .limit(1);
 
@@ -51,7 +34,8 @@ async function getTask(taskId: string) {
     });
   }
 
-  return task[0];
+  const assigneesMap = await loadTaskAssignees([taskId]);
+  return { ...task[0], ...assigneesFor(assigneesMap, taskId) };
 }
 
 export default getTask;

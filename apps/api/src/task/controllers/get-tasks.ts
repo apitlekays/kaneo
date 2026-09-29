@@ -9,7 +9,6 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 import { HTTPException } from "hono/http-exception";
 import db from "../../database";
 import {
@@ -17,12 +16,14 @@ import {
   externalLinkTable,
   labelTable,
   projectTable,
-  taskAssignmentTable,
   taskTable,
   userTable,
 } from "../../database/schema";
-
-const pendingAssigneeUserTable = alias(userTable, "pendingAssigneeUserTable");
+import {
+  assigneesFor,
+  isAssignedTo,
+  loadTaskAssignees,
+} from "../assignees-read";
 
 type GetTasksOptions = {
   assigneeId?: string;
@@ -94,7 +95,8 @@ async function getTasks(projectId: string, options: GetTasksOptions = {}) {
   }
 
   if (options.assigneeId) {
-    conditions.push(eq(taskTable.userId, options.assigneeId));
+    // Any task the person is on, lead or not.
+    conditions.push(isAssignedTo(options.assigneeId));
   }
 
   if (options.dueBefore) {
@@ -140,7 +142,6 @@ async function getTasks(projectId: string, options: GetTasksOptions = {}) {
     assigneeId: userTable.id,
     assigneeImage: userTable.image,
     projectId: taskTable.projectId,
-    pendingAssigneeName: pendingAssigneeUserTable.name,
   };
 
   const query = db
@@ -148,23 +149,18 @@ async function getTasks(projectId: string, options: GetTasksOptions = {}) {
     .from(taskTable)
     .leftJoin(userTable, eq(taskTable.userId, userTable.id))
     .leftJoin(projectTable, eq(taskTable.projectId, projectTable.id))
-    .leftJoin(
-      taskAssignmentTable,
-      and(
-        eq(taskAssignmentTable.taskId, taskTable.id),
-        eq(taskAssignmentTable.status, "pending"),
-      ),
-    )
-    .leftJoin(
-      pendingAssigneeUserTable,
-      eq(taskAssignmentTable.toUserId, pendingAssigneeUserTable.id),
-    )
     .where(whereClause)
     .orderBy(orderByClause);
 
-  const paginatedTasks = usePagination
+  const pageRows = usePagination
     ? await query.limit(pageSize).offset(offset)
     : await query;
+
+  const assigneesMap = await loadTaskAssignees(pageRows.map((t) => t.id));
+  const paginatedTasks = pageRows.map((task) => ({
+    ...task,
+    ...assigneesFor(assigneesMap, task.id),
+  }));
 
   const taskIds = paginatedTasks.map((task) => task.id);
 

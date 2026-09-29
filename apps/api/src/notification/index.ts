@@ -11,6 +11,7 @@ import {
 } from "../database/schema";
 import { subscribeToEvent } from "../events";
 import { notificationSchema } from "../schemas";
+import { taskRecipients } from "../task/assignees-read";
 import clearNotifications from "./controllers/clear-notifications";
 import createNotification from "./controllers/create-notification";
 import getNotifications from "./controllers/get-notifications";
@@ -275,9 +276,14 @@ subscribeToEvent<{
   title: string;
   assigneeId?: string;
 }>("task.status_changed", async (data) => {
-  if (data.assigneeId && data.assigneeId !== data.userId) {
+  const recipients = await taskRecipients(
+    data.taskId,
+    data.userId,
+    data.assigneeId,
+  );
+  for (const recipientId of recipients) {
     await createNotification({
-      userId: data.assigneeId,
+      userId: recipientId,
       type: "task_status_changed",
       eventData: {
         actorName: await getActorName(data.userId),
@@ -313,7 +319,7 @@ subscribeToEvent<{
   }
 });
 
-// Notify the task's assignee when someone else comments on their task.
+// Notify everyone on the task when someone else comments on it.
 subscribeToEvent<{
   taskId: string;
   userId: string; // the commenter
@@ -325,19 +331,28 @@ subscribeToEvent<{
     .from(taskTable)
     .where(eq(taskTable.id, data.taskId))
     .limit(1);
+  if (!task) return;
 
-  if (!task?.assigneeId || task.assigneeId === data.userId) return;
+  const recipients = await taskRecipients(
+    data.taskId,
+    data.userId,
+    task.assigneeId,
+  );
+  if (recipients.length === 0) return;
 
-  await createNotification({
-    userId: task.assigneeId,
-    type: "task_commented",
-    eventData: {
-      actorName: await getActorName(data.userId),
-      taskTitle: task.title,
-    },
-    resourceId: data.taskId,
-    resourceType: "task",
-  });
+  const actorName = await getActorName(data.userId);
+  for (const recipientId of recipients) {
+    await createNotification({
+      userId: recipientId,
+      type: "task_commented",
+      eventData: {
+        actorName,
+        taskTitle: task.title,
+      },
+      resourceId: data.taskId,
+      resourceType: "task",
+    });
+  }
 });
 
 subscribeToEvent<{
@@ -347,9 +362,14 @@ subscribeToEvent<{
   taskOwnerId?: string;
   taskTitle?: string;
 }>("time-entry.created", async (data) => {
-  if (data.taskOwnerId && data.taskOwnerId !== data.userId) {
+  const recipients = await taskRecipients(
+    data.taskId,
+    data.userId,
+    data.taskOwnerId,
+  );
+  for (const recipientId of recipients) {
     await createNotification({
-      userId: data.taskOwnerId,
+      userId: recipientId,
       type: "time_entry_created",
       eventData: {
         taskTitle: data.taskTitle ?? null,
