@@ -9,6 +9,7 @@ import {
   workspaceUserTable,
 } from "../../database/schema";
 import { publishEvent } from "../../events";
+import { announceTaskOffer } from "../announce-offer";
 import { addAssignee } from "../assignees-write";
 import { writeTaskAssignment } from "../assignment-write";
 import {
@@ -203,6 +204,13 @@ async function bulkUpdateTasks({
         // pending-decision/providers/task.ts, which fires this event on
         // acceptance instead).
         if (status === "offered") {
+          if (value) {
+            await announceTaskOffer({
+              taskId: task.id,
+              toUserId: value,
+              fromUserId: userId,
+            });
+          }
           continue;
         }
 

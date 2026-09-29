@@ -51,6 +51,15 @@ export function useUserWebSocket() {
             return;
           }
 
+          if (message.entity === "task-assignment") {
+            // A task was offered to this user: surface it in the central
+            // pending-decision dialog now, not on its next refetch.
+            queryClient.invalidateQueries({
+              queryKey: ["pending-decisions"],
+            });
+            return;
+          }
+
           if (message.entity === "letter-assignment") {
             // A registrar's pending-assignment list changed; refresh whichever
             // workspace is active (query key includes the workspace id).

@@ -9,6 +9,7 @@ import {
 } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { canAccessProject } from "../../utils/project-access";
+import { announceTaskOffer } from "../announce-offer";
 import { addAssignee } from "../assignees-write";
 import { assertValidTaskStatus } from "../validate-task-fields";
 import getNextTaskNumber from "./get-next-task-number";
@@ -94,6 +95,7 @@ async function createTask({
 
   const nextPosition = (maxPositionResult?.maxPosition ?? 0) + 1;
 
+  const offeredTo: string[] = [];
   const createdTask = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(taskTable)
@@ -130,6 +132,7 @@ async function createTask({
         currentUserId,
       });
       if (result === "applied") applied = true;
+      if (result === "offered") offeredTo.push(assigneeId);
     }
 
     if (!applied) return inserted;
@@ -140,6 +143,14 @@ async function createTask({
       .limit(1);
     return withLead ?? inserted;
   });
+
+  for (const toUserId of offeredTo) {
+    await announceTaskOffer({
+      taskId: createdTask.id,
+      toUserId,
+      fromUserId: currentUserId,
+    });
+  }
 
   await publishEvent("task.created", {
     ...createdTask,

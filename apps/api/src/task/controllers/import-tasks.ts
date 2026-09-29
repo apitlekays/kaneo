@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import db from "../../database";
 import { columnTable, projectTable, taskTable } from "../../database/schema";
 import { publishEvent } from "../../events";
+import { announceTaskOffer } from "../announce-offer";
 import { writeTaskAssignment } from "../assignment-write";
 import {
   coercePriority,
@@ -107,6 +108,15 @@ async function importTasks(
 
         return inserted;
       });
+
+      if (createdTask && importedAssigneeId && !createdTask.userId) {
+        // Imported onto someone else: they were offered it.
+        await announceTaskOffer({
+          taskId: createdTask.id,
+          toUserId: importedAssigneeId,
+          fromUserId: currentUserId ?? null,
+        });
+      }
 
       if (createdTask) {
         await publishEvent("task.created", {

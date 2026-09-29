@@ -4,6 +4,7 @@ import db from "../../database";
 import { projectTable, taskTable, userTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { canAccessProject } from "../../utils/project-access";
+import { announceTaskOffer } from "../announce-offer";
 import { addAssignee, removeAssignee, setLead } from "../assignees-write";
 
 async function loadTask(id: string) {
@@ -92,10 +93,18 @@ export async function addTaskAssignee({
     addAssignee(tx, { taskId: id, userId, currentUserId }),
   );
 
-  // An offer announces nothing: the task is not theirs until they accept
-  // (pending-decision/providers/task.ts fires the event then).
+  // An offer is not an assignment — task.assignee_changed waits for the
+  // accept (pending-decision/providers/task.ts). The offeree is told they
+  // were offered it instead.
   if (status === "applied") {
     await announceLeadChange(task, task.userId, currentUserId);
+  }
+  if (status === "offered") {
+    await announceTaskOffer({
+      taskId: id,
+      toUserId: userId,
+      fromUserId: currentUserId,
+    });
   }
 
   return { status };

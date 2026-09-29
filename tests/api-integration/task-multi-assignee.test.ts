@@ -414,6 +414,28 @@ describe("API integration: multiple assignees per task", () => {
     ).toHaveLength(0);
   });
 
+  it("tells each person a task was offered to them, without claiming it is theirs", async () => {
+    const ctx = await setup();
+    const task = await (await createTask(ctx.app, ctx.project.id)).json();
+    await addAssignee(ctx.app, task.id, ctx.a.id);
+    await addAssignee(ctx.app, task.id, ctx.b.id);
+
+    for (const person of [ctx.a, ctx.b]) {
+      const offered = await notificationsFor(person.id, "task_offered");
+      expect(offered).toHaveLength(1);
+      expect(offered[0]?.title).toContain("Prepare the AGM pack");
+      expect(offered[0]?.resourceId).toBe(task.id);
+    }
+    expect(await notificationsFor(ctx.a.id, "task_assignee_changed")).toEqual(
+      [],
+    );
+    // Adding yourself is not an offer.
+    await addAssignee(ctx.app, task.id, ctx.owner.user.id);
+    expect(
+      await notificationsFor(ctx.owner.user.id, "task_offered"),
+    ).toHaveLength(0);
+  });
+
   it("a subtask is a task: it takes several assignees the same way", async () => {
     const ctx = await setup();
     const parent = await (await createTask(ctx.app, ctx.project.id)).json();

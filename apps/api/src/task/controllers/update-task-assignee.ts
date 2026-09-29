@@ -4,6 +4,7 @@ import db from "../../database";
 import { projectTable, taskTable, userTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { canAccessProject } from "../../utils/project-access";
+import { announceTaskOffer } from "../announce-offer";
 import { writeTaskAssignment } from "../assignment-write";
 
 async function updateTaskAssignee({
@@ -90,6 +91,14 @@ async function updateTaskAssignee({
   // the offeree's until they accept. That is where task.assignee_changed
   // now fires instead (see pending-decision/providers/task.ts). Only the
   // paths that take effect immediately (self-assignment) publish here.
+  if (status === "offered") {
+    await announceTaskOffer({
+      taskId: resultTask.id,
+      toUserId: userId,
+      fromUserId: currentUserId,
+    });
+  }
+
   if (status === "applied") {
     await publishEvent("task.assignee_changed", {
       taskId: resultTask.id,

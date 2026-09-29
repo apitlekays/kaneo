@@ -5,6 +5,7 @@ import { columnTable, taskTable } from "../../database/schema";
 import { publishEvent } from "../../events";
 import { deleteOrphanedAssets } from "../../storage/cleanup-assets";
 import { trackBackgroundWork } from "../../utils/background-work";
+import { announceTaskOffer } from "../announce-offer";
 import { writeTaskAssignment } from "../assignment-write";
 import { assertValidTaskStatus } from "../validate-task-fields";
 
@@ -42,6 +43,7 @@ async function updateTask(
 
   const nextAssigneeId = userId || null;
 
+  let offeredTo: string | null = null;
   const updatedTask = await db.transaction(async (tx) => {
     // The assignee is handled separately below: a full-object PUT that
     // happens to change the assignee is still an assignment (offer vs.
@@ -101,12 +103,24 @@ async function updateTask(
         currentUserId: currentUserId ?? "",
       });
 
+    if (assignmentStatus === "offered" && nextAssigneeId) {
+      offeredTo = nextAssigneeId;
+    }
+
     if (assignmentStatus === "applied" && assignedTask) {
       return { ...updated, userId: assignedTask.userId };
     }
 
     return updated;
   });
+
+  if (offeredTo) {
+    await announceTaskOffer({
+      taskId: updatedTask.id,
+      toUserId: offeredTo,
+      fromUserId: currentUserId ?? null,
+    });
+  }
 
   if (existingTask.status !== status) {
     await publishEvent("task.status_changed", {

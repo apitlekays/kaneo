@@ -61,6 +61,20 @@ describe("useUserWebSocket", () => {
     });
   });
 
+  it("refreshes the pending-decision dialog when a task is offered", () => {
+    const { invalidate } = setup();
+
+    socket.onmessage?.({
+      data: JSON.stringify({ type: "USER_SYNC", entity: "task-assignment" }),
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["pending-decisions"],
+    });
+    // Not mistaken for an invitation.
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["invitations"] });
+  });
+
   it("leaves the assignment queries alone for an invitation event", () => {
     const { invalidate } = setup();
 
