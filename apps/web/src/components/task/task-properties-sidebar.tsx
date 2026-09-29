@@ -8,11 +8,10 @@ import {
   Plus,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { AvatarStack } from "@/components/ui/avatar-stack";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { KbdSequence } from "@/components/ui/kbd";
-import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import {
   Tooltip,
   TooltipContent,
@@ -27,13 +26,13 @@ import useGetLabelsByTask from "@/hooks/queries/label/use-get-labels-by-task";
 import useGetProject from "@/hooks/queries/project/use-get-project";
 import useGetProjects from "@/hooks/queries/project/use-get-projects";
 import useGetTask from "@/hooks/queries/task/use-get-task";
-import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { cn } from "@/lib/cn";
 import { getColumnIcon } from "@/lib/column";
 import { dueDateStatusColors, getDueDateStatus } from "@/lib/due-date-status";
 import { formatDateShort } from "@/lib/format";
 import { getPriorityLabel, getStatusDisplayLabel } from "@/lib/i18n/domain";
 import { getPriorityIcon } from "@/lib/priority";
+import { assigneeSummary, taskPeople } from "@/lib/task-assignees";
 import { toast } from "@/lib/toast";
 import TaskAssigneePopover from "./task-assignee-popover";
 import TaskDueDatePopover from "./task-due-date-popover";
@@ -84,7 +83,6 @@ export default function TaskPropertiesSidebar({
   const { data: task } = useGetTask(taskId ?? "");
   const { data: project } = useGetProject({ id: projectId, workspaceId });
   const { data: columns = [] } = useGetColumns(projectId);
-  const { data: workspaceUsers } = useGetActiveWorkspaceUsers(workspaceId);
   const { data: taskLabels = [] } = useGetLabelsByTask(taskId ?? "");
   const { data: githubIntegration } = useGetGithubIntegration(projectId);
   const { data: giteaIntegration } = useGetGiteaIntegration(projectId);
@@ -108,9 +106,7 @@ export default function TaskPropertiesSidebar({
     giteaIntegration?.branchPattern ||
     "{slug}-{number}";
 
-  const assignee = workspaceUsers?.members?.find(
-    (member) => member.userId === task?.userId,
-  );
+  const people = taskPeople(task ?? { userId: null });
 
   const handleCopyTaskLink = () => {
     navigator.clipboard.writeText(
@@ -232,19 +228,12 @@ export default function TaskPropertiesSidebar({
                     size="sm"
                     className="justify-start h-7 px-1.5 gap-1.5"
                   >
-                    {task.userId ? (
-                      <ColoredAvatar
-                        name={assignee?.user?.name}
-                        image={assignee?.user?.image}
-                        seed={task.userId}
-                        className="h-[16px] w-[16px] flex-shrink-0 border border-border/30"
-                        fallbackClassName="text-[9px]"
-                      />
-                    ) : task.pendingAssigneeName ? (
-                      <PendingAssigneeBadge
-                        name={task.pendingAssigneeName}
-                        className="w-[16px] h-[16px] flex-shrink-0"
-                        iconClassName="h-[9px] w-[9px]"
+                    {people.assignees.length + people.pending.length > 0 ? (
+                      <AvatarStack
+                        assignees={people.assignees}
+                        pending={people.pending}
+                        size="2xs"
+                        className="shrink-0"
                       />
                     ) : (
                       <div
@@ -255,13 +244,7 @@ export default function TaskPropertiesSidebar({
                       </div>
                     )}
                     <span className="text-xs font-semibold truncate max-w-[100px]">
-                      {assignee?.user?.name ||
-                        task.assigneeName ||
-                        (task.pendingAssigneeName
-                          ? t("tasks:popover.assignee.awaiting", {
-                              name: task.pendingAssigneeName,
-                            })
-                          : t("tasks:popover.assignee.unassigned"))}
+                      {assigneeSummary(people, t)}
                     </span>
                   </Button>
                 </TaskAssigneePopover>
@@ -428,19 +411,12 @@ export default function TaskPropertiesSidebar({
                       size="sm"
                       className="justify-start h-7 px-1.5 gap-1.5"
                     >
-                      {task.userId ? (
-                        <ColoredAvatar
-                          name={assignee?.user?.name}
-                          image={assignee?.user?.image}
-                          seed={task.userId}
-                          className="h-[16px] w-[16px] shrink-0 border border-border/30"
-                          fallbackClassName="text-[9px]"
-                        />
-                      ) : task.pendingAssigneeName ? (
-                        <PendingAssigneeBadge
-                          name={task.pendingAssigneeName}
-                          className="w-[16px] h-[16px] shrink-0"
-                          iconClassName="h-[9px] w-[9px]"
+                      {people.assignees.length + people.pending.length > 0 ? (
+                        <AvatarStack
+                          assignees={people.assignees}
+                          pending={people.pending}
+                          size="2xs"
+                          className="shrink-0"
                         />
                       ) : (
                         <div
@@ -451,13 +427,7 @@ export default function TaskPropertiesSidebar({
                         </div>
                       )}
                       <span className="text-xs font-semibold truncate max-w-[100px]">
-                        {assignee?.user?.name ||
-                          task.assigneeName ||
-                          (task.pendingAssigneeName
-                            ? t("tasks:popover.assignee.awaiting", {
-                                name: task.pendingAssigneeName,
-                              })
-                            : t("tasks:popover.assignee.unassigned"))}
+                        {assigneeSummary(people, t)}
                       </span>
                     </Button>
                   </TaskAssigneePopover>
@@ -627,19 +597,12 @@ export default function TaskPropertiesSidebar({
                       size="sm"
                       className="justify-start h-7 px-1.5 gap-1.5 w-full"
                     >
-                      {task.userId ? (
-                        <ColoredAvatar
-                          name={assignee?.user?.name}
-                          image={assignee?.user?.image}
-                          seed={task.userId}
-                          className="h-[16px] w-[16px] shrink-0 border border-border/30"
-                          fallbackClassName="text-[9px]"
-                        />
-                      ) : task.pendingAssigneeName ? (
-                        <PendingAssigneeBadge
-                          name={task.pendingAssigneeName}
-                          className="w-[16px] h-[16px] shrink-0"
-                          iconClassName="h-[9px] w-[9px]"
+                      {people.assignees.length + people.pending.length > 0 ? (
+                        <AvatarStack
+                          assignees={people.assignees}
+                          pending={people.pending}
+                          size="2xs"
+                          className="shrink-0"
                         />
                       ) : (
                         <div
@@ -650,13 +613,7 @@ export default function TaskPropertiesSidebar({
                         </div>
                       )}
                       <span className="text-xs font-semibold truncate max-w-[100px]">
-                        {assignee?.user?.name ||
-                          task.assigneeName ||
-                          (task.pendingAssigneeName
-                            ? t("tasks:popover.assignee.awaiting", {
-                                name: task.pendingAssigneeName,
-                              })
-                            : t("tasks:popover.assignee.unassigned"))}
+                        {assigneeSummary(people, t)}
                       </span>
                     </Button>
                   </TaskAssigneePopover>

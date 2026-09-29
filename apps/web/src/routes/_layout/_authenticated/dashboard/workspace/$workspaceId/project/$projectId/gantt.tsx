@@ -18,14 +18,14 @@ import ProjectLayout from "@/components/common/project-layout";
 import { GanttTaskBar } from "@/components/gantt/gantt-task-bar";
 import PageTitle from "@/components/page-title";
 import TaskDetailsSheet from "@/components/task/task-details-sheet";
+import { AvatarStack } from "@/components/ui/avatar-stack";
 import { Button } from "@/components/ui/button";
-import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { Input } from "@/components/ui/input";
-import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import { useGetTasks } from "@/hooks/queries/task/use-get-tasks";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/cn";
 import { getStatusLabel } from "@/lib/i18n/domain";
+import { assigneeSummary, taskPeople } from "@/lib/task-assignees";
 import { useUserPreferencesStore } from "@/store/user-preferences";
 
 type GanttSearchParams = {
@@ -361,37 +361,29 @@ function RouteComponent() {
                                   {format(task.scheduleStart, "MMM d")} -{" "}
                                   {format(task.scheduleEnd, "MMM d")}
                                 </span>
-                                {task.assigneeName && (
-                                  <span className="flex min-w-0 items-center gap-1">
-                                    <span aria-hidden>•</span>
-                                    <ColoredAvatar
-                                      name={task.assigneeName}
-                                      image={task.assigneeImage}
-                                      seed={task.userId}
-                                      className="h-3.5 w-3.5 shrink-0"
-                                      fallbackClassName="text-[7px]"
-                                    />
-                                    <span className="truncate">
-                                      {task.assigneeName}
-                                    </span>
-                                  </span>
-                                )}
-                                {!task.assigneeName &&
-                                  task.pendingAssigneeName && (
+                                {(() => {
+                                  const people = taskPeople(task);
+                                  if (
+                                    people.assignees.length +
+                                      people.pending.length ===
+                                    0
+                                  )
+                                    return null;
+                                  return (
                                     <span className="flex min-w-0 items-center gap-1">
                                       <span aria-hidden>•</span>
-                                      <PendingAssigneeBadge
-                                        name={task.pendingAssigneeName}
-                                        className="h-3.5 w-3.5 shrink-0"
-                                        iconClassName="h-2 w-2"
+                                      <AvatarStack
+                                        assignees={people.assignees}
+                                        pending={people.pending}
+                                        size="2xs"
+                                        className="shrink-0"
                                       />
                                       <span className="truncate">
-                                        {t("tasks:assignee.awaiting", {
-                                          name: task.pendingAssigneeName,
-                                        })}
+                                        {assigneeSummary(people, t)}
                                       </span>
                                     </span>
-                                  )}
+                                  );
+                                })()}
                               </span>
                             </button>
                           </div>

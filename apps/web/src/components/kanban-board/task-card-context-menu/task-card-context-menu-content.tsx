@@ -13,6 +13,10 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
+import {
+  useAddTaskAssignee,
+  useRemoveTaskAssignee,
+} from "@/hooks/mutations/task/use-task-assignees";
 import { useUpdateTask } from "@/hooks/mutations/task/use-update-task";
 import { useUpdateTaskAssignee } from "@/hooks/mutations/task/use-update-task-assignee";
 import { useUpdateTaskDescription } from "@/hooks/mutations/task/use-update-task-description";
@@ -28,6 +32,7 @@ import { getColumnIcon } from "@/lib/column";
 import { generateLink } from "@/lib/generate-link";
 import { getPriorityLabel } from "@/lib/i18n/domain";
 import { getPriorityIcon } from "@/lib/priority";
+import { taskPeople } from "@/lib/task-assignees";
 import { toast } from "@/lib/toast";
 import useProjectStore from "@/store/project";
 import type Task from "@/types/task";
@@ -75,6 +80,8 @@ export default function TaskCardContextMenuContent({
   const { mutateAsync: updateTaskPriority } = useUpdateTaskPriority();
   const { mutateAsync: updateTaskStatus } = useUpdateTaskStatus();
   const { mutateAsync: updateTaskAssignee } = useUpdateTaskAssignee();
+  const { mutateAsync: addTaskAssignee } = useAddTaskAssignee();
+  const { mutateAsync: removeTaskAssignee } = useRemoveTaskAssignee();
   const { mutateAsync: updateTaskTitle } = useUpdateTaskTitle();
   const { mutateAsync: updateTaskDescription } = useUpdateTaskDescription();
   const { mutateAsync: updateTaskDueDate } = useUpdateTaskDueDate();
@@ -105,6 +112,26 @@ export default function TaskCardContextMenuContent({
 
     navigator.clipboard.writeText(taskLink);
     toast.success(t("tasks:contextMenu.copyLinkSuccess"));
+  };
+
+  const people = taskPeople(task);
+
+  const handleToggleAssignee = async (userId: string, takeOff: boolean) => {
+    const vars = { taskId: task.id, projectId: task.projectId, userId };
+    try {
+      if (takeOff) await removeTaskAssignee(vars);
+      else await addTaskAssignee(vars);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t(
+              takeOff
+                ? "tasks:assignee.removeError"
+                : "tasks:assignee.addError",
+            ),
+      );
+    }
   };
 
   const handleChange = async (field: keyof Task, value: string | Date) => {
@@ -179,6 +206,153 @@ export default function TaskCardContextMenuContent({
                 <span className="capitalize">{getPriorityLabel(priority)}</span>
               </ContextMenuCheckboxItem>
             ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )}
+
+      {canEdit && (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <span>{t("tasks:status.label")}</span>
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            {columns.map((col) => (
+              <ContextMenuCheckboxItem
+                key={col.slug}
+                checked={task.status === col.slug}
+                onCheckedChange={() => handleChange("status", col.slug)}
+                closeOnClick
+                className="[&_svg]:text-muted-foreground"
+              >
+                {getColumnIcon(col.slug, col.isFinal, col.icon)}
+                <span>{col.name}</span>
+              </ContextMenuCheckboxItem>
+            ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )}
+
+      {canEdit && (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <span>{t("tasks:dueDate.label")}</span>
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-fit min-w-0 p-0">
+            <div className="p-2">
+              <Calendar
+                mode="single"
+                selected={task.dueDate ? new Date(task.dueDate) : undefined}
+                onSelect={async (date) => {
+                  try {
+                    await updateTaskDueDate({
+                      ...task,
+                      dueDate: date?.toISOString() || null,
+                    });
+                    toast.success(t("tasks:dueDate.updateSuccess"));
+                  } catch (error) {
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : t("tasks:dueDate.updateError"),
+                    );
+                  }
+                }}
+                className="w-full bg-popover!"
+              />
+            </div>
+            {task.dueDate && (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  className="gap-2 text-muted-foreground"
+                  onClick={async () => {
+                    try {
+                      await updateTaskDueDate({
+                        ...task,
+                        dueDate: null,
+                      });
+                      toast.success(t("tasks:dueDate.clearSuccess"));
+                    } catch (error) {
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : t("tasks:dueDate.clearError"),
+                      );
+                    }
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                  <span>{t("tasks:dueDate.clear")}</span>
+                </ContextMenuItem>
+              </>
+            )}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )}
+
+      {canAssign && usersOptions && (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <span>{t("tasks:assignee.label")}</span>
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            <ContextMenuCheckboxItem
+              checked={
+                people.assignees.length === 0 && people.pending.length === 0
+              }
+              onCheckedChange={() => handleChange("userId", "")}
+              closeOnClick
+            >
+              <div
+                className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"
+                title={t("tasks:assignee.unassigned")}
+              >
+                <span className="text-[10px] font-medium text-muted-foreground">
+                  ?
+                </span>{" "}
+              </div>
+              {t("tasks:assignee.unassigned")}
+            </ContextMenuCheckboxItem>
+            {usersOptions.map((user) => {
+              const isOn = people.assignees.some(
+                (a) => a.userId === user.value,
+              );
+              const isPending = people.pending.some(
+                (p) => p.userId === user.value,
+              );
+              // Toggles, like the assignee popover: picking someone on the
+              // task (or offered it) takes them off; anyone else is added.
+              return (
+                <ContextMenuCheckboxItem
+                  key={user.value}
+                  checked={isOn}
+                  onCheckedChange={() =>
+                    handleToggleAssignee(user.value, isOn || isPending)
+                  }
+                  closeOnClick
+                >
+                  {isPending ? (
+                    <PendingAssigneeBadge
+                      name={user.name}
+                      className="h-6 w-6"
+                      iconClassName="h-3 w-3"
+                    />
+                  ) : (
+                    <ColoredAvatar
+                      name={user.name}
+                      image={user.image}
+                      seed={user.value}
+                      className="h-6 w-6 border border-border/30"
+                      fallbackClassName="text-xs"
+                    />
+                  )}
+
+                  {isPending
+                    ? t("tasks:assignee.awaiting", { name: user.label })
+                    : user.label}
+                </ContextMenuCheckboxItem>
+              );
+            })}
           </ContextMenuSubContent>
         </ContextMenuSub>
       )}

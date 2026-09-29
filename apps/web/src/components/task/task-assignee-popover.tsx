@@ -1,25 +1,12 @@
-import { Check } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Button } from "@/components/ui/button";
-import { ColoredAvatar } from "@/components/ui/colored-avatar";
-import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
+import { useState } from "react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ShortcutNumber } from "@/components/ui/shortcut-number";
-import { useUpdateTaskAssignee } from "@/hooks/mutations/task/use-update-task-assignee";
-import { useProjectMembers } from "@/hooks/queries/project-member/use-project-members";
-import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
-import { useNumberedShortcuts } from "@/hooks/use-numbered-shortcuts";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
-import { toast } from "@/lib/toast";
 import type Task from "@/types/task";
-
-const INITIAL_VISIBLE_USERS = 40;
-const VISIBLE_USERS_STEP = 40;
+import { AssigneeMultiSelect } from "./assignee-multi-select";
 
 type TaskAssigneePopoverProps = {
   task: Task;
@@ -32,159 +19,20 @@ export default function TaskAssigneePopover({
   workspaceId,
   children,
 }: TaskAssigneePopoverProps) {
-  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [visibleUsersCount, setVisibleUsersCount] = useState(
-    INITIAL_VISIBLE_USERS,
-  );
-  const { mutateAsync: updateTaskAssignee } = useUpdateTaskAssignee();
-  const { data: workspaceUsers } = useGetActiveWorkspaceUsers(workspaceId);
-  const { data: projectMembers = [] } = useProjectMembers(task.projectId);
   const { canAssignTasks } = useWorkspacePermission();
-  const canAssign = canAssignTasks();
 
-  // Only project members can be assigned (the API enforces this too).
-  const projectMemberIds = useMemo(
-    () => new Set(projectMembers.map((member) => member.userId)),
-    [projectMembers],
-  );
-
-  const usersOptions = useMemo(() => {
-    return workspaceUsers?.members
-      ?.filter((member) => projectMemberIds.has(member.userId))
-      .map((member) => ({
-        label: member?.user?.name ?? member.userId,
-        value: member.userId,
-        image: member?.user?.image ?? "",
-        name: member?.user?.name ?? "",
-      }));
-  }, [workspaceUsers, projectMemberIds]);
-
-  const handleAssigneeChange = useCallback(
-    async (newUserId: string) => {
-      try {
-        await updateTaskAssignee({
-          ...task,
-          userId: newUserId,
-        });
-        setOpen(false);
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : t("tasks:popover.assignee.updateError"),
-        );
-      }
-    },
-    [t, task, updateTaskAssignee],
-  );
-
-  const shortcutOptions = useMemo(() => {
-    const unassignedOption = { onSelect: () => handleAssigneeChange("") };
-    const userOptions = (usersOptions || []).slice(0, 8).map((user) => ({
-      onSelect: () => handleAssigneeChange(user.value),
-    }));
-    return [unassignedOption, ...userOptions];
-  }, [usersOptions, handleAssigneeChange]);
-
-  const visibleUsersOptions = useMemo(() => {
-    return usersOptions?.slice(0, visibleUsersCount) ?? [];
-  }, [usersOptions, visibleUsersCount]);
-
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (nextOpen) {
-      setVisibleUsersCount(INITIAL_VISIBLE_USERS);
-    }
-  }, []);
-
-  const handleListScroll = useCallback(
-    (event: React.UIEvent<HTMLDivElement>) => {
-      const target = event.currentTarget;
-      const nearBottom =
-        target.scrollHeight - target.scrollTop - target.clientHeight < 48;
-
-      if (!nearBottom) return;
-
-      setVisibleUsersCount((current) => {
-        const totalUsers = usersOptions?.length ?? current;
-        return Math.min(current + VISIBLE_USERS_STEP, totalUsers);
-      });
-    },
-    [usersOptions?.length],
-  );
-
-  useNumberedShortcuts(open, shortcutOptions);
-
-  if (!canAssign) return <>{children}</>;
+  if (!canAssignTasks()) return <>{children}</>;
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent className="w-56 p-0" align="start">
-        <div
-          className="max-h-80 space-y-1 overflow-y-auto p-1"
-          onScroll={handleListScroll}
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start gap-2 h-8 px-2"
-            onClick={() => handleAssigneeChange("")}
-          >
-            {task.pendingAssigneeName ? (
-              <PendingAssigneeBadge
-                name={task.pendingAssigneeName}
-                className="w-6 h-6"
-                iconClassName="h-3 w-3"
-              />
-            ) : (
-              <div
-                className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"
-                title={t("tasks:popover.assignee.unassigned")}
-              >
-                <span className="text-[10px] font-medium text-muted-foreground">
-                  ?
-                </span>
-              </div>
-            )}
-            <span className="text-sm">
-              {task.pendingAssigneeName
-                ? t("tasks:assignee.awaiting", {
-                    name: task.pendingAssigneeName,
-                  })
-                : t("tasks:popover.assignee.unassigned")}
-            </span>
-            {!task.userId && !task.pendingAssigneeName ? (
-              <Check className="ml-auto h-4 w-4" />
-            ) : (
-              <ShortcutNumber number={1} />
-            )}
-          </Button>
-          {visibleUsersOptions.map((user, index) => (
-            <Button
-              key={user.value}
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2 h-8 px-2"
-              onClick={() => handleAssigneeChange(user.value)}
-            >
-              <ColoredAvatar
-                name={user.name}
-                image={user.image}
-                seed={user.value}
-                className="h-6 w-6 border border-border/30"
-                fallbackClassName="text-xs"
-              />
-              <span className="text-sm truncate">{user.label}</span>
-              {task.userId === user.value ? (
-                <Check className="ml-auto h-4 w-4 shrink-0" />
-              ) : index < 8 ? (
-                <ShortcutNumber number={index + 2} />
-              ) : null}
-            </Button>
-          ))}
-        </div>
+      <PopoverContent className="w-64 p-0" align="start">
+        <AssigneeMultiSelect
+          tasks={[task]}
+          workspaceId={workspaceId}
+          open={open}
+        />
       </PopoverContent>
     </Popover>
   );

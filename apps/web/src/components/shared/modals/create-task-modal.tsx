@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import TaskDescriptionEditor from "@/components/task/task-description-editor";
+import { AvatarStack } from "@/components/ui/avatar-stack";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -39,6 +40,7 @@ import {
 import useCreateLabel from "@/hooks/mutations/label/use-create-label";
 import useCreateTask from "@/hooks/mutations/task/use-create-task";
 import { useDeleteTask } from "@/hooks/mutations/task/use-delete-task";
+import { useAddTaskAssignee } from "@/hooks/mutations/task/use-task-assignees";
 import { useUpdateTask } from "@/hooks/mutations/task/use-update-task";
 import useGetLabelsByWorkspace from "@/hooks/queries/label/use-get-labels-by-workspace";
 import { useProjectMembers } from "@/hooks/queries/project-member/use-project-members";
@@ -183,7 +185,9 @@ function CreateTaskModal({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<Priority>("no-priority");
-  const [assigneeId, setAssigneeId] = useState("");
+  // Several people can be picked; they are offered the task on save (or
+  // put on it at once, for yourself).
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   const [createMore, setCreateMore] = useState(false);
@@ -215,6 +219,7 @@ function CreateTaskModal({
   const didSubmitRef = useRef(false);
 
   const { mutateAsync: createTask } = useCreateTask();
+  const { mutateAsync: addTaskAssignee } = useAddTaskAssignee();
   const { mutateAsync: updateTask } = useUpdateTask();
   const { mutateAsync: deleteTask } = useDeleteTask();
 
@@ -246,7 +251,7 @@ function CreateTaskModal({
     setTitle("");
     setDescription("");
     setPriority("no-priority");
-    setAssigneeId("");
+    setAssigneeIds([]);
     setStartDate(undefined);
     setDueDate(undefined);
     setCreateMore(false);
@@ -338,10 +343,12 @@ function CreateTaskModal({
     }
 
     const draftStatus = "planned";
+    // The draft exists only to hold images while the dialog is open; nobody
+    // is offered it until the task is actually saved.
     const draftPromise = createTask({
       title: title.trim() || t("common:modals.createTask.untitledTask"),
       description: description.trim() || "",
-      userId: assigneeId,
+      userId: "",
       priority,
       projectId: resolvedProjectId,
       startDate: startDate ? startDate.toISOString() : undefined,
@@ -366,7 +373,6 @@ function CreateTaskModal({
       draftCreationPromiseRef.current = null;
     }
   }, [
-    assigneeId,
     createTask,
     description,
     draftTask,
@@ -392,7 +398,7 @@ function CreateTaskModal({
               ...draftTask,
               title: title.trim(),
               description: description.trim() || "",
-              userId: assigneeId || null,
+              userId: draftTask.userId ?? null,
               status: taskStatus,
               priority,
               startDate: startDate ? startDate.toISOString() : null,
@@ -404,7 +410,7 @@ function CreateTaskModal({
             await createTask({
               title: title.trim(),
               description: description.trim() || "",
-              userId: assigneeId,
+              userIds: assigneeIds,
               priority,
               projectId: resolvedProjectId,
               startDate: startDate ? startDate.toISOString() : undefined,
@@ -412,6 +418,16 @@ function CreateTaskModal({
               status: taskStatus,
             }),
           );
+
+      if (draftTask) {
+        for (const userId of assigneeIds) {
+          await addTaskAssignee({
+            taskId: savedTask.id,
+            projectId: resolvedProjectId,
+            userId,
+          });
+        }
+      }
 
       for (const label of labels) {
         try {
@@ -438,7 +454,7 @@ function CreateTaskModal({
         setTitle("");
         setDescription("");
         setPriority("no-priority");
-        setAssigneeId("");
+        setAssigneeIds([]);
         setStartDate(undefined);
         setDueDate(undefined);
         setLabels([]);
@@ -481,9 +497,15 @@ function CreateTaskModal({
     }
     return t("tasks:status.in-progress");
   }, [status, t]);
-  const selectedUser = workspaceUsers?.members?.find(
-    (u) => u.userId === assigneeId,
-  );
+  const selectedUsers = assigneeIds
+    .map((id) => workspaceUsers?.members?.find((u) => u.userId === id))
+    .filter((u) => u !== undefined);
+  const toggleAssignee = (userId: string) =>
+    setAssigneeIds((current) =>
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : [...current, userId],
+    );
 
   useEffect(() => {
     if (labelsOpen && labelsStep === "select" && searchInputRef.current) {
@@ -766,21 +788,28 @@ function CreateTaskModal({
                     type="button"
                     className={cn(
                       "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
-                      selectedUser
+                      selectedUsers.length > 0
                         ? "bg-accent/30 text-foreground"
                         : "text-muted-foreground",
                     )}
                   >
-                    {selectedUser ? (
+                    {selectedUsers.length > 0 ? (
                       <>
-                        <ColoredAvatar
-                          name={selectedUser?.user?.name}
-                          image={selectedUser?.user?.image}
-                          seed={selectedUser?.userId}
-                          className="h-4 w-4 border border-border/30"
-                          fallbackClassName="text-[10px]"
+                        <AvatarStack
+                          size="2xs"
+                          assignees={selectedUsers.map((u, index) => ({
+                            userId: u.userId,
+                            name: u.user?.name ?? null,
+                            image: u.user?.image ?? null,
+                            isLead: index === 0,
+                          }))}
                         />
-                        <span>{selectedUser.user?.name}</span>
+                        <span>
+                          {selectedUsers[0]?.user?.name}
+                          {selectedUsers.length > 1
+                            ? ` +${selectedUsers.length - 1}`
+                            : ""}
+                        </span>
                       </>
                     ) : (
                       <>
@@ -795,7 +824,7 @@ function CreateTaskModal({
                     <button
                       type="button"
                       className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent/50 text-left transition-colors h-8"
-                      onClick={() => setAssigneeId("")}
+                      onClick={() => setAssigneeIds([])}
                     >
                       <div
                         className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"
@@ -810,14 +839,17 @@ function CreateTaskModal({
                       <span className="text-sm">
                         {t("common:modals.createTask.assignUnassigned")}
                       </span>
-                      {!assigneeId && <Check className="ml-auto h-4 w-4" />}
+                      {assigneeIds.length === 0 && (
+                        <Check className="ml-auto h-4 w-4" />
+                      )}
                     </button>
                     {assignableMembers.map((member) => (
                       <button
                         key={member.userId}
                         type="button"
                         className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent/50 text-left transition-colors h-8"
-                        onClick={() => setAssigneeId(member.userId || "")}
+                        onClick={() => toggleAssignee(member.userId)}
+                        aria-pressed={assigneeIds.includes(member.userId)}
                       >
                         <ColoredAvatar
                           name={member?.user?.name}
@@ -827,7 +859,7 @@ function CreateTaskModal({
                           fallbackClassName="text-xs"
                         />
                         <span className="text-sm">{member?.user?.name}</span>
-                        {assigneeId === member.userId && (
+                        {assigneeIds.includes(member.userId) && (
                           <Check className="ml-auto h-4 w-4" />
                         )}
                       </button>

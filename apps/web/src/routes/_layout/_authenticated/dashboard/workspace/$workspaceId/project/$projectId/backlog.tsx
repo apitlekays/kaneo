@@ -34,6 +34,7 @@ import { getPriorityLabel } from "@/lib/i18n/domain";
 import { getPriorityIcon } from "@/lib/priority";
 import type { SortConfig } from "@/lib/sort-tasks";
 import { sortTasks } from "@/lib/sort-tasks";
+import { matchesAssigneeFilter } from "@/lib/task-assignees";
 import { toast } from "@/lib/toast";
 import useProjectStore from "@/store/project";
 import { useUserPreferencesStore } from "@/store/user-preferences";
@@ -172,7 +173,10 @@ function RouteComponent() {
           return false;
         }
 
-        if (filters.assignee && task.userId !== filters.assignee) {
+        if (
+          filters.assignee &&
+          !matchesAssigneeFilter(task, [filters.assignee])
+        ) {
           return false;
         }
 

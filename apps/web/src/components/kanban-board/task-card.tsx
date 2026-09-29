@@ -20,8 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ColoredAvatar } from "@/components/ui/colored-avatar";
-import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
+import { AvatarStack } from "@/components/ui/avatar-stack";
 import {
   HoverCard,
   HoverCardContent,
@@ -30,9 +29,10 @@ import {
 import { useDeleteTask } from "@/hooks/mutations/task/use-delete-task";
 import useExternalLinks from "@/hooks/queries/external-link/use-external-links";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
-import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
+import { cn } from "@/lib/cn";
 import { dueDateStatusColors, getDueDateStatus } from "@/lib/due-date-status";
 import { getPriorityIcon } from "@/lib/priority";
+import { taskPeople } from "@/lib/task-assignees";
 import { toast } from "@/lib/toast";
 import queryClient from "@/query-client";
 import useBulkSelectionStore from "@/store/bulk-selection";
@@ -116,15 +116,8 @@ function TaskCard({ task }: TaskCardProps) {
     zIndex: isDragging ? 999 : "auto",
   };
 
-  const { data: workspaceUsers } = useGetActiveWorkspaceUsers(
-    workspace?.id ?? "",
-  );
-
-  const assignee = useMemo(() => {
-    return workspaceUsers?.members?.find(
-      (member) => member.userId === task.userId,
-    );
-  }, [workspaceUsers, task.userId]);
+  const people = useMemo(() => taskPeople(task), [task]);
+  const peopleCount = people.assignees.length + people.pending.length;
 
   function handleTaskCardClick(
     e: React.MouseEvent<HTMLDivElement> | React.KeyboardEvent<HTMLDivElement>,
@@ -205,19 +198,11 @@ function TaskCard({ task }: TaskCardProps) {
 
             {showAssignees && (
               <div className="absolute top-3 right-3">
-                {task.userId ? (
-                  <ColoredAvatar
-                    name={assignee?.user?.name}
-                    image={assignee?.user?.image}
-                    seed={task.userId}
-                    className="h-5 w-5 border border-border/30"
-                    fallbackClassName="text-xs"
-                  />
-                ) : task.pendingAssigneeName ? (
-                  <PendingAssigneeBadge
-                    name={task.pendingAssigneeName}
-                    className="h-5 w-5"
-                    iconClassName="h-2.5 w-2.5"
+                {peopleCount > 0 ? (
+                  <AvatarStack
+                    assignees={people.assignees}
+                    pending={people.pending}
+                    size="xs"
                   />
                 ) : (
                   <div
@@ -232,7 +217,17 @@ function TaskCard({ task }: TaskCardProps) {
               </div>
             )}
 
-            <div className="mb-2.5 pr-6">
+            <div
+              className={cn(
+                "mb-2.5",
+                // Room for the avatar stack in the top-right corner.
+                !showAssignees || peopleCount <= 1
+                  ? "pr-6"
+                  : peopleCount === 2
+                    ? "pr-10"
+                    : "pr-14",
+              )}
+            >
               <div
                 className="overflow-hidden break-words text-sm leading-5 font-medium text-foreground/95"
                 style={{

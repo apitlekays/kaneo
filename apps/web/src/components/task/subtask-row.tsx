@@ -1,11 +1,11 @@
 import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import TaskCardContextMenuContent from "@/components/kanban-board/task-card-context-menu/task-card-context-menu-content";
+import { AvatarStack } from "@/components/ui/avatar-stack";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import { getColumnIcon } from "@/lib/column";
+import { taskPeople } from "@/lib/task-assignees";
 import type Task from "@/types/task";
 import SubtaskAssigneePopover from "./subtask-assignee-popover";
 import SubtaskStatusPopover from "./subtask-status-popover";
@@ -18,9 +18,6 @@ type SubtaskRowProps = {
   isSelected: boolean;
   isFocused: boolean;
   selectionRadius: string;
-  assignee: {
-    user?: { image?: string | null; name?: string | null } | null;
-  } | null;
   onToggleSelection: () => void;
   onNavigate: () => void;
   onDeleteClick: () => void;
@@ -34,12 +31,12 @@ export default function SubtaskRow({
   isSelected,
   isFocused,
   selectionRadius,
-  assignee,
   onToggleSelection,
   onNavigate,
   onDeleteClick,
 }: SubtaskRowProps) {
   const { t } = useTranslation();
+  const people = taskPeople(task);
 
   return (
     <motion.div
@@ -85,19 +82,11 @@ export default function SubtaskRow({
                 type="button"
                 className="shrink-0 flex items-center justify-center rounded p-0.5 transition-colors outline-none"
               >
-                {task.userId && assignee ? (
-                  <ColoredAvatar
-                    name={assignee?.user?.name}
-                    image={assignee?.user?.image}
-                    seed={task.userId}
-                    className="h-5 w-5 border border-border/30"
-                    fallbackClassName="text-[9px]"
-                  />
-                ) : task.pendingAssigneeName ? (
-                  <PendingAssigneeBadge
-                    name={task.pendingAssigneeName}
-                    className="h-5 w-5"
-                    iconClassName="h-2.5 w-2.5"
+                {people.assignees.length + people.pending.length > 0 ? (
+                  <AvatarStack
+                    assignees={people.assignees}
+                    pending={people.pending}
+                    size="xs"
                   />
                 ) : (
                   <div

@@ -1,5 +1,6 @@
 import { addWeeks, endOfWeek, isWithinInterval, startOfWeek } from "date-fns";
 import { useEffect, useState } from "react";
+import { matchesAssigneeFilter } from "@/lib/task-assignees";
 import { useUserPreferencesStore } from "@/store/user-preferences";
 import type { ProjectWithTasks } from "@/types/project";
 import type Task from "@/types/task";
@@ -104,7 +105,7 @@ export function useTaskFilters(
       if (
         filters.assignee &&
         filters.assignee.length > 0 &&
-        !filters.assignee.includes(task.userId ?? "")
+        !matchesAssigneeFilter(task, filters.assignee)
       ) {
         return false;
       }

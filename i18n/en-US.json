@@ -1684,8 +1684,18 @@
 		},
 		"assignee": {
 			"label": "Assignee",
+			"labelPlural": "Assignees",
 			"unassigned": "Unassigned",
-			"awaiting": "Awaiting {{name}}"
+			"awaiting": "Awaiting {{name}}",
+			"lead": "{{name}} (lead)",
+			"leadBadge": "Lead",
+			"makeLead": "Make lead",
+			"remove": "Remove from task",
+			"withdraw": "Withdraw offer",
+			"more": "{{count}} more",
+			"addError": "Failed to add assignee",
+			"removeError": "Failed to remove assignee",
+			"leadError": "Failed to change the lead"
 		},
 		"dueDate": {
 			"label": "Due date",

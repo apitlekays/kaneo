@@ -9,13 +9,13 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AvatarStack } from "@/components/ui/avatar-stack";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import {
   Command,
   CommandCollection,
@@ -39,16 +39,14 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import useCreateTaskRelation from "@/hooks/mutations/task-relation/use-create-task-relation";
 import useDeleteTaskRelation from "@/hooks/mutations/task-relation/use-delete-task-relation";
 import useGetProject from "@/hooks/queries/project/use-get-project";
 import { useGetTasks } from "@/hooks/queries/task/use-get-tasks";
 import useGetTaskRelations from "@/hooks/queries/task-relation/use-get-task-relations";
-import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
-import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { getColumnIcon } from "@/lib/column";
+import { taskPeople } from "@/lib/task-assignees";
 import { toast } from "@/lib/toast";
 import type Task from "@/types/task";
 import SubtaskAssigneePopover from "./subtask-assignee-popover";
@@ -91,10 +89,6 @@ export default function TaskRelations({
   const { data: relations = [] } = useGetTaskRelations(taskId);
   const { data: projectData } = useGetTasks(projectId);
   const { data: project } = useGetProject({ id: projectId, workspaceId });
-  const { data: workspace } = useActiveWorkspace();
-  const { data: workspaceUsers } = useGetActiveWorkspaceUsers(
-    workspace?.id ?? "",
-  );
   const createRelation = useCreateTaskRelation();
   const deleteRelation = useDeleteTaskRelation(taskId);
   const { canEditTasks } = useWorkspacePermission();
@@ -236,11 +230,6 @@ export default function TaskRelations({
     });
   };
 
-  const getAssignee = (userId: string | null) => {
-    if (!userId || !workspaceUsers?.members) return null;
-    return workspaceUsers.members.find((member) => member.userId === userId);
-  };
-
   const buildTaskObject = (item: {
     task: NonNullable<(typeof nonSubtaskRelations)[number]["sourceTask"]>;
   }): Task => ({
@@ -260,6 +249,8 @@ export default function TaskRelations({
     assigneeName: item.task.assigneeName,
     assigneeImage: "",
     pendingAssigneeName: item.task.pendingAssigneeName ?? null,
+    assignees: item.task.assignees,
+    pendingAssignees: item.task.pendingAssignees,
     projectId: item.task.projectId,
   });
 
@@ -309,7 +300,7 @@ export default function TaskRelations({
               </span>
               <div className="flex flex-col mt-0.5">
                 {items.map((item) => {
-                  const assignee = getAssignee(item.task.userId);
+                  const people = taskPeople(item.task);
                   const taskObj = buildTaskObject(item);
 
                   return (
@@ -352,19 +343,12 @@ export default function TaskRelations({
                               type="button"
                               className="shrink-0 flex items-center justify-center rounded p-0.5 transition-colors outline-none"
                             >
-                              {item.task.userId && assignee ? (
-                                <ColoredAvatar
-                                  name={assignee?.user?.name}
-                                  image={assignee?.user?.image}
-                                  seed={item.task.userId}
-                                  className="h-5 w-5 border border-border/30"
-                                  fallbackClassName="text-[9px]"
-                                />
-                              ) : taskObj.pendingAssigneeName ? (
-                                <PendingAssigneeBadge
-                                  name={taskObj.pendingAssigneeName}
-                                  className="h-5 w-5"
-                                  iconClassName="h-2.5 w-2.5"
+                              {people.assignees.length + people.pending.length >
+                              0 ? (
+                                <AvatarStack
+                                  assignees={people.assignees}
+                                  pending={people.pending}
+                                  size="xs"
                                 />
                               ) : (
                                 <div

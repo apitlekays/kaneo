@@ -20,9 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { AvatarStack } from "@/components/ui/avatar-stack";
 import { Button } from "@/components/ui/button";
-import { ColoredAvatar } from "@/components/ui/colored-avatar";
-import { PendingAssigneeBadge } from "@/components/ui/pending-assignee-badge";
 import {
   HoverCard,
   HoverCardContent,
@@ -31,10 +30,10 @@ import {
 import { useDeleteTask } from "@/hooks/mutations/task/use-delete-task";
 import useExternalLinks from "@/hooks/queries/external-link/use-external-links";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
-import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { cn } from "@/lib/cn";
 import { dueDateStatusColors, getDueDateStatus } from "@/lib/due-date-status";
 import { getPriorityIcon } from "@/lib/priority";
+import { taskPeople } from "@/lib/task-assignees";
 import { toast } from "@/lib/toast";
 import queryClient from "@/query-client";
 import useBulkSelectionStore from "@/store/bulk-selection";
@@ -78,15 +77,7 @@ function TaskRow({ task, projectSlug }: TaskRowProps) {
   const isTaskSelected = isSelected(task.id);
   const isTaskFocused = isFocused(task.id);
 
-  const { data: workspaceUsers } = useGetActiveWorkspaceUsers(
-    workspace?.id ?? "",
-  );
-
-  const assignee = useMemo(() => {
-    return workspaceUsers?.members?.find(
-      (member) => member.userId === task.userId,
-    );
-  }, [workspaceUsers, task.userId]);
+  const people = useMemo(() => taskPeople(task), [task]);
 
   const pullRequests = useMemo(() => {
     if (!externalLinks) return [];
@@ -352,19 +343,11 @@ function TaskRow({ task, projectSlug }: TaskRowProps) {
 
             {showAssignees && (
               <div className="flex-shrink-0">
-                {task.userId ? (
-                  <ColoredAvatar
-                    name={assignee?.user?.name}
-                    image={assignee?.user?.image}
-                    seed={task.userId}
-                    className="h-6 w-6 border border-border/30"
-                    fallbackClassName="text-xs"
-                  />
-                ) : task.pendingAssigneeName ? (
-                  <PendingAssigneeBadge
-                    name={task.pendingAssigneeName}
-                    className="h-6 w-6"
-                    iconClassName="h-3 w-3"
+                {people.assignees.length + people.pending.length > 0 ? (
+                  <AvatarStack
+                    assignees={people.assignees}
+                    pending={people.pending}
+                    size="sm"
                   />
                 ) : (
                   <div
