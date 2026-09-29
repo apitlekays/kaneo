@@ -376,8 +376,11 @@ instance of this fork is <https://core.mapim.dev>, branded **MAPIMCore**.
 | Spec | KVM 2 — 2 vCPU, 7.8 GB RAM, 96 GB disk (~9% used), Ubuntu 24.04 LTS |
 | Created | 2025-11-18, datacenter 21 |
 
-The other two VPSs on the account are unrelated: `srv1651323` runs
-openclaw + traefik, and `hackedu.tech` runs the hackedu Astro app.
+The other VPSs on the account are unrelated to this repo. As of 2026-09-29:
+`worker.curtask.com` (1651323, formerly `srv1651323`), `hackedu.tech`
+(1651924, the hackedu Astro app), `main.curtask.com` (2009208, KVM 4) and
+`kelasruum.com` (2015731). The list grows — check `vps_virtual-machines_list`
+rather than trusting this sentence.
 
 **Hostinger's Docker Manager API cannot introspect this VPS** — its OS
 template is plain Ubuntu 24.04 rather than the Docker+Traefik template, so
@@ -394,12 +397,16 @@ with `[VPS:2004] The hostname format is invalid`.
 ### Access
 
 ```bash
-ssh -i ~/.ssh/hostinger_vps1_ed25519 root@72.61.120.91
+ssh root@72.61.120.91
 ```
 
-`hostinger_vps1_ed25519.pub` carries the comment `claude-vps1-20260624`. The
-other keys in `~/.ssh` are for unrelated hosts — `hackedu_deploy_*` belongs
-to `hackedu.tech`.
+**The key differs per machine, so no `-i` is hard-coded here.** On the office
+Mac mini the box accepts the default `~/.ssh/id_ed25519` (loaded in the
+agent; verified 2026-09-29) and `hostinger_vps1_ed25519` does not exist. The
+machine this section was first written on used
+`~/.ssh/hostinger_vps1_ed25519` (comment `claude-vps1-20260624`) — if plain
+`ssh` is refused, add `-i` with that key. Other keys in `~/.ssh` belong to
+unrelated hosts (`curtask_deploy`, `hackedu_deploy_*`).
 
 ### Versioning — bump on every deploy
 
@@ -440,7 +447,7 @@ release notes anywhere. Worth fixing if release notes ever matter.
 ### How to deploy — one command
 
 ```bash
-ssh -i ~/.ssh/hostinger_vps1_ed25519 root@72.61.120.91 'kaneo-deploy <tag>'
+ssh root@72.61.120.91 'kaneo-deploy <tag>'
 ```
 
 `/usr/local/bin/kaneo-deploy` does everything, so never hand-roll the steps:
