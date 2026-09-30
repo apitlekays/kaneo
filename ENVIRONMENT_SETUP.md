@@ -73,7 +73,14 @@ Kaneo supports three Redis deployment modes for WebSocket Pub/Sub. When any Redi
 
 #### SMTP Configuration
 
-For sending emails (workspace invitations, magic links, etc.), configure these variables:
+For sending emails (workspace invitations, magic links, notifications,
+memoranda, outgoing letters), use **Resend** or SMTP.
+
+**Resend** (preferred) — set both, and SMTP is ignored:
+- `RESEND_API_KEY` - API key from the Resend dashboard
+- `EMAIL_FROM` - sender, e.g. `MAPIMCore <core@mapim.org>`; its domain must be verified in Resend
+
+**SMTP** (used when `RESEND_API_KEY` is empty) — configure these variables:
 - `SMTP_HOST` - SMTP server hostname
 - `SMTP_PORT` - SMTP server port
 - `SMTP_USER` - SMTP username

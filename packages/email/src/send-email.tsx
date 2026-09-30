@@ -1,6 +1,5 @@
 import { render } from "@react-email/components";
 import { config } from "dotenv-mono";
-import * as nodemailer from "nodemailer";
 import type { MagicLinkEmailProps } from "./templates/magic-link";
 import MagicLinkEmail from "./templates/magic-link";
 import NotificationEmail, {
@@ -14,34 +13,17 @@ import PasswordResetEmail, {
 import WorkspaceInvitationEmail, {
   type WorkspaceInvitationEmailProps,
 } from "./templates/workspace-invitation";
+import { isEmailConfigured, type MailAttachment, sendMail } from "./transport";
 
 config();
-
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  secure: process.env.SMTP_SECURE !== "false",
-  port: Number(process.env.SMTP_PORT),
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASSWORD,
-  },
-  requireTLS: process.env.SMTP_REQUIRE_TLS === "true",
-  ignoreTLS: process.env.SMTP_IGNORE_TLS === "true",
-});
 
 export const sendMagicLinkEmail = async (
   to: string,
   subject: string,
   data: MagicLinkEmailProps,
 ) => {
-  const emailTemplate = await render(MagicLinkEmail(data));
   try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to,
-      subject,
-      html: emailTemplate,
-    });
+    await sendMail({ to, subject, html: await render(MagicLinkEmail(data)) });
   } catch (error) {
     console.error("Error sending magic link email", error);
   }
@@ -52,14 +34,8 @@ export const sendOtpEmail = async (
   subject: string,
   data: OtpEmailProps,
 ) => {
-  const emailTemplate = await render(OtpEmail(data));
   try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to,
-      subject,
-      html: emailTemplate,
-    });
+    await sendMail({ to, subject, html: await render(OtpEmail(data)) });
   } catch (error) {
     console.error("Error sending OTP email", error);
   }
@@ -70,13 +46,11 @@ export const sendPasswordResetEmail = async (
   subject: string,
   data: PasswordResetEmailProps,
 ) => {
-  const emailTemplate = await render(PasswordResetEmail(data));
   try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM,
+    await sendMail({
       to,
       subject,
-      html: emailTemplate,
+      html: await render(PasswordResetEmail(data)),
     });
   } catch (error) {
     console.error("Error sending password reset email", error);
@@ -93,20 +67,13 @@ export const sendWorkspaceInvitationEmail = async (
   subject: string,
   data: WorkspaceInvitationEmailProps,
 ): Promise<EmailResult> => {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) {
+  if (!isEmailConfigured()) {
     return { success: false, reason: "SMTP_NOT_CONFIGURED" };
   }
 
   try {
-    const emailTemplate = await render(
-      WorkspaceInvitationEmail({ ...data, to }),
-    );
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to,
-      subject,
-      html: emailTemplate,
-    });
+    const html = await render(WorkspaceInvitationEmail({ ...data, to }));
+    await sendMail({ to, subject, html });
     return { success: true };
   } catch (error) {
     console.error("Error sending workspace invitation email", error);
@@ -119,18 +86,13 @@ export const sendNotificationEmail = async (
   subject: string,
   data: NotificationEmailProps,
 ): Promise<EmailResult> => {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) {
+  if (!isEmailConfigured()) {
     return { success: false, reason: "SMTP_NOT_CONFIGURED" };
   }
 
   try {
-    const emailTemplate = await render(NotificationEmail(data));
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to,
-      subject,
-      html: emailTemplate,
-    });
+    const html = await render(NotificationEmail(data));
+    await sendMail({ to, subject, html });
     return { success: true };
   } catch (error) {
     console.error("Error sending notification email", error);
@@ -138,17 +100,13 @@ export const sendNotificationEmail = async (
   }
 };
 
-export type CorrespondenceAttachment = {
-  filename: string;
-  content: Buffer;
-  contentType?: string;
-};
+export type CorrespondenceAttachment = MailAttachment;
 
 /**
- * Send an official memo/circular/letter over the same SMTP transport used for
- * all platform mail (OTP, notifications). Supports attachments (the signed PDF)
- * and an optional friendly From-name / Reply-To. Throws on send failure so the
- * dispatch record can capture it.
+ * Send an official memo/circular/letter through the same provider used for
+ * all platform mail (OTP, notifications). Supports attachments (the signed
+ * PDF), CC, and an optional friendly From-name / Reply-To. Throws on send
+ * failure so the dispatch record can capture it.
  */
 export const sendCorrespondenceEmail = async (
   to: string | string[],
@@ -157,21 +115,14 @@ export const sendCorrespondenceEmail = async (
   attachments?: CorrespondenceAttachment[],
   options?: { replyTo?: string; fromName?: string; cc?: string | string[] },
 ): Promise<{ messageId: string }> => {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) {
-    throw new Error("SMTP_NOT_CONFIGURED");
-  }
-  const from = options?.fromName
-    ? `${options.fromName} <${process.env.SMTP_FROM}>`
-    : process.env.SMTP_FROM;
-  const cc = Array.isArray(options?.cc) ? options.cc.join(", ") : options?.cc;
-  const info = await transporter.sendMail({
-    from,
-    to: Array.isArray(to) ? to.join(", ") : to,
-    cc,
-    replyTo: options?.replyTo,
+  const messageId = await sendMail({
+    to,
     subject,
     html,
     attachments,
+    replyTo: options?.replyTo,
+    fromName: options?.fromName,
+    cc: options?.cc,
   });
-  return { messageId: info.messageId };
+  return { messageId };
 };
