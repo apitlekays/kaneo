@@ -3,17 +3,44 @@ import { sendNotificationEmail } from "@kaneo/email";
 import { and, eq } from "drizzle-orm";
 import db from "../database";
 import {
+  driverProfileTable,
   letterTable,
+  meetingTable,
   notificationTable,
   projectTable,
+  registeredAssetTable,
   taskTable,
   userNotificationPreferenceTable,
   userNotificationWorkspaceRuleTable,
   userTable,
   workspaceTable,
 } from "../database/schema";
+import { canReadMeeting, loadAttendeeUserIds } from "../meeting/access";
 import { assertPublicWebhookDestination } from "../plugins/generic-webhook/config";
+import { isGlobalAdmin } from "../utils/project-access";
 import { decryptSecret } from "./secrets";
+
+/**
+ * The only notifications sent by email: someone is handed work (an offer
+ * to accept, or an assignment) or work is due. Everything else stays
+ * in-app and on the other channels. Email is on for these by default;
+ * a user can still switch it off in Settings → Notifications.
+ */
+export const EMAIL_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
+  // Offers — the recipient must accept or decline.
+  "task_offered",
+  "letter_assigned",
+  "meeting_action_assigned",
+  // Assignments — work handed to the recipient.
+  "letter_action_assigned",
+  "work_order_assigned",
+  "task_tagged",
+  // Reminders — work coming due.
+  "due_date_reminder",
+  "task_overdue",
+  "asset_maintenance_due",
+  "asset_renewal_reminder",
+]);
 
 const DEFAULT_OUTBOUND_FETCH_TIMEOUT_MS = 15_000;
 
@@ -55,6 +82,27 @@ function buildTaskUrl(workspaceId: string, projectId: string, taskId: string) {
 function buildLetterUrl(letterId: string) {
   const clientUrl = process.env.KANEO_CLIENT_URL || "http://localhost:5173";
   return `${clientUrl}/dashboard/correspondence/${letterId}`;
+}
+
+function buildCategoryUrl(category: string) {
+  const clientUrl = process.env.KANEO_CLIENT_URL || "http://localhost:5173";
+  return `${clientUrl}/dashboard/category/${category}`;
+}
+
+function workspaceOnlyContext(
+  workspaceId: string,
+  workspaceName: string,
+  url: string | null,
+): ResolvedNotificationContext {
+  return {
+    workspaceId,
+    workspaceName,
+    projectId: null,
+    projectName: null,
+    taskId: null,
+    taskTitle: null,
+    taskUrl: url,
+  };
 }
 
 function getStringValue(
@@ -177,11 +225,94 @@ function buildDeliveryContent(notification: {
 }
 
 async function resolveNotificationContext(notification: {
+  userId: string;
   resourceType: string | null;
   resourceId: string | null;
 }): Promise<ResolvedNotificationContext | null> {
   if (!notification.resourceType || !notification.resourceId) {
     return null;
+  }
+
+  if (notification.resourceType === "meeting") {
+    const [meeting] = await db
+      .select({
+        id: meetingTable.id,
+        confidential: meetingTable.confidential,
+        workspaceId: workspaceTable.id,
+        workspaceName: workspaceTable.name,
+      })
+      .from(meetingTable)
+      .innerJoin(
+        workspaceTable,
+        eq(meetingTable.workspaceId, workspaceTable.id),
+      )
+      .where(eq(meetingTable.id, notification.resourceId))
+      .limit(1);
+    if (!meeting) return null;
+
+    // A confidential meeting's title has escaped through a notification
+    // subject before. Nothing leaves the app — email or any other channel —
+    // unless the recipient can read the meeting.
+    if (meeting.confidential) {
+      const readable = canReadMeeting({
+        confidential: true,
+        attendeeUserIds: await loadAttendeeUserIds(meeting.id),
+        userId: notification.userId,
+        isGlobalAdmin: await isGlobalAdmin(
+          notification.userId,
+          meeting.workspaceId,
+        ),
+      });
+      if (!readable) return null;
+    }
+
+    return workspaceOnlyContext(
+      meeting.workspaceId,
+      meeting.workspaceName,
+      buildCategoryUrl("general-management"),
+    );
+  }
+
+  if (notification.resourceType === "asset") {
+    const [asset] = await db
+      .select({
+        workspaceId: workspaceTable.id,
+        workspaceName: workspaceTable.name,
+      })
+      .from(registeredAssetTable)
+      .innerJoin(
+        workspaceTable,
+        eq(registeredAssetTable.workspaceId, workspaceTable.id),
+      )
+      .where(eq(registeredAssetTable.id, notification.resourceId))
+      .limit(1);
+    if (!asset) return null;
+    return workspaceOnlyContext(
+      asset.workspaceId,
+      asset.workspaceName,
+      buildCategoryUrl("assets-management"),
+    );
+  }
+
+  if (notification.resourceType === "driver") {
+    const [driver] = await db
+      .select({
+        workspaceId: workspaceTable.id,
+        workspaceName: workspaceTable.name,
+      })
+      .from(driverProfileTable)
+      .innerJoin(
+        workspaceTable,
+        eq(driverProfileTable.workspaceId, workspaceTable.id),
+      )
+      .where(eq(driverProfileTable.id, notification.resourceId))
+      .limit(1);
+    if (!driver) return null;
+    return workspaceOnlyContext(
+      driver.workspaceId,
+      driver.workspaceName,
+      buildCategoryUrl("assets-management"),
+    );
   }
 
   if (notification.resourceType === "task") {
@@ -383,6 +514,72 @@ async function sendWebhookNotification(input: {
   }
 }
 
+type DeliveryRule = {
+  isActive: boolean;
+  emailEnabled: boolean;
+  ntfyEnabled: boolean;
+  gotifyEnabled: boolean;
+  webhookEnabled: boolean;
+  projectMode: string;
+  selectedProjectIds: string[];
+};
+
+type DeliveryPreference = {
+  emailEnabled: boolean;
+  ntfyEnabled: boolean;
+  gotifyEnabled: boolean;
+  webhookEnabled: boolean;
+};
+
+/**
+ * Which channels one notification goes out on.
+ *
+ * Email is **on by default** for the types in EMAIL_NOTIFICATION_TYPES: a
+ * user who has never opened notification settings (no preference row) or
+ * never configured a workspace (no rule) still gets it. Whatever they have
+ * saved wins — turning email off, pausing a workspace, or narrowing it to
+ * selected projects.
+ *
+ * ntfy, Gotify and webhooks stay opt-in: they need an account-level switch
+ * and a workspace rule, as before.
+ *
+ * "Selected projects" narrows project notifications only. A letter, meeting
+ * or asset has no project, so it is never filtered out by project scope.
+ */
+export function resolveDeliveryChannels(input: {
+  type: string;
+  hasEmailAddress: boolean;
+  preference: DeliveryPreference | null;
+  rule: DeliveryRule | null;
+  projectId: string | null;
+}): { email: boolean; ntfy: boolean; gotify: boolean; webhook: boolean } {
+  const { preference, rule, projectId } = input;
+
+  const inProjectScope =
+    !rule ||
+    rule.projectMode !== "selected" ||
+    !projectId ||
+    rule.selectedProjectIds.includes(projectId);
+  const workspaceAllows = (rule ? rule.isActive : true) && inProjectScope;
+
+  const email =
+    EMAIL_NOTIFICATION_TYPES.has(input.type) &&
+    input.hasEmailAddress &&
+    (preference?.emailEnabled ?? true) &&
+    workspaceAllows &&
+    (rule ? rule.emailEnabled : true);
+
+  const optIn = (account?: boolean, workspace?: boolean) =>
+    Boolean(account && rule && workspaceAllows && workspace);
+
+  return {
+    email,
+    ntfy: optIn(preference?.ntfyEnabled, rule?.ntfyEnabled),
+    gotify: optIn(preference?.gotifyEnabled, rule?.gotifyEnabled),
+    webhook: optIn(preference?.webhookEnabled, rule?.webhookEnabled),
+  };
+}
+
 export async function deliverNotification(
   notificationId: string,
 ): Promise<void> {
@@ -425,17 +622,6 @@ export async function deliverNotification(
     where: eq(userNotificationPreferenceTable.userId, notification.userId),
   });
 
-  if (!preference) {
-    return;
-  }
-
-  const decryptedPreference = {
-    ...preference,
-    ntfyToken: decryptSecret(preference.ntfyToken),
-    gotifyToken: decryptSecret(preference.gotifyToken),
-    webhookSecret: decryptSecret(preference.webhookSecret),
-  };
-
   const rule = await db.query.userNotificationWorkspaceRuleTable.findFirst({
     where: and(
       eq(userNotificationWorkspaceRuleTable.userId, notification.userId),
@@ -446,19 +632,37 @@ export async function deliverNotification(
     },
   });
 
-  if (!rule?.isActive) {
+  const channels = resolveDeliveryChannels({
+    type: notification.type,
+    hasEmailAddress: Boolean(user.email),
+    preference: preference ?? null,
+    rule: rule
+      ? {
+          isActive: rule.isActive,
+          emailEnabled: rule.emailEnabled,
+          ntfyEnabled: rule.ntfyEnabled,
+          gotifyEnabled: rule.gotifyEnabled,
+          webhookEnabled: rule.webhookEnabled,
+          projectMode: rule.projectMode,
+          selectedProjectIds: rule.selectedProjects.map((p) => p.projectId),
+        }
+      : null,
+    projectId: context.projectId,
+  });
+
+  if (!Object.values(channels).some(Boolean)) {
     return;
   }
 
-  if (
-    rule.projectMode === "selected" &&
-    (!context.projectId ||
-      !rule.selectedProjects.some(
-        (project) => project.projectId === context.projectId,
-      ))
-  ) {
-    return;
-  }
+  const decryptedPreference = {
+    ntfyServerUrl: preference?.ntfyServerUrl ?? null,
+    ntfyTopic: preference?.ntfyTopic ?? null,
+    ntfyToken: decryptSecret(preference?.ntfyToken ?? null),
+    gotifyServerUrl: preference?.gotifyServerUrl ?? null,
+    gotifyToken: decryptSecret(preference?.gotifyToken ?? null),
+    webhookUrl: preference?.webhookUrl ?? null,
+    webhookSecret: decryptSecret(preference?.webhookSecret ?? null),
+  };
 
   const content = buildDeliveryContent({
     type: notification.type,
@@ -511,23 +715,22 @@ export async function deliverNotification(
   // with void.
   const deliveries: Array<Promise<unknown>> = [];
 
-  if (decryptedPreference.emailEnabled && rule.emailEnabled && user.email) {
+  if (channels.email && user.email) {
     deliveries.push(
       sendNotificationEmail(user.email, content.title, {
         title: content.title,
         message: content.body,
         actionUrl: context.taskUrl,
-        actionLabel: context.taskUrl ? "Open in Kaneo" : undefined,
+        actionLabel: context.taskUrl ? "Open in MAPIMCore" : undefined,
         locale: user.locale ?? null,
       }),
     );
   }
 
   if (
-    decryptedPreference.ntfyEnabled &&
+    channels.ntfy &&
     decryptedPreference.ntfyServerUrl &&
-    decryptedPreference.ntfyTopic &&
-    rule.ntfyEnabled
+    decryptedPreference.ntfyTopic
   ) {
     deliveries.push(
       sendNtfyNotification({
@@ -542,10 +745,9 @@ export async function deliverNotification(
   }
 
   if (
-    decryptedPreference.gotifyEnabled &&
+    channels.gotify &&
     decryptedPreference.gotifyServerUrl &&
-    decryptedPreference.gotifyToken &&
-    rule.gotifyEnabled
+    decryptedPreference.gotifyToken
   ) {
     deliveries.push(
       sendGotifyNotification({
@@ -558,11 +760,7 @@ export async function deliverNotification(
     );
   }
 
-  if (
-    decryptedPreference.webhookEnabled &&
-    decryptedPreference.webhookUrl &&
-    rule.webhookEnabled
-  ) {
+  if (channels.webhook && decryptedPreference.webhookUrl) {
     deliveries.push(
       sendWebhookNotification({
         webhookUrl: decryptedPreference.webhookUrl,

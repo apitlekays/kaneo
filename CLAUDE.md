@@ -185,7 +185,17 @@ Optional:
 - `VITE_API_URL` - API URL for web dev (defaults to http://localhost:1337)
 - `REDIS_URL` - Redis connection string for multi-instance WebSocket broadcasts via Pub/Sub (omit for single-instance in-memory mode)
 - SSO providers (GitHub, Google, Discord, Custom OAuth/OIDC)
-- SMTP configuration
+- Email: `RESEND_API_KEY` + `EMAIL_FROM` (Resend, preferred), else SMTP
+  (`SMTP_*`; `EMAIL_FROM` falls back to `SMTP_FROM`). One transport in
+  `packages/email/src/transport.ts` serves every email.
+
+**Notification email rules** (`notification-preferences/delivery.ts`,
+`resolveDeliveryChannels`): email is **on by default** — a user with no
+saved settings still gets it — but only for `EMAIL_NOTIFICATION_TYPES`:
+offers, assignments and reminders. Everything else is in-app only unless
+the user sets up ntfy/Gotify/webhooks, which stay opt-in. Saved settings
+always win. A confidential meeting's notification leaves the app only if
+the recipient can read the meeting.
 
 See `ENVIRONMENT_SETUP.md` for detailed configuration and troubleshooting.
 

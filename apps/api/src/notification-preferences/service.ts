@@ -180,7 +180,11 @@ export async function getNotificationPreferences(
 
   return {
     emailAddress,
-    emailEnabled: decryptedPreference?.emailEnabled ?? false,
+    // Email is on by default (see EMAIL_NOTIFICATION_TYPES in delivery.ts)
+    // until the user switches it off — but only if there is an address.
+    emailEnabled: Boolean(
+      emailAddress && (decryptedPreference?.emailEnabled ?? true),
+    ),
     ntfyEnabled: decryptedPreference?.ntfyEnabled ?? false,
     ntfyConfigured: Boolean(
       decryptedPreference?.ntfyServerUrl && decryptedPreference?.ntfyTopic,
@@ -266,8 +270,16 @@ export async function updateNotificationPreferences(
     decryptedExisting?.webhookSecret,
   );
 
+  // On by default. With no address it cannot be on — say so only when the
+  // caller explicitly asks for it, so saving another channel still works.
+  if (input.emailEnabled === true && !emailAddress) {
+    throw new HTTPException(400, {
+      message: "Email notifications require an account email address",
+    });
+  }
   const emailEnabled =
-    input.emailEnabled ?? decryptedExisting?.emailEnabled ?? false;
+    Boolean(emailAddress) &&
+    (input.emailEnabled ?? decryptedExisting?.emailEnabled ?? true);
   const ntfyEnabled =
     input.ntfyEnabled ?? decryptedExisting?.ntfyEnabled ?? false;
   const gotifyEnabled =
@@ -297,12 +309,6 @@ export async function updateNotificationPreferences(
     webhookEnabled ||
     input.webhookUrl !== undefined ||
     input.webhookSecret !== undefined;
-
-  if (emailEnabled && !emailAddress) {
-    throw new HTTPException(400, {
-      message: "Email notifications require an account email address",
-    });
-  }
 
   if (shouldValidateNtfy) {
     if (!ntfyServerUrl || !ntfyTopic) {
@@ -400,7 +406,7 @@ export async function updateNotificationPreferences(
     webhookEnabled?: boolean;
   } = {};
 
-  const hadEmailEnabled = decryptedExisting?.emailEnabled ?? false;
+  const hadEmailEnabled = decryptedExisting?.emailEnabled ?? true;
   const hadNtfyEnabled = decryptedExisting?.ntfyEnabled ?? false;
   const hadGotifyEnabled = decryptedExisting?.gotifyEnabled ?? false;
   const hadWebhookEnabled = decryptedExisting?.webhookEnabled ?? false;
@@ -490,7 +496,10 @@ export async function upsertWorkspaceRule(
     where: eq(userNotificationPreferenceTable.userId, userId),
   });
 
-  if (input.emailEnabled && (!preference?.emailEnabled || !emailAddress)) {
+  if (
+    input.emailEnabled &&
+    (!(preference?.emailEnabled ?? true) || !emailAddress)
+  ) {
     throw new HTTPException(400, {
       message: "Enable email notifications globally before using them here",
     });

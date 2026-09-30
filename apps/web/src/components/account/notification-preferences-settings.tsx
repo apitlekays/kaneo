@@ -59,12 +59,15 @@ function createWorkspaceRuleState(input: {
     };
   }
 
+  // No saved rule: show what actually happens today. Email reaches this
+  // workspace by default when it is on for the account; the other channels
+  // need a saved rule, so they read as off until the user turns them on.
   return {
-    isActive: false,
+    isActive: input.hasEmailChannel,
     emailEnabled: input.hasEmailChannel,
-    ntfyEnabled: input.hasNtfyChannel,
-    gotifyEnabled: input.hasGotifyChannel,
-    webhookEnabled: input.hasWebhookChannel,
+    ntfyEnabled: false,
+    gotifyEnabled: false,
+    webhookEnabled: false,
     projectMode: "all",
     selectedProjectIds: [],
   };
@@ -72,7 +75,7 @@ function createWorkspaceRuleState(input: {
 
 function createDefaultGlobalChannelPrefs(): GlobalChannelPrefsState {
   return {
-    emailEnabled: false,
+    emailEnabled: true,
     ntfy: { enabled: false, serverUrl: "", topic: "", token: "" },
     gotify: { enabled: false, serverUrl: "", token: "" },
     webhook: { enabled: false, url: "", secret: "" },

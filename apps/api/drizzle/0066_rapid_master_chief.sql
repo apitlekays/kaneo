@@ -1,0 +1,2 @@
+ALTER TABLE "user_notification_preference" ALTER COLUMN "email_enabled" SET DEFAULT true;--> statement-breakpoint
+ALTER TABLE "user_notification_workspace_rule" ALTER COLUMN "email_enabled" SET DEFAULT true;

@@ -337,6 +337,9 @@ async function checkDriverLicenceReminders(): Promise<void> {
         type: "asset_renewal_reminder",
         title: `Driving licence ${phraseFor(window)}`,
         content: `Your driving licence expires ${dueStr}.`,
+        // Without an id, delivery cannot tell which workspace this belongs
+        // to, so it never reached email or any other channel.
+        resourceId: d.profileId,
         resourceType: "driver",
       });
     } catch (error) {

@@ -57,7 +57,8 @@ describe("notification delivery settles via settleBackgroundWork", () => {
 
     const notification = await createNotification({
       userId: user.id,
-      type: "task_assignee_changed",
+      // Only offers, assignments and reminders are emailed.
+      type: "task_offered",
       resourceId: task.id,
       resourceType: "task",
       eventData: { taskTitle: task.title, actorName: "Someone" },

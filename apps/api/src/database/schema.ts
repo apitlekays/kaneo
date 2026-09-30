@@ -1259,7 +1259,9 @@ export const userNotificationPreferenceTable = pgTable(
         onDelete: "cascade",
         onUpdate: "cascade",
       }),
-    emailEnabled: boolean("email_enabled").default(false).notNull(),
+    // On by default: offers, assignments and reminders are emailed unless
+    // the user switches it off (see notification-preferences/delivery.ts).
+    emailEnabled: boolean("email_enabled").default(true).notNull(),
     ntfyEnabled: boolean("ntfy_enabled").default(false).notNull(),
     ntfyServerUrl: text("ntfy_server_url"),
     ntfyTopic: text("ntfy_topic"),
@@ -1297,7 +1299,9 @@ export const userNotificationWorkspaceRuleTable = pgTable(
         onUpdate: "cascade",
       }),
     isActive: boolean("is_active").default(true).notNull(),
-    emailEnabled: boolean("email_enabled").default(false).notNull(),
+    // On by default: offers, assignments and reminders are emailed unless
+    // the user switches it off (see notification-preferences/delivery.ts).
+    emailEnabled: boolean("email_enabled").default(true).notNull(),
     ntfyEnabled: boolean("ntfy_enabled").default(false).notNull(),
     gotifyEnabled: boolean("gotify_enabled").default(false).notNull(),
     webhookEnabled: boolean("webhook_enabled").default(false).notNull(),
