@@ -5,6 +5,7 @@ import {
   Download,
   FileText,
   Fuel,
+  Handshake,
   History,
   ImageIcon,
   Info,
@@ -58,6 +59,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { TypedConfirmDialog } from "@/components/ui/typed-confirm-dialog";
 import type { AssetDetail } from "@/fetchers/asset-registry";
 import { assetFileUrl } from "@/fetchers/asset-registry";
 import { useAsset } from "@/hooks/queries/asset-registry/use-asset";
@@ -83,6 +85,7 @@ import {
   toMinorUnits,
 } from "@/lib/format-currency";
 import { AssetFormDialog } from "./asset-form-dialog";
+import { RentalsTab } from "./rentals-tab";
 
 type Mutations = ReturnType<typeof useAssetMutations>;
 
@@ -145,7 +148,7 @@ function DetailBody({
   onClose: () => void;
 }) {
   const { asset } = data;
-  const confirm = useConfirm();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const currency = asset.currency || "MYR";
   const currentCustody = data.custody.find((entry) => !entry.releasedAt);
   const { data: locations = [] } = useLocations(workspaceId);
@@ -199,16 +202,7 @@ function DetailBody({
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 variant="destructive"
-                onClick={async () => {
-                  if (
-                    await confirm({
-                      title: "Delete asset?",
-                      description: `This permanently deletes "${asset.name}" and all its records. This cannot be undone.`,
-                    })
-                  ) {
-                    m.remove.mutate(asset.id, { onSuccess: onClose });
-                  }
-                }}
+                onClick={() => setConfirmingDelete(true)}
               >
                 <Trash2 className="h-4 w-4" /> Delete asset
               </DropdownMenuItem>
@@ -216,6 +210,35 @@ function DetailBody({
           </DropdownMenu>
         </div>
       </DialogHeader>
+
+      <TypedConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={(open) => {
+          if (!m.remove.isPending) setConfirmingDelete(open);
+        }}
+        title="Delete asset?"
+        description={
+          <>
+            This permanently deletes <strong>{asset.name}</strong> and all its
+            records — files, renewals, maintenance, costs, custody and rental
+            history. This cannot be undone.
+          </>
+        }
+        identifiers={[
+          { label: "Name", value: asset.name },
+          { label: "Serial no.", value: asset.serialNumber },
+        ]}
+        confirmText="Delete asset"
+        pending={m.remove.isPending}
+        onConfirm={() =>
+          m.remove.mutate(asset.id, {
+            onSuccess: () => {
+              setConfirmingDelete(false);
+              onClose();
+            },
+          })
+        }
+      />
 
       <DialogSidebar
         value={tab}
@@ -255,6 +278,7 @@ function DetailBody({
           },
           { value: "fleet", label: "Fleet", icon: Fuel },
           { value: "custody", label: "Custody", icon: Users },
+          { value: "rentals", label: "Rentals", icon: Handshake },
           { value: "history", label: "History", icon: History },
           { value: "label", label: "Label", icon: QrCode },
         ]}
@@ -300,6 +324,9 @@ function DetailBody({
         </DialogSidebarPanel>
         <DialogSidebarPanel value="custody">
           <CustodyTab data={data} m={m} workspaceId={workspaceId} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="rentals">
+          <RentalsTab asset={asset} workspaceId={workspaceId} />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="history">
           <HistoryTab data={data} />
@@ -1929,6 +1956,9 @@ const ACTIVITY_VERBS: Record<string, string> = {
   created: "registered this asset",
   updated: "updated the details",
   custodian_changed: "assigned a custodian",
+  rental_started: "rented it out",
+  rental_returned: "marked it returned from rental",
+  rental_deleted: "deleted a rental record",
   custodian_released: "released the custodian",
 };
 

@@ -30,6 +30,12 @@ export type Asset = {
   nextRenewalDate?: string | null;
   custodianName?: string | null;
   custodianImage?: string | null;
+  /** Who has the asset out on rent right now (list view only). */
+  activeRental?: {
+    renterName: string;
+    renterOrganisation: string | null;
+    dueAt: string | null;
+  } | null;
 };
 
 export type AssetCustody = {
@@ -277,6 +283,8 @@ export type AssetSummary = {
   upcomingRenewals: RenewalSummaryItem[];
   overdueCount: number;
   upcomingCount: number;
+  onRentCount?: number;
+  rentalsOverdueCount?: number;
 };
 
 async function jsonOrThrow<T>(response: Response): Promise<T> {
@@ -709,16 +717,162 @@ export async function exportAssets(ws: string): Promise<ExportRow[]> {
   );
 }
 
+export type ImportSkip = {
+  /** 1-based position of the row in the file. */
+  row: number;
+  name: string;
+  /** "exists": already registered. "duplicate": repeats an earlier row. */
+  reason: "exists" | "duplicate";
+};
+
+export type ImportResult = {
+  imported: number;
+  failed: number;
+  skipped: ImportSkip[];
+};
+
+/**
+ * Imports assets, skipping any whose name is already registered (or repeats
+ * an earlier row). With `dryRun`, nothing is written and `imported` is how
+ * many rows would be.
+ */
 export async function importAssets(
   ws: string,
   assets: Array<Record<string, unknown>>,
-): Promise<{ imported: number; failed: number }> {
+  options?: { dryRun?: boolean },
+): Promise<ImportResult> {
   return jsonOrThrow(
     await fetch(api("import"), {
       method: "POST",
       credentials: "include",
       headers: jsonHeaders,
-      body: JSON.stringify({ workspaceId: ws, assets }),
+      body: JSON.stringify({
+        workspaceId: ws,
+        assets,
+        dryRun: options?.dryRun,
+      }),
+    }),
+  );
+}
+
+export type AssetRental = {
+  id: string;
+  assetId: string;
+  renterName: string;
+  renterOrganisation: string | null;
+  renterPhone: string | null;
+  renterEmail: string | null;
+  renterIdNumber: string | null;
+  purpose: string | null;
+  startAt: string;
+  dueAt: string | null;
+  returnedAt: string | null;
+  /** Minor units (sen) per ratePeriod; null = free of charge. */
+  rate: number | null;
+  ratePeriod: "day" | "week" | "month" | "fixed" | null;
+  deposit: number | null;
+  depositReturned: boolean;
+  currency: string;
+  conditionOut: string | null;
+  conditionIn: string | null;
+  notes: string | null;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: string;
+};
+
+export type AssetRentalInput = {
+  renterName: string;
+  renterOrganisation?: string | null;
+  renterPhone?: string | null;
+  renterEmail?: string | null;
+  renterIdNumber?: string | null;
+  purpose?: string | null;
+  startAt: string;
+  dueAt?: string | null;
+  rate?: number | null;
+  ratePeriod?: AssetRental["ratePeriod"];
+  deposit?: number | null;
+  currency?: string | null;
+  conditionOut?: string | null;
+  notes?: string | null;
+};
+
+export async function getAssetRentals(
+  ws: string,
+  assetId: string,
+): Promise<AssetRental[]> {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/rentals?workspaceId=${ws}`), {
+      credentials: "include",
+    }),
+  );
+}
+
+export async function createAssetRental(
+  ws: string,
+  assetId: string,
+  body: AssetRentalInput,
+): Promise<AssetRental> {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/rentals`), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, ...body }),
+    }),
+  );
+}
+
+export async function updateAssetRental(
+  ws: string,
+  assetId: string,
+  rentalId: string,
+  body: Partial<AssetRentalInput> & {
+    conditionIn?: string | null;
+    depositReturned?: boolean;
+  },
+): Promise<AssetRental> {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/rentals/${rentalId}`), {
+      method: "PUT",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, ...body }),
+    }),
+  );
+}
+
+export async function returnAssetRental(
+  ws: string,
+  assetId: string,
+  rentalId: string,
+  body: {
+    returnedAt?: string | null;
+    conditionIn?: string | null;
+    depositReturned?: boolean;
+    notes?: string | null;
+  },
+): Promise<AssetRental> {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/rentals/${rentalId}/return`), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, ...body }),
+    }),
+  );
+}
+
+export async function deleteAssetRental(
+  ws: string,
+  assetId: string,
+  rentalId: string,
+) {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/rentals/${rentalId}?workspaceId=${ws}`), {
+      method: "DELETE",
+      credentials: "include",
     }),
   );
 }

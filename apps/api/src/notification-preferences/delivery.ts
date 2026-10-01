@@ -40,6 +40,7 @@ export const EMAIL_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
   "task_overdue",
   "asset_maintenance_due",
   "asset_renewal_reminder",
+  "asset_rental_overdue",
 ]);
 
 const DEFAULT_OUTBOUND_FETCH_TIMEOUT_MS = 15_000;

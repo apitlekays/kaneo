@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { Boxes, Loader2, Plus } from "lucide-react";
+import { Boxes, Loader2, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AssetDetailDialog } from "@/components/assets/asset-detail-dialog";
@@ -18,8 +18,11 @@ import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { TypedConfirmDialog } from "@/components/ui/typed-confirm-dialog";
+import type { Asset } from "@/fetchers/asset-registry";
 import { getMyPageAccess } from "@/fetchers/workspace-access";
 import { useAsset } from "@/hooks/queries/asset-registry/use-asset";
+import { useAssetMutations } from "@/hooks/queries/asset-registry/use-asset-mutations";
 import {
   useAssetSummary,
   useAssets,
@@ -68,6 +71,8 @@ function AssetsPage() {
   const locationPaths = buildLocationPaths(locations);
   const { data: summary } = useAssetSummary(workspaceId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
+  const { remove } = useAssetMutations(workspaceId);
   const [view, setView] = useState<
     | "registry"
     | "work-orders"
@@ -192,6 +197,9 @@ function AssetsPage() {
                         <th className="px-3 py-2 font-medium">Custodian</th>
                         <th className="px-3 py-2 font-medium">Location</th>
                         <th className="px-3 py-2 font-medium">Next renewal</th>
+                        <th className="w-10 px-3 py-2">
+                          <span className="sr-only">Actions</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -219,6 +227,9 @@ function AssetsPage() {
                             >
                               {labelOf(ASSET_STATUSES, asset.status)}
                             </Badge>
+                            {asset.activeRental && (
+                              <RentalBadge rental={asset.activeRental} />
+                            )}
                           </td>
                           <td className="px-3 py-2">
                             {asset.custodianName ? (
@@ -247,6 +258,22 @@ function AssetsPage() {
                             {asset.nextRenewalDate
                               ? formatDateMedium(asset.nextRenewalDate)
                               : "—"}
+                          </td>
+                          <td className="px-1.5 py-1 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              aria-label={`Delete ${asset.name}`}
+                              title="Delete asset"
+                              onClick={(event) => {
+                                // The row opens the asset; the bin must not.
+                                event.stopPropagation();
+                                setDeleteTarget(asset);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </td>
                         </tr>
                       ))}
@@ -294,6 +321,70 @@ function AssetsPage() {
         assetId={selectedId}
         onClose={() => setSelectedId(null)}
       />
+
+      <TypedConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !remove.isPending) setDeleteTarget(null);
+        }}
+        title="Delete asset?"
+        description={
+          <>
+            This permanently deletes <strong>{deleteTarget?.name}</strong> and
+            all its records — files, renewals, maintenance, costs, custody and
+            rental history. This cannot be undone.
+          </>
+        }
+        identifiers={
+          deleteTarget
+            ? [
+                { label: "Name", value: deleteTarget.name },
+                { label: "Serial no.", value: deleteTarget.serialNumber },
+              ]
+            : []
+        }
+        confirmText="Delete asset"
+        pending={remove.isPending}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          remove.mutate(deleteTarget.id, {
+            onSuccess: () => {
+              if (selectedId === deleteTarget.id) setSelectedId(null);
+              setDeleteTarget(null);
+            },
+          });
+        }}
+      />
     </>
+  );
+}
+
+/** "On rent" marker beside the status, red once the return date has passed. */
+function RentalBadge({
+  rental,
+}: {
+  rental: NonNullable<Asset["activeRental"]>;
+}) {
+  const overdue = rental.dueAt
+    ? new Date(rental.dueAt).getTime() < Date.now()
+    : false;
+  const who = rental.renterOrganisation
+    ? `${rental.renterName} (${rental.renterOrganisation})`
+    : rental.renterName;
+  const due = rental.dueAt
+    ? ` · due ${formatDateMedium(rental.dueAt)}`
+    : " · open-ended";
+  return (
+    <Badge
+      className={cn(
+        "ml-1.5 border",
+        overdue
+          ? "border-destructive/40 bg-destructive/10 text-destructive"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+      )}
+      title={`Rented to ${who}${due}`}
+    >
+      {overdue ? "Rental overdue" : "On rent"}
+    </Badge>
   );
 }

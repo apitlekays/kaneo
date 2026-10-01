@@ -439,6 +439,79 @@ export const assetReminderSentTable = pgTable(
   ],
 );
 
+/**
+ * An asset lent or rented to someone outside the organisation. Custody
+ * (asset_custody) tracks which *member* is responsible for an asset; a
+ * rental records that it physically left with an external renter — who,
+ * for what, from when, due back when, on what terms, and in what condition
+ * it went out and came back. At most one rental per asset is open (no
+ * returnedAt); closed rentals are the asset's rental history.
+ */
+export const assetRentalTable = pgTable(
+  "asset_rental",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    // The renter is external, so they are recorded, not referenced.
+    renterName: text("renter_name").notNull(),
+    renterOrganisation: text("renter_organisation"),
+    renterPhone: text("renter_phone"),
+    renterEmail: text("renter_email"),
+    // IC / passport / company registration number.
+    renterIdNumber: text("renter_id_number"),
+    purpose: text("purpose"),
+    startAt: timestamp("start_at", { mode: "date" }).notNull(),
+    // Expected return; null for an open-ended rental.
+    dueAt: timestamp("due_at", { mode: "date" }),
+    returnedAt: timestamp("returned_at", { mode: "date" }),
+    // Charge in minor units (sen), per ratePeriod: day | week | month | fixed.
+    // Null rate = lent free of charge.
+    rate: integer("rate"),
+    ratePeriod: text("rate_period"),
+    deposit: integer("deposit"),
+    depositReturned: boolean("deposit_returned").notNull().default(false),
+    currency: text("currency").notNull().default("MYR"),
+    conditionOut: text("condition_out"),
+    conditionIn: text("condition_in"),
+    notes: text("notes"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+    returnedBy: text("returned_by").references(() => userTable.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("asset_rental_assetId_idx").on(table.assetId),
+    index("asset_rental_workspaceId_idx").on(table.workspaceId),
+    index("asset_rental_dueAt_idx").on(table.dueAt),
+    // An asset can only be out with one renter at a time.
+    uniqueIndex("asset_rental_one_open_idx")
+      .on(table.assetId)
+      .where(sql`${table.returnedAt} is null`),
+  ],
+);
+
 // Disposal / retirement record (one per asset). Setting it flips the asset to
 // status='disposed'. Gain/loss = proceeds − net book value (computed).
 export const assetDisposalTable = pgTable(

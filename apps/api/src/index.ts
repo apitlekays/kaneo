@@ -18,6 +18,7 @@ import * as v from "valibot";
 import activity from "./activity";
 import assetRegistry from "./asset-registry";
 import assetPublic from "./asset-registry/public";
+import assetRentals from "./asset-registry/rentals";
 import { auth } from "./auth";
 import column from "./column";
 import comment from "./comment";
@@ -577,6 +578,7 @@ export function createApp() {
   api.route("/user", user);
   api.route("/task-mom", taskMom);
   api.route("/workspace-access", workspaceAccess);
+  api.route("/asset-registry", assetRentals);
   api.route("/asset-registry", assetRegistry);
   api.route("/correspondence", correspondence);
   api.route("/pending-decision", pendingDecision);

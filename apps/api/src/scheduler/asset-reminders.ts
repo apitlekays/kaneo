@@ -1,10 +1,19 @@
-import { and, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+} from "drizzle-orm";
 import db from "../database";
 import {
   assetMeterReadingTable,
   assetPmScheduleTable,
   assetReminderSentTable,
   assetRenewalTable,
+  assetRentalTable,
   driverProfileTable,
   registeredAssetTable,
   workOrderTable,
@@ -161,6 +170,89 @@ export async function checkAssetRemindersDue(): Promise<void> {
 
   await raisePreventiveMaintenanceWorkOrders();
   await checkDriverLicenceReminders();
+  await checkOverdueRentals();
+}
+
+/**
+ * Once a rented-out asset passes its return date without being marked
+ * returned, tell whoever recorded the rental (falling back to the asset's
+ * custodian). Fires once per rental; changing the return date re-arms it
+ * (see asset-registry/rentals.ts).
+ */
+async function checkOverdueRentals(): Promise<void> {
+  const now = new Date();
+  let rentals: Array<{
+    rentalId: string;
+    assetId: string;
+    assetName: string;
+    renterName: string;
+    dueAt: Date | null;
+    createdBy: string | null;
+    custodianId: string | null;
+  }>;
+  try {
+    rentals = await db
+      .select({
+        rentalId: assetRentalTable.id,
+        assetId: assetRentalTable.assetId,
+        assetName: registeredAssetTable.name,
+        renterName: assetRentalTable.renterName,
+        dueAt: assetRentalTable.dueAt,
+        createdBy: assetRentalTable.createdBy,
+        custodianId: registeredAssetTable.currentCustodianId,
+      })
+      .from(assetRentalTable)
+      .innerJoin(
+        registeredAssetTable,
+        eq(assetRentalTable.assetId, registeredAssetTable.id),
+      )
+      .where(
+        and(
+          isNull(assetRentalTable.returnedAt),
+          lt(assetRentalTable.dueAt, now),
+        ),
+      );
+  } catch (error) {
+    console.error("Failed to query overdue rentals", error);
+    return;
+  }
+
+  for (const r of rentals) {
+    const recipient = r.createdBy ?? r.custodianId;
+    if (!recipient || !r.dueAt) continue;
+
+    try {
+      const [inserted] = await db
+        .insert(assetReminderSentTable)
+        .values({
+          refType: "rental",
+          refId: r.rentalId,
+          reminderWindow: "overdue",
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (!inserted) continue;
+    } catch {
+      continue;
+    }
+
+    const dueStr = r.dueAt.toISOString().slice(0, 10);
+    try {
+      await createNotification({
+        userId: recipient,
+        type: "asset_rental_overdue",
+        title: `Rental overdue — ${r.assetName}`,
+        content: `${r.assetName} was due back from ${r.renterName} on ${dueStr} and has not been marked returned.`,
+        resourceId: r.assetId,
+        resourceType: "asset",
+      });
+    } catch (error) {
+      console.error("Failed to send rental overdue reminder", {
+        rentalId: r.rentalId,
+        error,
+      });
+    }
+  }
 }
 
 /**

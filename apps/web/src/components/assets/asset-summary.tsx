@@ -67,7 +67,20 @@ export function AssetSummary({
           icon={<Boxes className="h-4 w-4" />}
           label="Total assets"
           value={summary.totalAssets}
-          hint={categoryHint || undefined}
+          hint={
+            [
+              categoryHint,
+              summary.onRentCount
+                ? `${summary.onRentCount} on rent${
+                    summary.rentalsOverdueCount
+                      ? ` (${summary.rentalsOverdueCount} overdue)`
+                      : ""
+                  }`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined
+          }
         />
         <Stat
           icon={<Wallet className="h-4 w-4" />}

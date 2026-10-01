@@ -20,6 +20,7 @@ import {
   assetPmScheduleTable,
   assetReminderSentTable,
   assetRenewalTable,
+  assetRentalTable,
   assetTripTable,
   driverProfileTable,
   registeredAssetTable,
@@ -76,6 +77,11 @@ const COST_CATEGORIES = [
   "other",
 ] as const;
 
+/** How asset names are compared for duplicates: case and spacing ignored. */
+export function normalizeAssetName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
 const optStr = v.optional(v.nullable(v.string()));
 const optNum = v.optional(v.nullable(v.number()));
 const optDate = v.optional(v.nullable(v.string()));
@@ -96,7 +102,7 @@ function generateSerial() {
 }
 
 /** Load an asset and assert it belongs to the active workspace. */
-async function loadAsset(assetId: string, workspaceId: string) {
+export async function loadAsset(assetId: string, workspaceId: string) {
   const [asset] = await db
     .select()
     .from(registeredAssetTable)
@@ -275,7 +281,7 @@ function computeDepreciation(asset: DepreciableAsset) {
 }
 
 /** Append an audit-trail entry. Never throws into the request path. */
-async function recordActivity(
+export async function recordActivity(
   assetId: string,
   type: string,
   userId: string | null,
@@ -350,9 +356,27 @@ const assetRegistry = new Hono<{
         : [];
       const custodianMap = new Map(custodians.map((u) => [u.id, u]));
 
+      // Who has each asset out on rent right now, if anyone.
+      const openRentals = await db
+        .select({
+          assetId: assetRentalTable.assetId,
+          renterName: assetRentalTable.renterName,
+          renterOrganisation: assetRentalTable.renterOrganisation,
+          dueAt: assetRentalTable.dueAt,
+        })
+        .from(assetRentalTable)
+        .where(
+          and(
+            eq(assetRentalTable.workspaceId, workspaceId),
+            isNull(assetRentalTable.returnedAt),
+          ),
+        );
+      const rentalByAsset = new Map(openRentals.map((r) => [r.assetId, r]));
+
       return c.json(
         assets.map((asset) => ({
           ...asset,
+          activeRental: rentalByAsset.get(asset.id) ?? null,
           nextRenewalDate: nextByAsset.get(asset.id) ?? null,
           custodianName: asset.currentCustodianId
             ? (custodianMap.get(asset.currentCustodianId)?.name ?? null)
@@ -461,7 +485,23 @@ const assetRegistry = new Hono<{
       );
       const disposedCount = assets.length - activeAssets.length;
 
+      const openRentals = await db
+        .select({ dueAt: assetRentalTable.dueAt })
+        .from(assetRentalTable)
+        .where(
+          and(
+            eq(assetRentalTable.workspaceId, workspaceId),
+            isNull(assetRentalTable.returnedAt),
+          ),
+        );
+      const onRentCount = openRentals.length;
+      const rentalsOverdueCount = openRentals.filter(
+        (r) => r.dueAt && r.dueAt.getTime() < now,
+      ).length;
+
       return c.json({
+        onRentCount,
+        rentalsOverdueCount,
         totalAssets: assets.length,
         byCategory,
         byStatus,
@@ -937,6 +977,9 @@ const assetRegistry = new Hono<{
       "json",
       v.object({
         workspaceId: v.string(),
+        // Report what would happen without writing anything — the import
+        // dialog uses it to show which rows will be skipped.
+        dryRun: v.optional(v.boolean()),
         assets: v.array(
           v.object({
             name: v.string(),
@@ -960,17 +1003,58 @@ const assetRegistry = new Hono<{
     async (c) => {
       const workspaceId = c.get("workspaceId") as string;
       const userId = c.get("userId");
-      const { assets } = c.req.valid("json");
+      const { assets, dryRun } = c.req.valid("json");
       const validCat = new Set<string>(CATEGORIES);
       const validStatus = new Set<string>(STATUSES);
       let imported = 0;
       let failed = 0;
 
-      for (const a of assets) {
-        if (!a.name?.trim()) {
+      // An asset whose name is already registered in this workspace — or
+      // repeats an earlier row of the same file — is skipped, never
+      // duplicated. Names compare ignoring case and spacing.
+      const existing = await db
+        .select({ name: registeredAssetTable.name })
+        .from(registeredAssetTable)
+        .where(eq(registeredAssetTable.workspaceId, workspaceId));
+      const taken = new Set(existing.map((e) => normalizeAssetName(e.name)));
+      const skipped: Array<{
+        row: number;
+        name: string;
+        reason: "exists" | "duplicate";
+      }> = [];
+      const toImport: typeof assets = [];
+      const seenInFile = new Set<string>();
+      assets.forEach((a, index) => {
+        const key = normalizeAssetName(a.name ?? "");
+        if (!key) {
           failed++;
-          continue;
+          return;
         }
+        if (taken.has(key)) {
+          skipped.push({
+            row: index + 1,
+            name: a.name.trim(),
+            reason: "exists",
+          });
+          return;
+        }
+        if (seenInFile.has(key)) {
+          skipped.push({
+            row: index + 1,
+            name: a.name.trim(),
+            reason: "duplicate",
+          });
+          return;
+        }
+        seenInFile.add(key);
+        toImport.push(a);
+      });
+
+      if (dryRun) {
+        return c.json({ imported: toImport.length, failed, skipped });
+      }
+
+      for (const a of toImport) {
         const category =
           a.category && validCat.has(a.category) ? a.category : "other";
         const status =
@@ -1009,7 +1093,7 @@ const assetRegistry = new Hono<{
         if (ok) imported++;
         else failed++;
       }
-      return c.json({ imported, failed });
+      return c.json({ imported, failed, skipped });
     },
   )
   // ── Locations (hierarchy) ────────────────────────────────────────────────
