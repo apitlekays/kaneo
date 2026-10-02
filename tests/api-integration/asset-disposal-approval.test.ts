@@ -383,9 +383,10 @@ describe("asset disposal approval", () => {
         currentCustodianId: ctx.ceo.id,
       })
       .returning();
+    if (!asset2) throw new Error("asset fixture");
     as(ctx.ceo);
     const req2 = await (
-      await propose(ctx.app, ctx.ws, asset2!.id, {
+      await propose(ctx.app, ctx.ws, asset2.id, {
         confirmSerial: "AST-PROJ01",
       })
     ).json();
@@ -479,11 +480,11 @@ describe("asset disposal approval", () => {
     expect(edit.status).toBe(400);
 
     await propose(ctx.app, ctx.ws, ctx.asset.id);
-    const escape = await ctx.app.request(
+    const leaveDisposal = await ctx.app.request(
       `/api/asset-registry/${ctx.asset.id}?workspaceId=${ctx.ws}`,
       json("PUT", { status: "active" }),
     );
-    expect(escape.status).toBe(400);
+    expect(leaveDisposal.status).toBe(400);
   });
 
   it("only global admins edit committees and office holders", async () => {

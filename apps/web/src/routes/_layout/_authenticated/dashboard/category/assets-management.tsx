@@ -6,6 +6,7 @@ import { AssetDetailDialog } from "@/components/assets/asset-detail-dialog";
 import { AssetFormDialog } from "@/components/assets/asset-form-dialog";
 import { AssetImportExport } from "@/components/assets/asset-import-export";
 import { AssetSummary } from "@/components/assets/asset-summary";
+import { DisposalsView } from "@/components/assets/disposals-view";
 import { DriverRegistry } from "@/components/assets/driver-registry";
 import { LocationsManager } from "@/components/assets/locations-manager";
 import { RenewalsView } from "@/components/assets/renewals-view";
@@ -80,6 +81,7 @@ function AssetsPage() {
     | "drivers"
     | "locations"
     | "stock-take"
+    | "disposals"
   >("registry");
   // Prefetch detail when a row is hovered/opened for snappier UX.
   useAsset(workspaceId, selectedId);
@@ -165,6 +167,16 @@ function AssetsPage() {
                   )}
                 >
                   Stock-take
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("disposals")}
+                  className={cn(
+                    "rounded-md px-3 py-1",
+                    view === "disposals" && "bg-muted font-medium",
+                  )}
+                >
+                  Disposals
                 </button>
               </div>
               {view === "registry" && (
@@ -309,6 +321,11 @@ function AssetsPage() {
               <DriverRegistry workspaceId={workspaceId} />
             ) : view === "locations" ? (
               <LocationsManager workspaceId={workspaceId} />
+            ) : view === "disposals" ? (
+              <DisposalsView
+                workspaceId={workspaceId}
+                onOpenAsset={setSelectedId}
+              />
             ) : (
               <StockTakeView workspaceId={workspaceId} />
             )}

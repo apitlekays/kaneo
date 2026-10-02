@@ -33,6 +33,7 @@ import {
   ASSET_CATEGORIES,
   ASSET_STATUSES,
   labelOf,
+  MANUAL_ASSET_STATUSES,
 } from "@/lib/asset-constants";
 import { fromMinorUnits, toMinorUnits } from "@/lib/format-currency";
 
@@ -199,7 +200,11 @@ export function AssetFormDialog({ workspaceId, asset, trigger }: Props) {
                 <SelectValue>{labelOf(ASSET_STATUSES, status)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {ASSET_STATUSES.map((opt) => (
+                {(MANUAL_ASSET_STATUSES.some((o) => o.value === status)
+                  ? MANUAL_ASSET_STATUSES
+                  : // A disposal status is shown but cannot be changed here.
+                    ASSET_STATUSES.filter((o) => o.value === status)
+                ).map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </SelectItem>

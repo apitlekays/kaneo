@@ -14,6 +14,11 @@ export function useAssetMutations(workspaceId: string, assetId?: string) {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["assets", workspaceId] });
     qc.invalidateQueries({ queryKey: ["asset-summary", workspaceId] });
+    // Recording or reverting a disposal moves its approval request too.
+    qc.invalidateQueries({
+      queryKey: ["asset-disposal-requests", workspaceId],
+    });
+    qc.invalidateQueries({ queryKey: ["disposal-requests", workspaceId] });
     if (assetId) {
       qc.invalidateQueries({ queryKey: ["asset", workspaceId, assetId] });
     }

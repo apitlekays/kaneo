@@ -309,6 +309,16 @@ in `docs/superpowers/specs/2026-08-27-minutes-manager-refinements-REQUIREMENTS.m
   its case in review. Base UI's `AlertDialog` is already non-dismissible and
   omits the prop entirely. Popovers, dropdowns and select menus are NOT in
   scope and keep closing on outside click.
+- **Asset disposal is an approval workflow, not a status.** `pending-disposal`,
+  `approved-for-disposal` and `disposed` are set only by
+  `asset-registry/disposals.ts` (custodian → disposal committee chair → CEO);
+  `assertManualStatusChange` refuses them on edit, imports downgrade them, and
+  recording a physical disposal needs an approved request or a global-admin
+  override with a justification. Deciders resolve from **committees**
+  (`meeting_body` + `meeting_body_member.role`, managed in General Management →
+  Committees) and **office holders** (`workspace_position`, e.g. `ceo` with an
+  acting holder). Nobody decides their own proposal: chair → secretary, CEO →
+  acting CEO. Committees and office holders are global-admin-only to edit.
 - **Security**: Never commit secrets, always validate inputs, sanitize outputs
 - **PDF extraction binaries (Spec D)**: archival document indexing shells out
   to `pdftotext`, `pdftoppm` (poppler-utils) and `tesseract`. The production

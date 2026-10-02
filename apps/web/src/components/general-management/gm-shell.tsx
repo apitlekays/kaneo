@@ -4,6 +4,7 @@ import {
   Mail,
   NotepadText,
   Settings as SettingsIcon,
+  Users,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import {
 import { useCorrespondenceSummary } from "@/hooks/queries/correspondence/use-letters";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
+import { Committees } from "./committees";
 import { Correspondence } from "./correspondence";
 import { MinutesManager } from "./minutes-manager";
 import { GeneralManagementSettings } from "./settings";
@@ -47,6 +49,12 @@ const SECTIONS = [
     key: "minutes-manager",
     label: "Meeting Minutes",
     icon: NotepadText,
+    adminOnly: false,
+  },
+  {
+    key: "committees",
+    label: "Committees",
+    icon: Users,
     adminOnly: false,
   },
   {
@@ -250,6 +258,9 @@ export function GeneralManagementShell({
         )}
         {currentKey === "minutes-manager" && (
           <MinutesManager workspaceId={workspaceId} />
+        )}
+        {currentKey === "committees" && (
+          <Committees workspaceId={workspaceId} />
         )}
         {currentKey === "settings" && (
           <GeneralManagementSettings workspaceId={workspaceId} />

@@ -45,7 +45,13 @@ function ItemCard({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { mutate, isPending } = useDecidePending(workspaceId);
-  const [rejecting, setRejecting] = useState(false);
+  // Which outcome is waiting for its written reason, if any.
+  const [deciding, setDeciding] = useState<"accepted" | "rejected" | null>(
+    null,
+  );
+  const reasonOnAccept = item.reasonRequired === "always";
+  const acceptLabel = item.labels?.accept ?? t("pendingDecisions:accept");
+  const rejectLabel = item.labels?.reject ?? t("pendingDecisions:reject");
   const [reason, setReason] = useState("");
   const [gone, setGone] = useState(false);
 
@@ -125,27 +131,32 @@ function ItemCard({
         {t("pendingDecisions:open")}
       </a>
 
-      {rejecting ? (
+      {deciding ? (
         <div className="space-y-2 pt-2">
           <Textarea
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             placeholder={t("pendingDecisions:reasonPlaceholder")}
+            aria-label={
+              deciding === "accepted"
+                ? `Justification for ${acceptLabel}`
+                : `Justification for ${rejectLabel}`
+            }
           />
           <div className="flex gap-2">
             <Button
               size="sm"
-              variant="destructive"
+              variant={deciding === "rejected" ? "destructive" : "default"}
               disabled={!reason.trim() || isPending}
-              onClick={() => decide("rejected", reason.trim())}
+              onClick={() => decide(deciding, reason.trim())}
             >
-              {t("pendingDecisions:confirmRejection")}
+              {deciding === "rejected"
+                ? item.labels
+                  ? rejectLabel
+                  : t("pendingDecisions:confirmRejection")
+                : acceptLabel}
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setRejecting(false)}
-            >
+            <Button size="sm" variant="ghost" onClick={() => setDeciding(null)}>
               {t("pendingDecisions:cancel")}
             </Button>
           </div>
@@ -155,16 +166,20 @@ function ItemCard({
           <Button
             size="sm"
             disabled={isPending}
-            onClick={() => decide("accepted", null)}
+            onClick={() =>
+              reasonOnAccept
+                ? setDeciding("accepted")
+                : decide("accepted", null)
+            }
           >
-            {t("pendingDecisions:accept")}
+            {acceptLabel}
           </Button>
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setRejecting(true)}
+            onClick={() => setDeciding("rejected")}
           >
-            {t("pendingDecisions:reject")}
+            {rejectLabel}
           </Button>
         </div>
       )}

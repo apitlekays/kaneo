@@ -1,11 +1,14 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PendingDecisionError } from "@/fetchers/pending-decision";
+import {
+  PendingDecisionError,
+  type PendingDecisionItem,
+} from "@/fetchers/pending-decision";
 import { PendingDecisionDialog } from "./pending-decision-dialog";
 
 const mutate = vi.fn();
-const items = {
+const items: { current: PendingDecisionItem[] } = {
   current: [
     {
       source: "correspondence",
@@ -108,6 +111,46 @@ describe("PendingDecisionDialog", () => {
       expect.objectContaining({
         decision: "rejected",
         reason: "Wrong department",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("uses a provider's own wording and asks for a justification to support too", async () => {
+    items.current = [
+      {
+        source: "asset-disposal",
+        id: "req-1",
+        title: "Dispose of Dell Latitude 5420?",
+        subtitle: "Disposal proposal — committee review",
+        context: ['Proposed by Aisyah: "Motherboard failed"'],
+        href: "/dashboard/category/assets-management",
+        createdAt: "2026-10-02T00:00:00.000Z",
+        requiresReason: true,
+        reasonRequired: "always",
+        labels: { accept: "Support", reject: "Do not support" },
+      },
+    ];
+    render(<PendingDecisionDialog />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Support" }),
+    );
+    // Supporting is not one click: it waits for a justification.
+    expect(mutate).not.toHaveBeenCalled();
+    const submit = screen.getByRole("button", { name: "Support" });
+    expect(submit).toBeDisabled();
+
+    await userEvent.type(
+      screen.getByRole("textbox"),
+      "Agreed at the October sitting",
+    );
+    await userEvent.click(submit);
+    expect(mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "req-1",
+        decision: "accepted",
+        reason: "Agreed at the October sitting",
       }),
       expect.anything(),
     );

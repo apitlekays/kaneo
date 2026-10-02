@@ -12,7 +12,20 @@ export const ASSET_STATUSES: Option[] = [
   { value: "in-maintenance", label: "In Maintenance" },
   { value: "retired", label: "Retired" },
   { value: "disposed", label: "Disposed" },
+  { value: "pending-disposal", label: "Proposed for disposal" },
+  { value: "approved-for-disposal", label: "Approved for disposal" },
 ];
+
+/**
+ * Statuses a person can pick when editing an asset. The disposal statuses
+ * are set only by the disposal approval process (the API refuses them).
+ */
+export const MANUAL_ASSET_STATUSES: Option[] = ASSET_STATUSES.filter(
+  (s) =>
+    !["disposed", "pending-disposal", "approved-for-disposal"].includes(
+      s.value,
+    ),
+);
 
 export const RENEWAL_TYPES: Option[] = [
   { value: "road-tax", label: "Road Tax" },
@@ -46,6 +59,10 @@ export const STATUS_TONES: Record<string, string> = {
   retired: "bg-muted text-muted-foreground border-border",
   disposed:
     "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20",
+  "pending-disposal":
+    "bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/20",
+  "approved-for-disposal":
+    "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30",
 };
 
 export function labelOf(options: Option[], value: string): string {

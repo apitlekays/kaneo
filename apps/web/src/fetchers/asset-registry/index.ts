@@ -456,7 +456,153 @@ export type DisposalInput = {
   reason?: string | null;
   approvedBy?: string | null;
   notes?: string | null;
+  /**
+   * Required when a global admin records a disposal that never went through
+   * approval (historical records). Kept in the disposal trail.
+   */
+  overrideJustification?: string | null;
 };
+
+export type DisposalStep = {
+  id: string;
+  requestId: string;
+  stage: "proposed" | "chair" | "ceo" | "withdrawn" | "recorded";
+  outcome:
+    | "proposed"
+    | "supported"
+    | "not_supported"
+    | "approved"
+    | "rejected"
+    | "withdrawn"
+    | "recorded";
+  actorUserId: string | null;
+  actorName: string | null;
+  actedAs: string;
+  justification: string;
+  createdAt: string;
+};
+
+export type DisposalRequest = {
+  id: string;
+  assetId: string;
+  status:
+    | "proposed"
+    | "awaiting_ceo"
+    | "approved"
+    | "disposed"
+    | "not_supported"
+    | "rejected"
+    | "withdrawn"
+    | "reverted";
+  reasonCategory: string;
+  proposedBy: string | null;
+  proposerName: string | null;
+  pendingDeciderId: string | null;
+  pendingDeciderName: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+  steps: DisposalStep[];
+  // Present on the workspace-wide list only.
+  assetName?: string;
+  serialNumber?: string;
+};
+
+export type DisposalSettings = {
+  committeeBodyId: string | null;
+  committeeName: string | null;
+  chairName: string | null;
+  secretaryName: string | null;
+  canEdit: boolean;
+};
+
+export const DISPOSAL_REASONS = [
+  { value: "beyond-repair", label: "Beyond economical repair" },
+  { value: "obsolete", label: "Obsolete" },
+  { value: "damaged", label: "Damaged" },
+  { value: "lost", label: "Lost" },
+  { value: "surplus", label: "Surplus to requirements" },
+] as const;
+
+export async function getAssetDisposalRequests(
+  ws: string,
+  assetId: string,
+): Promise<DisposalRequest[]> {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/disposal-requests?workspaceId=${ws}`), {
+      credentials: "include",
+    }),
+  );
+}
+
+export async function getDisposalRequests(
+  ws: string,
+): Promise<DisposalRequest[]> {
+  return jsonOrThrow(
+    await fetch(api(`disposal-requests?workspaceId=${ws}`), {
+      credentials: "include",
+    }),
+  );
+}
+
+export async function proposeDisposal(
+  ws: string,
+  assetId: string,
+  body: {
+    reasonCategory: string;
+    justification: string;
+    confirmServiceable: true;
+    confirmSerial: string;
+  },
+): Promise<DisposalRequest> {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/disposal-requests`), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, ...body }),
+    }),
+  );
+}
+
+export async function withdrawDisposal(
+  ws: string,
+  assetId: string,
+  requestId: string,
+  justification: string,
+) {
+  return jsonOrThrow(
+    await fetch(api(`${assetId}/disposal-requests/${requestId}/withdraw`), {
+      method: "POST",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, justification }),
+    }),
+  );
+}
+
+export async function getDisposalSettings(
+  ws: string,
+): Promise<DisposalSettings> {
+  return jsonOrThrow(
+    await fetch(api(`disposal-settings?workspaceId=${ws}`), {
+      credentials: "include",
+    }),
+  );
+}
+
+export async function setDisposalSettings(
+  ws: string,
+  committeeBodyId: string | null,
+) {
+  return jsonOrThrow(
+    await fetch(api("disposal-settings"), {
+      method: "PUT",
+      credentials: "include",
+      headers: jsonHeaders,
+      body: JSON.stringify({ workspaceId: ws, committeeBodyId }),
+    }),
+  );
+}
 
 export async function createDisposal(
   workspaceId: string,

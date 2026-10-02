@@ -10,6 +10,10 @@ export type PendingDecisionItem = {
   /** ISO string — Date does not survive JSON. */
   createdAt: string;
   requiresReason: boolean;
+  /** "always": a justification is needed to accept as well as to reject. */
+  reasonRequired?: "reject" | "always";
+  /** Button wording, when "Accept" / "Reject" is the wrong verb. */
+  labels?: { accept: string; reject: string };
   /**
    * Optional emphasis a provider wants shown on the card. Keeps the dialog
    * free of any one module's vocabulary — correspondence sends urgency here

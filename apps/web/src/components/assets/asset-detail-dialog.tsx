@@ -5,6 +5,7 @@ import {
   Download,
   FileText,
   Fuel,
+  Gavel,
   Handshake,
   History,
   ImageIcon,
@@ -69,6 +70,7 @@ import {
   useLocations,
 } from "@/hooks/queries/asset-registry/use-locations";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
+import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import {
   ASSET_CATEGORIES,
   ASSET_STATUSES,
@@ -85,6 +87,7 @@ import {
   toMinorUnits,
 } from "@/lib/format-currency";
 import { AssetFormDialog } from "./asset-form-dialog";
+import { DisposalTab } from "./disposal-tab";
 import { RentalsTab } from "./rentals-tab";
 
 type Mutations = ReturnType<typeof useAssetMutations>;
@@ -278,6 +281,7 @@ function DetailBody({
           },
           { value: "fleet", label: "Fleet", icon: Fuel },
           { value: "custody", label: "Custody", icon: Users },
+          { value: "disposal", label: "Disposal", icon: Gavel },
           { value: "rentals", label: "Rentals", icon: Handshake },
           { value: "history", label: "History", icon: History },
           { value: "label", label: "Label", icon: QrCode },
@@ -324,6 +328,13 @@ function DetailBody({
         </DialogSidebarPanel>
         <DialogSidebarPanel value="custody">
           <CustodyTab data={data} m={m} workspaceId={workspaceId} />
+        </DialogSidebarPanel>
+        <DialogSidebarPanel value="disposal">
+          <DisposalTab
+            asset={asset}
+            workspaceId={workspaceId}
+            onRecordDisposal={() => setTab("financials")}
+          />
         </DialogSidebarPanel>
         <DialogSidebarPanel value="rentals">
           <RentalsTab asset={asset} workspaceId={workspaceId} />
@@ -1471,6 +1482,11 @@ function FinancialsTab({
   const { asset, depreciation: dep, disposal } = data;
 
   const confirm = useConfirm();
+  const { isAdmin } = useWorkspacePermission();
+  // Recording a disposal needs the CEO's approval; a global admin may still
+  // record one directly (historical records) with a justification.
+  const approved = asset.status === "approved-for-disposal";
+  const [overrideReason, setOverrideReason] = useState("");
   const [method, setMethod] = useState(asset.depreciationMethod);
   const [life, setLife] = useState(
     asset.usefulLifeMonths != null ? String(asset.usefulLifeMonths) : "",
@@ -1505,6 +1521,7 @@ function FinancialsTab({
       proceeds: toMinorUnits(dProceeds),
       reason: dReason.trim() || null,
       notes: dNotes.trim() || null,
+      overrideJustification: approved ? null : overrideReason.trim() || null,
     });
   };
 
@@ -1645,26 +1662,50 @@ function FinancialsTab({
             {disposal.reason && (
               <p className="text-muted-foreground">{disposal.reason}</p>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={async () => {
-                if (
-                  await confirm({
-                    title: "Remove disposal record?",
-                    description:
-                      "This permanently deletes this disposal record.",
-                  })
-                ) {
-                  m.removeDisposal.mutate();
-                }
-              }}
-            >
-              Revert disposal
-            </Button>
+            {isAdmin && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: "Revert this disposal?",
+                      description:
+                        "This deletes the disposal record and returns the asset to active use. The approval trail is kept.",
+                    })
+                  ) {
+                    m.removeDisposal.mutate();
+                  }
+                }}
+              >
+                Revert disposal
+              </Button>
+            )}
           </div>
+        ) : !approved && !isAdmin ? (
+          <p className="rounded-lg border border-border border-dashed p-3 text-muted-foreground text-sm">
+            Disposal needs approval first: propose it in the{" "}
+            <strong>Disposal</strong> tab. Once the committee chair supports it
+            and the CEO approves, record the physical disposal here.
+          </p>
         ) : (
           <div className="grid gap-2 rounded-lg border border-dashed border-border p-3 sm:grid-cols-2">
+            {!approved && (
+              <div className="space-y-1 sm:col-span-2">
+                <p className="text-amber-700 text-xs dark:text-amber-300">
+                  This asset has no approved disposal. As a global admin you can
+                  record one directly — say why; it is kept in the disposal
+                  trail.
+                </p>
+                <Textarea
+                  rows={2}
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder="Why this disposal is recorded without approval *"
+                  aria-label="Override justification"
+                />
+              </div>
+            )}
             <DateField
               value={dDate}
               onChange={setDDate}
@@ -1707,9 +1748,13 @@ function FinancialsTab({
               size="sm"
               className="sm:col-span-2"
               onClick={dispose}
-              disabled={!dDate || m.createDisposal.isPending}
+              disabled={
+                !dDate ||
+                m.createDisposal.isPending ||
+                (!approved && !overrideReason.trim())
+              }
             >
-              Dispose asset
+              {approved ? "Record disposal" : "Record disposal (override)"}
             </Button>
           </div>
         )}
