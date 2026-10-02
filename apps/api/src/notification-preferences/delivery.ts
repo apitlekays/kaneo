@@ -31,6 +31,8 @@ export const EMAIL_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
   "task_offered",
   "letter_assigned",
   "meeting_action_assigned",
+  "asset_disposal_review",
+  "asset_disposal_approval",
   // Assignments — work handed to the recipient.
   "letter_action_assigned",
   "work_order_assigned",
@@ -41,6 +43,8 @@ export const EMAIL_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
   "asset_maintenance_due",
   "asset_renewal_reminder",
   "asset_rental_overdue",
+  // Outcomes the proposer of an asset disposal is waiting on.
+  "asset_disposal_outcome",
 ]);
 
 const DEFAULT_OUTBOUND_FETCH_TIMEOUT_MS = 15_000;

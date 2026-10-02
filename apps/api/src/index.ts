@@ -17,6 +17,7 @@ import {
 import * as v from "valibot";
 import activity from "./activity";
 import assetRegistry from "./asset-registry";
+import assetDisposals from "./asset-registry/disposals";
 import assetPublic from "./asset-registry/public";
 import assetRentals from "./asset-registry/rentals";
 import { auth } from "./auth";
@@ -47,6 +48,7 @@ import { migrateColumns } from "./migrations/column-migration";
 import notification from "./notification";
 import notificationPreferences from "./notification-preferences";
 import oauth from "./oauth";
+import organisation from "./organisation";
 import pendingDecision from "./pending-decision";
 import { initializePlugins } from "./plugins";
 import { migrateGitHubIntegration } from "./plugins/github/migration";
@@ -578,7 +580,9 @@ export function createApp() {
   api.route("/user", user);
   api.route("/task-mom", taskMom);
   api.route("/workspace-access", workspaceAccess);
+  api.route("/organisation", organisation);
   api.route("/asset-registry", assetRentals);
+  api.route("/asset-registry", assetDisposals);
   api.route("/asset-registry", assetRegistry);
   api.route("/correspondence", correspondence);
   api.route("/pending-decision", pendingDecision);

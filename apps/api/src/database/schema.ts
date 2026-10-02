@@ -440,6 +440,157 @@ export const assetReminderSentTable = pgTable(
 );
 
 /**
+ * A named office in the workspace — "who is the CEO" — and who stands in
+ * when they are away. Approval flows (asset disposal first) resolve
+ * deciders from here instead of hard-coding people. Not an org chart.
+ */
+export const workspacePositionTable = pgTable(
+  "workspace_position",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    // Stable identifier used by code, e.g. "ceo".
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    holderUserId: text("holder_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+    actingUserId: text("acting_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("workspace_position_ws_key_unique").on(table.workspaceId, table.key),
+  ],
+);
+
+/** Per-workspace disposal configuration: which committee reviews proposals. */
+export const assetDisposalSettingTable = pgTable("asset_disposal_setting", {
+  id: text("id")
+    .$defaultFn(() => createId())
+    .primaryKey(),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .unique()
+    .references(() => workspaceTable.id, {
+      onDelete: "cascade",
+      onUpdate: "cascade",
+    }),
+  committeeBodyId: text("committee_body_id").references(
+    () => meetingBodyTable.id,
+    { onDelete: "set null", onUpdate: "cascade" },
+  ),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/**
+ * A proposal to dispose of an asset, moving custodian → committee chair →
+ * CEO. Status: proposed | awaiting_ceo | approved | disposed (open while
+ * one of these) or not_supported | rejected | withdrawn (closed, asset
+ * released). The physical disposal is still an asset_disposal row, which
+ * an approved request unlocks.
+ */
+export const assetDisposalRequestTable = pgTable(
+  "asset_disposal_request",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => registeredAssetTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    status: text("status").notNull().default("proposed"),
+    // beyond-repair | obsolete | damaged | lost | surplus
+    reasonCategory: text("reason_category").notNull(),
+    proposedBy: text("proposed_by").references(() => userTable.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+    // The asset's status before the proposal, restored if it is released.
+    previousAssetStatus: text("previous_asset_status").notNull(),
+    // Who must decide the current stage — resolved when the stage opens so
+    // a later change of chair or CEO does not orphan a waiting request.
+    pendingDeciderId: text("pending_decider_id").references(
+      () => userTable.id,
+      { onDelete: "set null", onUpdate: "cascade" },
+    ),
+    decidedAt: timestamp("decided_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("asset_disposal_request_assetId_idx").on(table.assetId),
+    index("asset_disposal_request_workspaceId_idx").on(table.workspaceId),
+    index("asset_disposal_request_decider_idx").on(table.pendingDeciderId),
+    // One live request per asset.
+    uniqueIndex("asset_disposal_request_one_open_idx")
+      .on(table.assetId)
+      .where(sql`${table.status} in ('proposed', 'awaiting_ceo', 'approved')`),
+  ],
+);
+
+/** Append-only audit trail of a disposal request. No update or delete. */
+export const assetDisposalStepTable = pgTable(
+  "asset_disposal_step",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    requestId: text("request_id")
+      .notNull()
+      .references(() => assetDisposalRequestTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    // proposed | chair | ceo | withdrawn | recorded
+    stage: text("stage").notNull(),
+    // proposed | supported | not_supported | approved | rejected |
+    // withdrawn | recorded
+    outcome: text("outcome").notNull(),
+    actorUserId: text("actor_user_id").references(() => userTable.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+    // custodian | page_admin | chair | secretary | ceo | acting_ceo |
+    // override
+    actedAs: text("acted_as").notNull(),
+    justification: text("justification").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [index("asset_disposal_step_requestId_idx").on(table.requestId)],
+);
+
+/**
  * An asset lent or rented to someone outside the organisation. Custody
  * (asset_custody) tracks which *member* is responsible for an asset; a
  * rental records that it physically left with an external renter — who,

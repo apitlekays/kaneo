@@ -1,3 +1,4 @@
+import { assetDisposalProvider } from "./providers/asset-disposal";
 import { correspondenceProvider } from "./providers/correspondence";
 import { meetingActionProvider } from "./providers/meeting-action";
 import { minuteActionProvider } from "./providers/minute-action";
@@ -10,4 +11,5 @@ export const providers: PendingDecisionProvider[] = [
   taskProvider,
   minuteActionProvider,
   meetingActionProvider,
+  assetDisposalProvider,
 ];

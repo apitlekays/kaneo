@@ -29,6 +29,7 @@ import {
   meetingMinuteItemTable,
   meetingTable,
   meetingTypeTable,
+  userTable,
   workspaceUserTable,
 } from "../database/schema";
 import createNotification from "../notification/controllers/create-notification";
@@ -673,11 +674,72 @@ app.get(
     const body = await loadBody(ws, bodyId);
     if (!body) throw new HTTPException(404, { message: "Not found" });
     const rows = await db
-      .select()
+      .select({
+        member: meetingBodyMemberTable,
+        userName: userTable.name,
+        userEmail: userTable.email,
+        userImage: userTable.image,
+      })
       .from(meetingBodyMemberTable)
+      .leftJoin(userTable, eq(meetingBodyMemberTable.userId, userTable.id))
       .where(eq(meetingBodyMemberTable.bodyId, bodyId))
       .orderBy(asc(meetingBodyMemberTable.createdAt));
-    return c.json(rows);
+    // A linked member's display name is their account name; an external
+    // member's is the name typed in.
+    return c.json(
+      rows.map((r) => ({
+        ...r.member,
+        displayName: r.userName ?? r.member.name,
+        userEmail: r.userEmail,
+        userImage: r.userImage,
+      })),
+    );
+  },
+);
+
+app.put(
+  "/bodies/:bodyId/members/:memberId",
+  describeRoute({
+    operationId: "updateMeetingBodyMember",
+    tags: ["Meeting"],
+    description:
+      "Change a body member's role or reactivate them (global admin only)",
+  }),
+  validator("param", v.object({ bodyId: v.string(), memberId: v.string() })),
+  validator(
+    "json",
+    v.object({
+      workspaceId: v.string(),
+      role: v.optional(v.picklist(BODY_ROLES)),
+      active: optBool,
+    }),
+  ),
+  workspaceAccess.fromBody("workspaceId"),
+  pageAccess,
+  async (c) => {
+    const ws = c.get("workspaceId") as string;
+    const callerId = c.get("userId") as string;
+    await assertGmAdmin(callerId, ws);
+    const { bodyId, memberId } = c.req.valid("param");
+    const b = c.req.valid("json");
+    const body = await loadBody(ws, bodyId);
+    if (!body) throw new HTTPException(404, { message: "Not found" });
+    const p = patch<typeof meetingBodyMemberTable.$inferInsert>(b, [
+      "role",
+      "active",
+    ]);
+    const [row] = await db
+      .update(meetingBodyMemberTable)
+      .set(p)
+      .where(
+        and(
+          eq(meetingBodyMemberTable.id, memberId),
+          eq(meetingBodyMemberTable.bodyId, bodyId),
+        ),
+      )
+      .returning();
+    if (!row) throw new HTTPException(404, { message: "Not found" });
+    return c.json(row);
   },
 );
 

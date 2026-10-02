@@ -11,6 +11,7 @@ import {
   assetAuditSessionTable,
   assetCostTable,
   assetCustodyTable,
+  assetDisposalRequestTable,
   assetDisposalTable,
   assetFileTable,
   assetFuelLogTable,
@@ -42,8 +43,15 @@ import {
   hasWorkspacePageAccess,
   requireWorkspacePageAccess,
 } from "../utils/page-access";
+import { isGlobalAdmin } from "../utils/project-access";
 import { validateWorkspaceAccess } from "../utils/validate-workspace-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
+
+import {
+  assertManualStatusChange,
+  authoriseDisposalRecord,
+  WORKFLOW_ASSET_STATUSES,
+} from "./disposal-rules";
 
 const PAGE_SLUG = "assets-management";
 const pageAccess = requireWorkspacePageAccess(PAGE_SLUG);
@@ -54,7 +62,15 @@ const CATEGORIES = [
   "vehicle",
   "other",
 ] as const;
-const STATUSES = ["active", "in-maintenance", "retired", "disposed"] as const;
+const STATUSES = [
+  "active",
+  "in-maintenance",
+  "retired",
+  "disposed",
+  // Set only by the disposal approval process (disposal-rules.ts).
+  "pending-disposal",
+  "approved-for-disposal",
+] as const;
 const RENEWAL_TYPES = [
   "road-tax",
   "insurance",
@@ -1053,12 +1069,21 @@ const assetRegistry = new Hono<{
       if (dryRun) {
         return c.json({ imported: toImport.length, failed, skipped });
       }
+      const canImportDisposed = await isGlobalAdmin(userId, workspaceId);
 
       for (const a of toImport) {
         const category =
           a.category && validCat.has(a.category) ? a.category : "other";
-        const status =
+        // Disposal statuses come only from the approval process; a global
+        // admin may still import historical assets as already disposed.
+        let status =
           a.status && validStatus.has(a.status) ? a.status : "active";
+        if (
+          WORKFLOW_ASSET_STATUSES.has(status) &&
+          !(status === "disposed" && canImportDisposed)
+        ) {
+          status = "active";
+        }
         const purchaseDate = toDate(a.purchaseDate ?? null);
         let ok = false;
         for (let attempt = 0; attempt < 5 && !ok; attempt++) {
@@ -1648,7 +1673,10 @@ const assetRegistry = new Hono<{
       const workspaceId = c.get("workspaceId") as string;
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
-      await loadAsset(id, workspaceId);
+      const current = await loadAsset(id, workspaceId);
+      if (body.status !== undefined) {
+        assertManualStatusChange(current.status, body.status);
+      }
       await assertLocation(body.locationId, workspaceId);
 
       const [updated] = await db
@@ -1839,6 +1867,9 @@ const assetRegistry = new Hono<{
         reason: optStr,
         approvedBy: optStr,
         notes: optStr,
+        // A global admin recording a disposal that never went through the
+        // approval process must say why; it is kept in the disposal trail.
+        overrideJustification: optStr,
       }),
     ),
     workspaceAccess.fromBody("workspaceId"),
@@ -1848,7 +1879,19 @@ const assetRegistry = new Hono<{
       const userId = c.get("userId");
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
-      await loadAsset(id, workspaceId);
+      const existingAsset = await loadAsset(id, workspaceId);
+      if (existingAsset.status === "disposed") {
+        throw new HTTPException(409, {
+          message: "This asset is already recorded as disposed",
+        });
+      }
+      await authoriseDisposalRecord({
+        assetId: id,
+        workspaceId,
+        userId,
+        overrideJustification: body.overrideJustification,
+        previousStatus: existingAsset.status,
+      });
 
       const values = {
         date: toDate(body.date) ?? new Date(),
@@ -1886,9 +1929,24 @@ const assetRegistry = new Hono<{
       const actorId = c.get("userId");
       const { id } = c.req.valid("param");
       await loadAsset(id, workspaceId);
+      // Undoing a disposal undoes a CEO-approved decision: global admins only.
+      if (!(await isGlobalAdmin(actorId, workspaceId))) {
+        throw new HTTPException(403, {
+          message: "Only a global admin can revert a disposal",
+        });
+      }
       await db
         .delete(assetDisposalTable)
         .where(eq(assetDisposalTable.assetId, id));
+      await db
+        .update(assetDisposalRequestTable)
+        .set({ status: "reverted" })
+        .where(
+          and(
+            eq(assetDisposalRequestTable.assetId, id),
+            eq(assetDisposalRequestTable.status, "disposed"),
+          ),
+        );
       await db
         .update(registeredAssetTable)
         .set({ status: "active", updatedAt: new Date() })

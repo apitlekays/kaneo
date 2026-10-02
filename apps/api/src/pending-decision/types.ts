@@ -12,6 +12,14 @@ export type PendingDecisionItem = {
   createdAt: Date;
   requiresReason: boolean;
   /**
+   * When a reason is required. "reject" (the default) asks only on
+   * rejection; "always" asks for a justification on either outcome — an
+   * approval chain where supporting a proposal must be explained too.
+   */
+  reasonRequired?: "reject" | "always";
+  /** Button wording, when "Accept" / "Reject" is the wrong verb. */
+  labels?: { accept: string; reject: string };
+  /**
    * Optional emphasis a provider wants shown on the card. Keeps the dialog
    * free of any one module's vocabulary — correspondence sends urgency here
    * rather than the dialog learning what a letter is.

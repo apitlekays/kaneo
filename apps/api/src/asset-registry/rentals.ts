@@ -136,6 +136,14 @@ const assetRentals = new Hono<{
           message: `A ${asset.status} asset cannot be rented out`,
         });
       }
+      if (
+        asset.status === "pending-disposal" ||
+        asset.status === "approved-for-disposal"
+      ) {
+        throw new HTTPException(400, {
+          message: "An asset going through disposal cannot be rented out",
+        });
+      }
 
       const startAt = requiredDate(body.startAt, "start date");
       const dueAt = toDate(body.dueAt);
