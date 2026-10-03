@@ -568,7 +568,9 @@ function RentalForm({
               onValueChange={(v) => setRatePeriod(v ?? "day")}
             >
               <SelectTrigger className="w-32 shrink-0">
-                <SelectValue />
+                <SelectValue>
+                  {RATE_PERIODS.find((p) => p.value === ratePeriod)?.label}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {RATE_PERIODS.map((p) => (

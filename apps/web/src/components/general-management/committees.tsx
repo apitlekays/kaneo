@@ -441,7 +441,9 @@ function CommitteeCard({
                         }
                       >
                         <SelectTrigger className="h-7 w-28">
-                          <SelectValue />
+                          <SelectValue>
+                            {ROLES.find((r) => r.value === member.role)?.label}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {ROLES.map((r) => (
@@ -495,7 +497,9 @@ function CommitteeCard({
                   }
                 >
                   <SelectTrigger className="h-7 w-28">
-                    <SelectValue />
+                    <SelectValue>
+                      {ROLES.find((r) => r.value === newRole)?.label}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {ROLES.map((r) => (

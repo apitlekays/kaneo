@@ -430,7 +430,10 @@ function ProposeForm({
         </Label>
         <Select value={reason} onValueChange={(v) => setReason(v ?? "")}>
           <SelectTrigger aria-label="Reason">
-            <SelectValue placeholder="Why should it be disposed of?" />
+            <SelectValue placeholder="Why should it be disposed of?">
+              {DISPOSAL_REASONS.find((r) => r.value === reason)?.label ??
+                "Why should it be disposed of?"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {DISPOSAL_REASONS.map((r) => (

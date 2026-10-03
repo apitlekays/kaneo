@@ -183,7 +183,12 @@ export function DisposalsView({
                 onValueChange={(v) => save.mutate(v || null)}
               >
                 <SelectTrigger aria-label="Disposal committee">
-                  <SelectValue placeholder="Choose a committee" />
+                  <SelectValue placeholder="Choose a committee">
+                    {committees.find((c) => c.id === settings?.committeeBodyId)
+                      ?.name ??
+                      settings?.committeeName ??
+                      "Choose a committee"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {committees.map((c) => (
