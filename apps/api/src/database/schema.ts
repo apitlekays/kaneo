@@ -2136,6 +2136,29 @@ export const gmCategoryTable = pgTable(
   ],
 );
 
+// How a letter arrived or was sent (Email, Physical, By hand, Portal, …).
+// letter.medium stores the key. Same shape as gmCategoryTable; deactivating
+// a medium hides it from new letters while existing ones keep their key.
+export const gmMediumTable = pgTable(
+  "gm_medium",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("gm_medium_workspaceId_idx").on(table.workspaceId),
+    unique("gm_medium_ws_key_unique").on(table.workspaceId, table.key),
+  ],
+);
+
 // Owning organisation for a letter (MAPIM Malaysia, UmmahPrima, StageMaster,
 // LadangUmmah, …). Same shape as gmCategoryTable.
 export const gmOrganisationTable = pgTable(

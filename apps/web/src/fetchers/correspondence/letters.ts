@@ -19,7 +19,8 @@ export type Letter = {
   jilid: number | null;
   direction: "in" | "out";
   type: "external" | "memo" | "circular";
-  medium: "email" | "physical" | "hand" | "portal";
+  /** Key of a configured medium (General Management → Settings → Mediums). */
+  medium: string;
   subject: string;
   senderName: string | null;
   senderOrg: string | null;

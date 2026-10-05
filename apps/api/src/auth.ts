@@ -34,7 +34,10 @@ import type { AccessControl } from "better-auth/plugins/access";
 import type { UserWithAnonymous } from "better-auth/plugins/anonymous";
 import { config } from "dotenv-mono";
 import { count, eq, sql } from "drizzle-orm";
-import { seedDefaultCategories } from "./correspondence/default-categories";
+import {
+  seedDefaultCategories,
+  seedDefaultMediums,
+} from "./correspondence/default-categories";
 import db, { schema } from "./database";
 import { publishEvent } from "./events";
 import { checkRegistrationAllowed } from "./utils/check-registration-allowed";
@@ -381,9 +384,10 @@ export const auth = betterAuth({
           // creation. Runs in a transaction because each row's audit event
           // (recordAuditEvent) must commit atomically with the row.
           try {
-            await db.transaction((tx) =>
-              seedDefaultCategories(tx, organization.id, user.id),
-            );
+            await db.transaction(async (tx) => {
+              await seedDefaultCategories(tx, organization.id, user.id);
+              await seedDefaultMediums(tx, organization.id, user.id);
+            });
           } catch (error) {
             console.error(
               "Failed to seed default Correspondence categories for workspace",

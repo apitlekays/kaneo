@@ -1,4 +1,4 @@
-import { gmCategoryTable } from "../database/schema";
+import { gmCategoryTable, gmMediumTable } from "../database/schema";
 import { type DbExecutor, recordAuditEvent } from "./audit";
 
 /**
@@ -63,6 +63,50 @@ export async function seedDefaultCategories(
       await recordAuditEvent(tx, {
         workspaceId,
         entityType: "gm_category",
+        entityId: row.id,
+        action: "create",
+        actorId,
+        after: row,
+      });
+    }
+  }
+}
+
+/**
+ * The default letter mediums. Their keys are the values letters stored
+ * before mediums became configurable — keep them, or old letters lose their
+ * label. Migration 0069 seeded the same four into every existing workspace.
+ */
+export const DEFAULT_GM_MEDIUMS: ReadonlyArray<{ key: string; label: string }> =
+  [
+    { key: "email", label: "Email" },
+    { key: "physical", label: "Physical" },
+    { key: "hand", label: "By hand" },
+    { key: "portal", label: "Portal" },
+  ];
+
+/** Seed the default mediums for a new workspace. Same rules as categories. */
+export async function seedDefaultMediums(
+  tx: DbExecutor,
+  workspaceId: string,
+  actorId: string,
+) {
+  const now = Date.now();
+  for (const [index, medium] of DEFAULT_GM_MEDIUMS.entries()) {
+    const [row] = await tx
+      .insert(gmMediumTable)
+      .values({
+        workspaceId,
+        key: medium.key,
+        label: medium.label,
+        createdAt: new Date(now + index),
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (row) {
+      await recordAuditEvent(tx, {
+        workspaceId,
+        entityType: "gm_medium",
         entityId: row.id,
         action: "create",
         actorId,

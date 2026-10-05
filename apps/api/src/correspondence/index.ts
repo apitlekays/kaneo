@@ -12,6 +12,7 @@ import {
   gmDepartmentTable,
   gmDistributionListTable,
   gmFilePlanNodeTable,
+  gmMediumTable,
   gmNumberSchemeTable,
   gmOrganisationTable,
   gmRetentionClassTable,
@@ -20,6 +21,7 @@ import {
   gmSignatoryTable,
   gmSlaPolicyTable,
   gmTemplateTable,
+  letterTable,
   meetingTypeTable,
 } from "../database/schema";
 import { requireWorkspacePageAccess } from "../utils/page-access";
@@ -318,6 +320,99 @@ registerConfigResource(app, {
       .where(
         and(eq(gmCategoryTable.id, id), eq(gmCategoryTable.workspaceId, ws)),
       )
+      .returning();
+    return { before: before as Row, after: after as Row };
+  },
+});
+
+// ── gm_medium ────────────────────────────────────────────────────────────────
+registerConfigResource(app, {
+  path: "mediums",
+  entityType: "gm_medium",
+  createSchema: v.object({
+    workspaceId: v.string(),
+    key: v.string(),
+    label: v.string(),
+    active: optBool,
+  }),
+  updateSchema: v.object({
+    workspaceId: v.string(),
+    key: optStr,
+    label: optStr,
+    active: optBool,
+  }),
+  list: (ws, includeInactive) =>
+    db
+      .select()
+      .from(gmMediumTable)
+      .where(
+        includeInactive
+          ? eq(gmMediumTable.workspaceId, ws)
+          : and(
+              eq(gmMediumTable.workspaceId, ws),
+              eq(gmMediumTable.active, true),
+            ),
+      )
+      .orderBy(asc(gmMediumTable.createdAt)),
+  create: async (tx, ws, b) => {
+    const [row] = await tx
+      .insert(gmMediumTable)
+      .values({
+        workspaceId: ws,
+        key: b.key as string,
+        label: b.label as string,
+        active: (b.active as boolean | undefined) ?? true,
+      })
+      .returning();
+    return row as Row;
+  },
+  update: async (tx, ws, id, b) => {
+    const [before] = await tx
+      .select()
+      .from(gmMediumTable)
+      .where(and(eq(gmMediumTable.id, id), eq(gmMediumTable.workspaceId, ws)))
+      .limit(1);
+    if (!before) return null;
+    // Letters store the medium's key, so a key in use is fixed; its label
+    // can change freely.
+    if (typeof b.key === "string" && b.key !== before.key) {
+      const [inUse] = await tx
+        .select({ id: letterTable.id })
+        .from(letterTable)
+        .where(
+          and(
+            eq(letterTable.workspaceId, ws),
+            eq(letterTable.medium, before.key),
+          ),
+        )
+        .limit(1);
+      if (inUse) {
+        throw new HTTPException(409, {
+          message:
+            "Letters already use this medium, so its key cannot change — edit the label instead",
+        });
+      }
+    }
+    const [after] = await tx
+      .update(gmMediumTable)
+      .set(
+        patch<typeof gmMediumTable.$inferInsert>(b, ["key", "label", "active"]),
+      )
+      .where(and(eq(gmMediumTable.id, id), eq(gmMediumTable.workspaceId, ws)))
+      .returning();
+    return { before: before as Row, after: after as Row };
+  },
+  deactivate: async (tx, ws, id) => {
+    const [before] = await tx
+      .select()
+      .from(gmMediumTable)
+      .where(and(eq(gmMediumTable.id, id), eq(gmMediumTable.workspaceId, ws)))
+      .limit(1);
+    if (!before) return null;
+    const [after] = await tx
+      .update(gmMediumTable)
+      .set({ active: false })
+      .where(and(eq(gmMediumTable.id, id), eq(gmMediumTable.workspaceId, ws)))
       .returning();
     return { before: before as Row, after: after as Row };
   },

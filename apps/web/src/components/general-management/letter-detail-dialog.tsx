@@ -12,6 +12,7 @@ import {
   Link2,
   Loader2,
   Paperclip,
+  Pencil,
   PenSquare,
   Route as RouteIcon,
   Send,
@@ -61,6 +62,7 @@ import {
   useLetterMutations,
   useLetters,
 } from "@/hooks/queries/correspondence/use-letters";
+import { useLetterMediums } from "@/hooks/queries/correspondence/use-mediums";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { usePdfCompression } from "@/hooks/use-pdf-compression";
 import { authClient } from "@/lib/auth-client";
@@ -73,6 +75,7 @@ import { onSelectValueChange } from "@/lib/select-value";
 import { toast } from "@/lib/toast";
 import { urgencyBadge } from "@/lib/urgency";
 import { AttachmentRow } from "./attachment-row";
+import { LetterEditForm } from "./letter-edit-form";
 import {
   type ExistingLink,
   LetterLinkPicker,
@@ -283,6 +286,7 @@ function Body({
             securityLabel={labelOf(securityLabels, letter.securityLabelId)}
             currentUserId={currentUserId}
             isAdmin={isAdmin}
+            workspaceId={workspaceId}
           />
         </DialogSidebarPanel>
         {isOutgoing && (
@@ -376,6 +380,7 @@ function OverviewSection({
   securityLabel,
   currentUserId,
   isAdmin,
+  workspaceId,
 }: {
   letter: LetterDetail;
   m: Mutations;
@@ -385,8 +390,11 @@ function OverviewSection({
   securityLabel: string;
   currentUserId: string;
   isAdmin: boolean;
+  workspaceId: string;
 }) {
   const confirm = useConfirm();
+  const [editing, setEditing] = useState(false);
+  const { labelOf: mediumLabel } = useLetterMediums(workspaceId);
   const [categoryId, setCategoryId] = useState(letter.categoryId ?? "");
   const [securityLabelId, setSecurityLabelId] = useState(
     letter.securityLabelId ?? "",
@@ -415,6 +423,9 @@ function OverviewSection({
   ).length;
   const doneActions = totalActions - openActions;
   const isClosed = letter.status === "closed" || letter.status === "archived";
+  // Archived and disposed records are sealed; the API refuses them too.
+  const isSealed = letter.status === "archived" || letter.status === "disposed";
+  const canEditDetails = (isAdmin || isMainUser) && !isSealed;
 
   const closeCorrespondence = async () => {
     if (
@@ -506,7 +517,25 @@ function OverviewSection({
         </div>
       )}
 
+      {editing && (
+        <LetterEditForm
+          letter={letter}
+          workspaceId={workspaceId}
+          pending={m.update.isPending}
+          onCancel={() => setEditing(false)}
+          onSave={(body) =>
+            m.update.mutate(body, { onSuccess: () => setEditing(false) })
+          }
+        />
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
+        {canEditDetails && !editing && (
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+            <Pencil className="h-3.5 w-3.5" />
+            {letter.declaredAt ? "Correct details" : "Edit details"}
+          </Button>
+        )}
         {isAdmin && !letter.declaredAt && (
           <Button
             size="sm"
@@ -599,7 +628,7 @@ function OverviewSection({
           label="Organisation"
           value={letter.senderOrg ?? letter.recipientOrg}
         />
-        <Field label="Medium" value={letter.medium} />
+        <Field label="Medium" value={mediumLabel(letter.medium)} />
         <Field
           label={letter.direction === "in" ? "Received" : "Sent"}
           value={letter.receivedAt ? formatDateMedium(letter.receivedAt) : "—"}

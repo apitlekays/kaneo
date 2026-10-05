@@ -24,6 +24,7 @@ import {
 } from "@/fetchers/correspondence/letters";
 import { useConfigList } from "@/hooks/queries/correspondence/use-config";
 import { useLetterMutations } from "@/hooks/queries/correspondence/use-letters";
+import { useLetterMediums } from "@/hooks/queries/correspondence/use-mediums";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { usePdfCompression } from "@/hooks/use-pdf-compression";
 import { compressionLabel } from "@/lib/compression-label";
@@ -36,12 +37,6 @@ const TYPES = [
   { value: "external", label: "External" },
   { value: "memo", label: "Memo" },
   { value: "circular", label: "Circular" },
-];
-const MEDIUMS = [
-  { value: "email", label: "Email" },
-  { value: "physical", label: "Physical" },
-  { value: "hand", label: "By hand" },
-  { value: "portal", label: "Portal" },
 ];
 
 export function LetterCaptureDialog({
@@ -82,6 +77,8 @@ export function LetterCaptureDialog({
   }, [open]);
   const m = useLetterMutations(workspaceId);
   const { data: categories = [] } = useConfigList("categories", workspaceId);
+  // Configurable in General Management → Settings → Mediums.
+  const { options: mediums } = useLetterMediums(workspaceId);
   const { data: securityLabels = [] } = useConfigList(
     "security-labels",
     workspaceId,
@@ -96,6 +93,12 @@ export function LetterCaptureDialog({
   const [direction, setDirection] = useState<"in" | "out">(defaultDirection);
   const [type, setType] = useState("external");
   const [medium, setMedium] = useState("email");
+  // "email" is the usual default, but a workspace may have retired it.
+  useEffect(() => {
+    if (mediums.length > 0 && !mediums.some((mm) => mm.value === medium)) {
+      setMedium(mediums[0]?.value ?? "email");
+    }
+  }, [mediums, medium]);
   const [subject, setSubject] = useState("");
   const [senderName, setSenderName] = useState("");
   const [senderOrg, setSenderOrg] = useState("");
@@ -413,11 +416,12 @@ export function LetterCaptureDialog({
             >
               <SelectTrigger>
                 <SelectValue>
-                  {MEDIUMS.find((mm) => mm.value === medium)?.label}
+                  {mediums.find((mm) => mm.value === medium)?.label ??
+                    "Choose a medium"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {MEDIUMS.map((mm) => (
+                {mediums.map((mm) => (
                   <SelectItem key={mm.value} value={mm.value}>
                     {mm.label}
                   </SelectItem>

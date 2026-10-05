@@ -21,6 +21,7 @@ import db from "../database";
 import {
   gmCategoryTable,
   gmFilePlanNodeTable,
+  gmMediumTable,
   gmNumberSchemeTable,
   gmOrganisationTable,
   gmRetentionClassTable,
@@ -54,6 +55,7 @@ import {
 } from "./assignment-rules";
 import { attachmentAuditAction } from "./attachment-access";
 import { recordAuditEvent } from "./audit";
+import { DEFAULT_GM_MEDIUMS } from "./default-categories";
 import {
   INACTIVE_LETTER_STATUSES,
   letterStatusFilter,
@@ -80,7 +82,23 @@ const pageAccess = requireWorkspacePageAccess(PAGE_SLUG);
 
 const DIRECTIONS = ["in", "out"] as const;
 const TYPES = ["external", "memo", "circular"] as const;
-const MEDIUMS = ["email", "physical", "hand", "portal"] as const;
+// Mediums are configurable per workspace (gm_medium, General Management →
+// Settings). A letter stores the medium's key; assertMedium checks it.
+async function assertMedium(workspaceId: string, key: string) {
+  const rows = await db
+    .select({ key: gmMediumTable.key, active: gmMediumTable.active })
+    .from(gmMediumTable)
+    .where(eq(gmMediumTable.workspaceId, workspaceId));
+  // A workspace that has never had mediums set up (created before they
+  // were configurable and missed by the seed, or by a script) still
+  // accepts the four built-in ones rather than refusing every letter.
+  const allowed =
+    rows.length === 0
+      ? DEFAULT_GM_MEDIUMS.map((m) => m.key)
+      : rows.filter((r) => r.active).map((r) => r.key);
+  if (!allowed.includes(key))
+    throw new HTTPException(400, { message: "Unknown medium" });
+}
 const STATUSES = [
   "captured",
   "registered",
@@ -942,7 +960,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           workspaceId: v.string(),
           direction: v.picklist(DIRECTIONS),
           type: v.picklist(TYPES),
-          medium: v.picklist(MEDIUMS),
+          medium: v.pipe(v.string(), v.trim(), v.minLength(1)),
           subject: v.string(),
           senderName: optStr,
           senderOrg: optStr,
@@ -980,6 +998,7 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           if (!(await inWorkspace(table, id, ws)))
             throw new HTTPException(400, { message: "Invalid reference" });
         }
+        await assertMedium(ws, b.medium);
         // Optional Main User assigned at registration (must be a member).
         const assigneeId = b.assigneeId?.trim() || null;
         if (assigneeId && !(await isWorkspaceMember(assigneeId, ws)))
@@ -1070,7 +1089,10 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
           externalRefNo: optStr,
           urgency: v.optional(letterUrgencySchema),
           organisationId: optStr,
-          medium: v.optional(v.picklist(MEDIUMS)),
+          medium: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
+          // Required to change a registered letter: a correction is
+          // recorded in the audit trail with this reason.
+          correctionReason: optStr,
         }),
       ),
       workspaceAccess.fromBody("workspaceId"),
@@ -1082,10 +1104,30 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const b = c.req.valid("json");
         const before = await loadLetter(ws, id);
         if (!before) throw new HTTPException(404, { message: "Not found" });
-        if (before.declaredAt)
-          throw new HTTPException(409, {
-            message: "Letter is a declared record; content is immutable",
-          });
+        // A registered (declared) letter can be corrected — wrong details
+        // typed at capture should not be permanent — but only with a reason,
+        // recorded in the audit trail as a "correct" event. Its reference
+        // number and attached document stay fixed (neither is editable
+        // here), and an archived or disposed record stays sealed.
+        const correctionReason = b.correctionReason?.trim() || null;
+        if (before.declaredAt) {
+          if (
+            SEALED_LETTER_STATUSES.includes(
+              before.status as (typeof SEALED_LETTER_STATUSES)[number],
+            )
+          )
+            throw new HTTPException(409, {
+              message: `A ${before.status} record is sealed and cannot be corrected`,
+            });
+          if (!correctionReason)
+            throw new HTTPException(400, {
+              message:
+                "This letter is registered — give a reason for the correction",
+            });
+        }
+        // An unchanged medium is fine even if it has since been deactivated.
+        if (b.medium !== undefined && b.medium !== before.medium)
+          await assertMedium(ws, b.medium);
         if (!(await inWorkspace(gmOrganisationTable, b.organisationId, ws)))
           throw new HTTPException(400, { message: "Invalid reference" });
         const patch: Row = { updatedAt: new Date() };
@@ -1117,10 +1159,13 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
             workspaceId: ws,
             entityType: "letter",
             entityId: id,
-            action: "update",
+            action: before.declaredAt ? "correct" : "update",
             actorId: userId,
             before,
-            after: row,
+            // The reason travels inside the hashed snapshot, so it is as
+            // tamper-evident as the change itself.
+            after:
+              before.declaredAt && row ? { ...row, correctionReason } : row,
             ip: getIp(c),
           });
           return row as Row;

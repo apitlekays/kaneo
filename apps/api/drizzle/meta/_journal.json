@@ -484,6 +484,13 @@
       "when": 1790905703106,
       "tag": "0068_third_frank_castle",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1791186445216,
+      "tag": "0069_tough_psylocke",
+      "breakpoints": true
     }
   ]
 }

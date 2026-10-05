@@ -43,6 +43,19 @@ function buildSpecs(userOptions: Option[]): Record<string, Spec> {
         { key: "label", label: "Label" },
       ],
     },
+    mediums: {
+      title: "Medium",
+      description:
+        "How correspondence arrives or is sent (email, physical, by hand, …). A key already used by letters cannot change; edit its label instead.",
+      fields: [
+        { key: "key", label: "Key", type: "text", required: true },
+        { key: "label", label: "Label", type: "text", required: true },
+      ],
+      columns: [
+        { key: "label", label: "Label" },
+        { key: "key", label: "Key" },
+      ],
+    },
     organisations: {
       title: "Organisation",
       description: "Group entities a letter can belong to.",
@@ -362,6 +375,7 @@ const TABS: { value: string; label: string }[] = [
   { value: "number-schemes", label: "Numbering" },
   { value: "file-plan", label: "File plan" },
   { value: "categories", label: "Categories" },
+  { value: "mediums", label: "Mediums" },
   { value: "organisations", label: "Organisations" },
   { value: "security-labels", label: "Security" },
   { value: "approval-chains", label: "Approval chains" },
