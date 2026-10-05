@@ -425,7 +425,10 @@ function OverviewSection({
   const isClosed = letter.status === "closed" || letter.status === "archived";
   // Archived and disposed records are sealed; the API refuses them too.
   const isSealed = letter.status === "archived" || letter.status === "disposed";
-  const canEditDetails = (isAdmin || isMainUser) && !isSealed;
+  // GM admins, the letter's main user, and whoever captured it (the API
+  // enforces the same rule).
+  const isCapturer = letter.createdBy === currentUserId;
+  const canEditDetails = (isAdmin || isMainUser || isCapturer) && !isSealed;
 
   const closeCorrespondence = async () => {
     if (

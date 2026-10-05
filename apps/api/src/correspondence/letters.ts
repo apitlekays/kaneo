@@ -67,7 +67,7 @@ import { allocateNumber } from "./numbering";
 import { loadOutgoingDetail } from "./outgoing";
 import { letterUrgencySchema } from "./register-fields";
 import { loadLifecycleDetail, retentionDueDate } from "./retention";
-import { assertGmAdmin } from "./roles";
+import { assertGmAdmin, isGmAdmin } from "./roles";
 import {
   assertNoOpenActions,
   assertStatusChangeAllowed,
@@ -1104,6 +1104,18 @@ export function registerLetterRoutes(app: Hono<GmEnv>) {
         const b = c.req.valid("json");
         const before = await loadLetter(ws, id);
         if (!before) throw new HTTPException(404, { message: "Not found" });
+        // Who may edit a letter's details: a GM admin, the letter's main
+        // user (current accepted assignee), or whoever captured it — the
+        // person most likely to have typed the mistake.
+        if (
+          before.currentAssigneeId !== userId &&
+          before.createdBy !== userId &&
+          !(await isGmAdmin(userId, ws))
+        )
+          throw new HTTPException(403, {
+            message:
+              "Only a GM admin, the letter's main user, or the person who captured it can edit it",
+          });
         // A registered (declared) letter can be corrected — wrong details
         // typed at capture should not be permanent — but only with a reason,
         // recorded in the audit trail as a "correct" event. Its reference

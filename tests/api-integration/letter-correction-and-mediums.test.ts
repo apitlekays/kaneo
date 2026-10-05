@@ -137,6 +137,82 @@ describe("correcting a registered letter", () => {
   }
 });
 
+describe("who may edit a letter", () => {
+  beforeEach(async () => {
+    await resetTestDatabase();
+  });
+
+  /** A workspace member with General Management access, signed in. */
+  async function gmMember(ws: string) {
+    const m = await createWorkspaceMember({ role: "member" });
+    await db.insert(schema.workspaceUserTable).values({
+      workspaceId: ws,
+      userId: m.user.id,
+      role: "member",
+      joinedAt: new Date(),
+    });
+    await db.insert(schema.workspacePageAccessTable).values({
+      workspaceId: ws,
+      userId: m.user.id,
+      pageSlug: "general-management",
+    });
+    return m.user;
+  }
+
+  it("lets the person who captured a letter edit it, and correct it once registered", async () => {
+    const ctx = await setup();
+    const clerk = await gmMember(ctx.ws);
+    mockAuthenticatedSession(clerk);
+    const letter = await (await capture(ctx.app, ctx.ws)).json();
+
+    expect(
+      (await edit(ctx.app, ctx.ws, letter.id, { senderName: "Encik Abu" }))
+        .status,
+    ).toBe(200);
+
+    await markRegistered(letter.id);
+    expect(
+      (
+        await edit(ctx.app, ctx.ws, letter.id, {
+          senderName: "Encik Abu bin Bakar",
+          correctionReason: "Full name per the letterhead",
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it("refuses another General Management user who neither captured nor holds it", async () => {
+    const ctx = await setup();
+    const letter = await (await capture(ctx.app, ctx.ws)).json();
+    const bystander = await gmMember(ctx.ws);
+    mockAuthenticatedSession(bystander);
+    const res = await edit(ctx.app, ctx.ws, letter.id, { subject: "Changed" });
+    expect(res.status).toBe(403);
+  });
+
+  it("lets the letter's main user and a GM admin edit it", async () => {
+    const ctx = await setup();
+    const holder = await gmMember(ctx.ws);
+    const letter = await (await capture(ctx.app, ctx.ws)).json();
+    await db
+      .update(schema.letterTable)
+      .set({ currentAssigneeId: holder.id })
+      .where(eq(schema.letterTable.id, letter.id));
+
+    mockAuthenticatedSession(holder);
+    expect(
+      (await edit(ctx.app, ctx.ws, letter.id, { subject: "By the holder" }))
+        .status,
+    ).toBe(200);
+
+    mockAuthenticatedSession(ctx.owner);
+    expect(
+      (await edit(ctx.app, ctx.ws, letter.id, { subject: "By the admin" }))
+        .status,
+    ).toBe(200);
+  });
+});
+
 describe("configurable letter mediums", () => {
   beforeEach(async () => {
     await resetTestDatabase();
