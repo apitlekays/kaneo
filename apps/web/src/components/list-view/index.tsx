@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { priorityColorsTaskCard } from "@/constants/priority-colors";
 import { useUpdateTask } from "@/hooks/mutations/task/use-update-task";
 import { useRegisterShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
 import { getColumnIcon } from "@/lib/column";
 import { toast } from "@/lib/toast";
@@ -35,6 +36,7 @@ import type { ProjectWithTasks } from "@/types/project";
 import BulkToolbar from "../bulk-selection/bulk-toolbar";
 import { ArchiveTasksModal } from "../shared/modals/archive-tasks-modal";
 import CreateTaskModal from "../shared/modals/create-task-modal";
+import { useMoveTaskGuard } from "../task/move-task-guard";
 import TaskRow from "./task-row";
 
 type ListViewProps = {
@@ -53,6 +55,10 @@ function ListView({ project, disableDragDrop = false }: ListViewProps) {
     clearFocus,
   } = useBulkSelectionStore();
   const { mutate: updateTask } = useUpdateTask();
+  const { canEditTasks, canManageCurrentProject } = useWorkspacePermission();
+  const { guardMove, dialog: moveProhibitedDialog } = useMoveTaskGuard();
+  // Read-only users can't reorder or move rows at all.
+  const dragDisabled = disableDragDrop || !canEditTasks();
   const navigate = useNavigate();
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
@@ -120,11 +126,11 @@ function ListView({ project, disableDragDrop = false }: ListViewProps) {
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
-      activationConstraint: { distance: disableDragDrop ? 999999 : 8 },
+      activationConstraint: { distance: dragDisabled ? 999999 : 8 },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: disableDragDrop ? 999999 : 200,
+        delay: dragDisabled ? 999999 : 200,
         tolerance: 8,
       },
     }),
@@ -168,6 +174,26 @@ function ListView({ project, disableDragDrop = false }: ListViewProps) {
 
     const activeTaskId = active.id.toString();
     const overId = over.id.toString();
+
+    // Moving a row to another status group changes its status, which only
+    // the task's creator, assignees and project managers may do.
+    const fromColumn = project.columns.find((col) =>
+      col.tasks.some((task) => task.id === activeTaskId),
+    );
+    const toColumn = project.columns.find(
+      (col) =>
+        col.id === overId || col.tasks.some((task) => task.id === overId),
+    );
+    const movingTask = fromColumn?.tasks.find((t) => t.id === activeTaskId);
+    if (
+      fromColumn &&
+      toColumn &&
+      movingTask &&
+      fromColumn.id !== toColumn.id &&
+      !guardMove(movingTask)
+    ) {
+      return;
+    }
 
     const updatedProject = produce(project, (draft) => {
       const sourceColumn = draft?.columns?.find((col) =>
@@ -333,16 +359,18 @@ function ListView({ project, disableDragDrop = false }: ListViewProps) {
               <Plus className="w-3 h-3" />
             </button>
 
-            {column.isFinal && column.tasks.length > 0 && (
-              <button
-                type="button"
-                onClick={() => handleArchiveClick(column)}
-                className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition-colors"
-                title={t("tasks:listView.archiveAllTooltip")}
-              >
-                <Archive className="w-3 h-3" />
-              </button>
-            )}
+            {canManageCurrentProject() &&
+              column.isFinal &&
+              column.tasks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleArchiveClick(column)}
+                  className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition-colors"
+                  title={t("tasks:listView.archiveAllTooltip")}
+                >
+                  <Archive className="w-3 h-3" />
+                </button>
+              )}
           </div>
         </div>
 
@@ -446,6 +474,7 @@ function ListView({ project, disableDragDrop = false }: ListViewProps) {
       />
 
       <BulkToolbar />
+      {moveProhibitedDialog}
     </DndContext>
   );
 }

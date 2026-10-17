@@ -87,6 +87,40 @@ function satisfies(
   return true;
 }
 
+/**
+ * Whether the user's workspace role grants every action in `permissions`.
+ * Prefers the workspace's editable role row so admin-edited defaults
+ * (viewer/member/admin) take effect immediately, falling back to the
+ * compiled-in definitions only when no row exists — protects viewer/member/
+ * admin users from a 403 if their workspace somehow missed the seed (e.g.,
+ * seed failed during workspace creation and the boot-time backfill hasn't run
+ * yet). Does not consider instance admins; callers handle that.
+ */
+export async function hasWorkspacePermission(
+  userId: string,
+  workspaceId: string,
+  permissions: PermissionMap,
+): Promise<boolean> {
+  const [member] = await db
+    .select({ role: schema.workspaceUserTable.role })
+    .from(schema.workspaceUserTable)
+    .where(
+      and(
+        eq(schema.workspaceUserTable.workspaceId, workspaceId),
+        eq(schema.workspaceUserTable.userId, userId),
+      ),
+    )
+    .limit(1);
+
+  if (!member?.role) return false;
+
+  const statements =
+    (await customRoleStatements(workspaceId, member.role)) ??
+    builtInRoleStatements(member.role);
+
+  return Boolean(statements && satisfies(statements, permissions));
+}
+
 export function requireWorkspacePermission(permissions: PermissionMap) {
   return async (c: Context, next: Next) => {
     const workspaceId = c.get("workspaceId");
@@ -105,32 +139,7 @@ export function requireWorkspacePermission(permissions: PermissionMap) {
       throw new HTTPException(401, { message: "Unauthorized" });
     }
 
-    const [member] = await db
-      .select({ role: schema.workspaceUserTable.role })
-      .from(schema.workspaceUserTable)
-      .where(
-        and(
-          eq(schema.workspaceUserTable.workspaceId, workspaceId),
-          eq(schema.workspaceUserTable.userId, userId),
-        ),
-      )
-      .limit(1);
-
-    if (!member?.role) {
-      throw new HTTPException(403, { message: "Insufficient permissions" });
-    }
-
-    // Prefer the DB row when present so admin-edited defaults
-    // (viewer/member/admin) take effect immediately. Falls back to the
-    // compiled-in static definitions only when no row exists — protects
-    // viewer/member/admin users from a 403 if their workspace somehow
-    // missed the seed (e.g., seed failed during workspace creation and
-    // the boot-time backfill hasn't run yet).
-    const statements =
-      (await customRoleStatements(workspaceId, member.role)) ??
-      builtInRoleStatements(member.role);
-
-    if (!statements || !satisfies(statements, permissions)) {
+    if (!(await hasWorkspacePermission(userId, workspaceId, permissions))) {
       throw new HTTPException(403, { message: "Insufficient permissions" });
     }
 

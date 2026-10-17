@@ -4,6 +4,7 @@ import { describeRoute, resolver, validator } from "hono-openapi";
 import * as v from "valibot";
 import db from "../database";
 import { externalLinkTable } from "../database/schema";
+import { projectAccess } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 
 const externalLinkSchema = v.object({
@@ -43,6 +44,7 @@ const externalLink = new Hono<{
   }),
   validator("param", v.object({ taskId: v.string() })),
   workspaceAccess.fromTaskId("taskId"),
+  projectAccess.read("task", "taskId"),
   async (c) => {
     const { taskId } = c.req.valid("param");
 

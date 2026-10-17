@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import * as v from "valibot";
 import { labelSchema } from "../schemas";
+import { projectAccess } from "../utils/project-access";
 import { requireWorkspacePermission } from "../utils/require-workspace-permission";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import assignLabelToTask from "./controllers/assign-label-to-task";
@@ -35,6 +36,7 @@ const label = new Hono<{
     }),
     validator("param", v.object({ taskId: v.string() })),
     workspaceAccess.fromTaskId(),
+    projectAccess.read("task", "taskId"),
     async (c) => {
       const { taskId } = c.req.valid("param");
       const labels = await getLabelsByTaskId(taskId);
@@ -139,6 +141,7 @@ const label = new Hono<{
     validator("json", v.object({ taskId: v.string() })),
     workspaceAccess.fromLabel(),
     requireWorkspacePermission({ label: ["update"] }),
+    projectAccess.write("task", "taskId"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { taskId } = c.req.valid("json");
@@ -165,6 +168,7 @@ const label = new Hono<{
     validator("param", v.object({ id: v.string() })),
     workspaceAccess.fromLabel(),
     requireWorkspacePermission({ label: ["update"] }),
+    projectAccess.write("label", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const userId = c.get("userId");

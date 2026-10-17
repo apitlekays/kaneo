@@ -78,6 +78,7 @@ async function importTasks(
           .values({
             projectId,
             userId: null,
+            createdBy: currentUserId || null,
             title: taskData.title,
             status,
             columnId: column?.id ?? null,

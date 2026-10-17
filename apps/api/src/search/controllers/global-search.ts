@@ -2,12 +2,14 @@ import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import db from "../../database";
 import {
   activityTable,
+  projectMemberTable,
   projectTable,
   taskTable,
   userTable,
   workspaceTable,
   workspaceUserTable,
 } from "../../database/schema";
+import { isGlobalAdmin } from "../../utils/project-access";
 
 type SearchParams = {
   query: string;
@@ -142,9 +144,39 @@ async function globalSearch(params: SearchParams): Promise<{
   const results: SearchResult[] = [];
   const searchPattern = `%${query.toLowerCase()}%`;
 
-  const workspaceFilter = workspaceId
-    ? eq(projectTable.workspaceId, workspaceId)
-    : inArray(projectTable.workspaceId, accessibleWorkspaceIds);
+  // Results come only from projects the user can open: every project in a
+  // workspace where they are a global admin, otherwise the ones they belong to.
+  const scopeWorkspaceIds = workspaceId
+    ? [workspaceId]
+    : accessibleWorkspaceIds;
+  const adminWorkspaceIds: string[] = [];
+  for (const id of scopeWorkspaceIds) {
+    if (await isGlobalAdmin(resolvedUserId, id)) adminWorkspaceIds.push(id);
+  }
+  const memberProjectIds = (
+    await db
+      .select({ projectId: projectMemberTable.projectId })
+      .from(projectMemberTable)
+      .where(eq(projectMemberTable.userId, resolvedUserId))
+  ).map((row) => row.projectId);
+  const projectVisibility =
+    adminWorkspaceIds.length === 0 && memberProjectIds.length === 0
+      ? sql`false`
+      : or(
+          adminWorkspaceIds.length > 0
+            ? inArray(projectTable.workspaceId, adminWorkspaceIds)
+            : undefined,
+          memberProjectIds.length > 0
+            ? inArray(projectTable.id, memberProjectIds)
+            : undefined,
+        );
+
+  const workspaceFilter = and(
+    workspaceId
+      ? eq(projectTable.workspaceId, workspaceId)
+      : inArray(projectTable.workspaceId, accessibleWorkspaceIds),
+    projectVisibility,
+  );
 
   // Check if query matches short-id pattern (e.g. "DEP-23")
   const shortIdMatch = query.match(/^([A-Za-z][\w-]*)-(\d+)$/);

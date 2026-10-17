@@ -26,6 +26,7 @@ import useGetLabelsByTask from "@/hooks/queries/label/use-get-labels-by-task";
 import useGetProject from "@/hooks/queries/project/use-get-project";
 import useGetProjects from "@/hooks/queries/project/use-get-projects";
 import useGetTask from "@/hooks/queries/task/use-get-task";
+import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
 import { getColumnIcon } from "@/lib/column";
 import { dueDateStatusColors, getDueDateStatus } from "@/lib/due-date-status";
@@ -87,8 +88,13 @@ export default function TaskPropertiesSidebar({
   const { data: githubIntegration } = useGetGithubIntegration(projectId);
   const { data: giteaIntegration } = useGetGiteaIntegration(projectId);
   const { data: workspaceProjects = [] } = useGetProjects({ workspaceId });
+  const { canMoveTask: canChangeTaskStatus } = useWorkspacePermission();
+  // Moving to another project changes the task's status too, so it follows
+  // the same creator / assignee / project manager rule.
   const canMoveTask =
-    Boolean(task) && workspaceProjects.some((p) => p.id !== task?.projectId);
+    Boolean(task) &&
+    Boolean(task && canChangeTaskStatus(task)) &&
+    workspaceProjects.some((p) => p.id !== task?.projectId);
   const statusColumn = columns.find(
     (column) => column.slug === task?.status || column.id === task?.status,
   );

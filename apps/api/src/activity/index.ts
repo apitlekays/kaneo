@@ -3,7 +3,7 @@ import { describeRoute, resolver, validator } from "hono-openapi";
 import * as v from "valibot";
 import { subscribeToEvent } from "../events";
 import { activitySchema } from "../schemas";
-import { requireWorkspacePermission } from "../utils/require-workspace-permission";
+import { projectAccess } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import createActivity from "./controllers/create-activity";
 import createComment from "./controllers/create-comment";
@@ -33,6 +33,7 @@ const activity = new Hono<{
     }),
     validator("param", v.object({ taskId: v.string() })),
     workspaceAccess.fromTaskId(),
+    projectAccess.read("task", "taskId"),
     async (c) => {
       const { taskId } = c.req.valid("param");
       const activities = await getActivities(taskId);
@@ -65,7 +66,7 @@ const activity = new Hono<{
       }),
     ),
     workspaceAccess.fromTaskId(),
-    requireWorkspacePermission({ task: ["update"] }),
+    projectAccess.write("task", "taskId"),
     async (c) => {
       const { taskId, userId, message, type, eventData } = c.req.valid("json");
       const activity = await createActivity(
@@ -101,7 +102,7 @@ const activity = new Hono<{
       }),
     ),
     workspaceAccess.fromTaskId(),
-    requireWorkspacePermission({ task: ["update"] }),
+    projectAccess.write("task", "taskId"),
     async (c) => {
       const { taskId, comment } = c.req.valid("json");
       const userId = c.get("userId");
@@ -133,6 +134,7 @@ const activity = new Hono<{
       }),
     ),
     workspaceAccess.fromActivity("activityId"),
+    projectAccess.write("activity", "activityId"),
     async (c) => {
       const { activityId, comment } = c.req.valid("json");
       const userId = c.get("userId");
@@ -162,6 +164,7 @@ const activity = new Hono<{
       }),
     ),
     workspaceAccess.fromActivity("activityId"),
+    projectAccess.write("activity", "activityId"),
     async (c) => {
       const { activityId } = c.req.valid("json");
       const userId = c.get("userId");

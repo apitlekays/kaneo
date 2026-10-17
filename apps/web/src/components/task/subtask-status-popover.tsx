@@ -16,6 +16,7 @@ import { getColumnIcon } from "@/lib/column";
 import { getStatusDisplayLabel } from "@/lib/i18n/domain";
 import { toast } from "@/lib/toast";
 import type Task from "@/types/task";
+import { useMoveTaskGuard } from "./move-task-guard";
 
 type SubtaskStatusPopoverProps = {
   tasks: Task[];
@@ -40,6 +41,7 @@ export default function SubtaskStatusPopover({
   const { mutateAsync: updateTaskStatus } = useUpdateTaskStatus();
   const { canEditTasks } = useWorkspacePermission();
   const canEdit = canEditTasks();
+  const { guardMove, dialog: moveProhibitedDialog } = useMoveTaskGuard();
 
   const allSameStatus =
     tasks.length > 0 && tasks.every((t) => t.status === tasks[0].status);
@@ -81,31 +83,42 @@ export default function SubtaskStatusPopover({
   if (!canEdit) return <>{children}</>;
 
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={false}>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent className="w-48 p-0" align="start">
-        <div>
-          {statusOptions.map((status, index) => (
-            <Button
-              key={status.value}
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2 h-8 px-2 rounded-none first:rounded-t-md last:rounded-b-md"
-              onClick={() => handleStatusChange(status.value)}
-            >
-              {getColumnIcon(status.value, status.isFinal, status.icon)}
-              <span className="text-sm">
-                {getStatusDisplayLabel(status.value, status.label)}
-              </span>
-              {currentStatus === status.value ? (
-                <Check className="ml-auto h-4 w-4" />
-              ) : (
-                <ShortcutNumber number={index + 1} />
-              )}
-            </Button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <>
+      {moveProhibitedDialog}
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          // Opening the picker is the attempt to change the status.
+          if (next && !tasks.every(guardMove)) return;
+          setOpen(next);
+        }}
+        modal={false}
+      >
+        <PopoverTrigger asChild>{children}</PopoverTrigger>
+        <PopoverContent className="w-48 p-0" align="start">
+          <div>
+            {statusOptions.map((status, index) => (
+              <Button
+                key={status.value}
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 h-8 px-2 rounded-none first:rounded-t-md last:rounded-b-md"
+                onClick={() => handleStatusChange(status.value)}
+              >
+                {getColumnIcon(status.value, status.isFinal, status.icon)}
+                <span className="text-sm">
+                  {getStatusDisplayLabel(status.value, status.label)}
+                </span>
+                {currentStatus === status.value ? (
+                  <Check className="ml-auto h-4 w-4" />
+                ) : (
+                  <ShortcutNumber number={index + 1} />
+                )}
+              </Button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }

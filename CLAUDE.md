@@ -309,6 +309,20 @@ in `docs/superpowers/specs/2026-08-27-minutes-manager-refinements-REQUIREMENTS.m
   its case in review. Base UI's `AlertDialog` is already non-dismissible and
   omits the prop entirely. Popovers, dropdowns and select menus are NOT in
   scope and keep closing on outside click.
+- **Roles: two layers, and the workspace role is the ceiling** (decided
+  2026-10-17). Workspace roles are Owner / Global Admin / **Member** (staff,
+  the invite default) / **Viewer** (read-only everywhere, always). Project
+  roles are Project Member / Project Manager and only matter for workspace
+  Members, a Viewer added to a project, even as manager, can still only read.
+  Every project-scoped route goes through `projectAccess.read/write(...)` or
+  the `assertCan*` helpers in `apps/api/src/utils/project-access.ts`; write =
+  project membership **and** `task:update` (`task:create` for creating).
+  Within a project: deleting a task is creator-or-manager; changing its
+  status (moving the card, or to another project) is creator, assignee or
+  manager; assigning is manager-only. The web mirrors these in
+  `use-workspace-permission.ts` (`canMoveTask`, `canDeleteTask`) and shows
+  `move-task-guard.tsx`'s dialog on a refused drag. Tasks created before
+  `task.created_by` existed were backfilled from their `created` activity.
 - **Asset disposal is an approval workflow, not a status.** `pending-disposal`,
   `approved-for-disposal` and `disposed` are set only by
   `asset-registry/disposals.ts` (custodian → disposal committee chair → CEO);

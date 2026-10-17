@@ -18,10 +18,17 @@ import {
   validateTaskAssetUploadInput,
 } from "../storage/s3";
 import {
-  assertCanAccessTasks,
+  assertCanDeleteTask,
+  assertCanManageTasks,
+  assertCanMoveTask,
+  assertCanWriteProjectById,
+  assertCanWriteTasks,
+  canManageProjectMembers,
+  projectAccess,
   requireProjectAccess,
   requireProjectAccessFromTask,
   requireProjectManagerFromTask,
+  TASK_CREATE_PERMISSION,
 } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import bulkUpdateTasks from "./controllers/bulk-update-tasks";
@@ -177,8 +184,21 @@ const task = new Hono<{
         throw new HTTPException(401, { message: "Unauthorized" });
       }
 
-      // Only act on tasks in projects the user can access.
-      await assertCanAccessTasks(userId, taskIds);
+      // Only act on tasks in projects the user can write in, and hold each
+      // operation to the same rule as its single-task route.
+      await assertCanWriteTasks(userId, taskIds);
+      if (operation === "updateAssignee") {
+        await assertCanManageTasks(userId, taskIds);
+      }
+      if (operation === "updateStatus" || operation === "delete") {
+        for (const taskId of taskIds) {
+          if (operation === "delete") {
+            await assertCanDeleteTask(userId, taskId);
+          } else {
+            await assertCanMoveTask(userId, taskId);
+          }
+        }
+      }
 
       if (
         operation !== "delete" &&
@@ -229,7 +249,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromProject("projectId"),
-    requireProjectAccess("projectId"),
+    projectAccess.write("project", "projectId", TASK_CREATE_PERMISSION),
     async (c) => {
       const { projectId } = c.req.param();
       const {
@@ -317,11 +337,14 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { destinationProjectId, destinationStatus } = c.req.valid("json");
       const currentUserId = c.get("userId");
+
+      await assertCanMoveTask(currentUserId, id);
+      await assertCanWriteProjectById(currentUserId, destinationProjectId);
 
       const result = await moveTask({
         taskId: id,
@@ -364,7 +387,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const {
@@ -381,6 +404,42 @@ const task = new Hono<{
 
       const currentUserId = c.get("userId");
 
+      // A full-object PUT can carry a status, project or assignee change;
+      // each is held to the rule of its dedicated route.
+      const [existing] = await db
+        .select({
+          status: taskTable.status,
+          projectId: taskTable.projectId,
+          assigneeId: taskTable.userId,
+          workspaceId: projectTable.workspaceId,
+        })
+        .from(taskTable)
+        .innerJoin(projectTable, eq(taskTable.projectId, projectTable.id))
+        .where(eq(taskTable.id, id))
+        .limit(1);
+      if (!existing) {
+        throw new HTTPException(404, { message: "Task not found" });
+      }
+      if (existing.status !== status || existing.projectId !== projectId) {
+        await assertCanMoveTask(currentUserId, id);
+      }
+      if (existing.projectId !== projectId) {
+        await assertCanWriteProjectById(currentUserId, projectId);
+      }
+      // The client always echoes its last-known assignee here, so a stale
+      // value from a non-manager is dropped rather than refused: assigning
+      // stays manager-only without breaking an unrelated edit.
+      const canAssign =
+        (userId || null) === existing.assigneeId ||
+        (await canManageProjectMembers(
+          currentUserId,
+          existing.projectId,
+          existing.workspaceId,
+        ));
+      const nextAssigneeId = canAssign
+        ? userId
+        : (existing.assigneeId ?? undefined);
+
       const task = await updateTask(
         id,
         title,
@@ -391,7 +450,7 @@ const task = new Hono<{
         description,
         priority,
         position,
-        userId,
+        nextAssigneeId,
         currentUserId,
       );
 
@@ -457,7 +516,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromProject("projectId"),
-    requireProjectAccess("projectId"),
+    projectAccess.write("project", "projectId", TASK_CREATE_PERMISSION),
     async (c) => {
       const { projectId } = c.req.valid("param");
       const { tasks } = c.req.valid("json");
@@ -485,11 +544,12 @@ const task = new Hono<{
     }),
     validator("param", v.object({ id: v.string() })),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
 
       const currentUserId = c.get("userId");
+      await assertCanDeleteTask(currentUserId, id);
       const task = await deleteTask(id, currentUserId);
 
       return c.json(task);
@@ -513,11 +573,13 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ status: v.string() })),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { status } = c.req.valid("json");
       const currentUserId = c.get("userId");
+
+      await assertCanMoveTask(currentUserId, id);
 
       const task = await updateTaskStatus({ id, status, currentUserId });
 
@@ -542,7 +604,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ priority: v.picklist(VALID_PRIORITIES) })),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { priority } = c.req.valid("json");
@@ -671,7 +733,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ dueDate: v.optional(v.string()) })),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { dueDate = null } = c.req.valid("json");
@@ -705,7 +767,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ title: v.string() })),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { title } = c.req.valid("json");
@@ -744,7 +806,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { filename, contentType, size, surface } = c.req.valid("json");
@@ -828,7 +890,7 @@ const task = new Hono<{
       }),
     ),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { key, filename, contentType, size, surface } = c.req.valid("json");
@@ -954,7 +1016,7 @@ const task = new Hono<{
     validator("param", v.object({ id: v.string() })),
     validator("json", v.object({ description: v.string() })),
     workspaceAccess.fromTask(),
-    requireProjectAccessFromTask("id"),
+    projectAccess.write("task", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const { description } = c.req.valid("json");

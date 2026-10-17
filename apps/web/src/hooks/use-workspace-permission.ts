@@ -5,6 +5,7 @@ import { useProjectMembers } from "@/hooks/queries/project-member/use-project-me
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useGetActiveWorkspaceUser } from "@/hooks/queries/workspace-users/use-active-workspace-user";
 import { authClient } from "@/lib/auth-client";
+import type Task from "@/types/task";
 
 export type PermissionLevel = "owner" | "admin" | "member";
 
@@ -49,9 +50,9 @@ export function useWorkspacePermission() {
   const workspaceId = activeWorkspace?.id;
   const role = activeMember?.role as string | undefined;
 
-  // Task permissions are project-membership-based: any member of the current
-  // project (manager or member) can CRUD tasks, regardless of workspace role.
-  // Global admins/owners are covered by the workspace-role checks below.
+  // Task permissions are project-membership-based, with the workspace role as
+  // a ceiling: a project member whose workspace role can't edit tasks (a
+  // Viewer) can only read. Global admins/owners can do everything.
   const params = useParams({ strict: false });
   const projectId =
     "projectId" in params && typeof params.projectId === "string"
@@ -106,6 +107,15 @@ export function useWorkspacePermission() {
   });
 
   const can: CapabilityMap = capabilities ?? emptyCapabilityMap();
+  // Mirrors the API's canWriteProject / canManageProjectMembers. Off a
+  // project route there is no membership to check, so the workspace role
+  // decides and the server has the final say.
+  const isProjectWriter =
+    isGlobalAdminRole ||
+    (can.editTasks && (projectId ? isProjectMember : true));
+  const isEffectiveManager =
+    isGlobalAdminRole || (isProjectManager && can.editTasks);
+  const userId = session?.user?.id;
 
   const helpers = useMemo(() => {
     return {
@@ -114,14 +124,29 @@ export function useWorkspacePermission() {
       canDeleteProjects: () => can.deleteProjects,
       // Editing a project's settings: global admins/owner OR the project's
       // own manager. Used by the project settings pages.
-      canManageCurrentProject: () => isGlobalAdminRole || isProjectManager,
-      canManageTasks: () => can.manageTasks || isProjectMember,
-      canCreateTasks: () => can.createTasks || isProjectMember,
-      canEditTasks: () => can.editTasks || isProjectMember,
-      canDeleteTasks: () => can.deleteTasks || isProjectMember,
+      canManageCurrentProject: () => isEffectiveManager,
+      canManageTasks: () => isProjectWriter,
+      canCreateTasks: () => isProjectWriter,
+      canEditTasks: () => isProjectWriter,
+      // Whether the user may delete *some* task here; use canDeleteTask for a
+      // specific one.
+      canDeleteTasks: () => isProjectWriter,
       // Assigning/unassigning a task is restricted to global admins/owner and
       // the project's managers (not every project member).
-      canAssignTasks: () => isGlobalAdminRole || isProjectManager,
+      canAssignTasks: () => isEffectiveManager,
+      // Deleting a task: its creator, or a project manager / global admin.
+      canDeleteTask: (task: Pick<Task, "createdBy">) =>
+        isEffectiveManager ||
+        (isProjectWriter && Boolean(userId) && task.createdBy === userId),
+      // Changing a task's status (moving its card between columns): its
+      // creator, anyone assigned to it, or a project manager / global admin.
+      canMoveTask: (task: Pick<Task, "createdBy" | "userId" | "assignees">) =>
+        isEffectiveManager ||
+        (isProjectWriter &&
+          Boolean(userId) &&
+          (task.createdBy === userId ||
+            task.userId === userId ||
+            Boolean(task.assignees?.some((a) => a.userId === userId)))),
       canManageLabels: () => can.manageLabels,
       canManageWorkspace: () => can.manageWorkspace,
       canDeleteWorkspace: () => can.deleteWorkspace,
@@ -143,7 +168,7 @@ export function useWorkspacePermission() {
         }
       },
     };
-  }, [can, workspaceId, isProjectMember, isProjectManager, isGlobalAdminRole]);
+  }, [can, workspaceId, isProjectWriter, isEffectiveManager, userId]);
 
   return {
     ...helpers,

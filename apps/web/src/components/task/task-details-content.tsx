@@ -12,6 +12,7 @@ import useExternalLinks from "@/hooks/queries/external-link/use-external-links";
 import useGetProject from "@/hooks/queries/project/use-get-project";
 import useGetTask from "@/hooks/queries/task/use-get-task";
 import useGetTaskRelations from "@/hooks/queries/task-relation/use-get-task-relations";
+import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import type { ExternalLink } from "@/types/external-link";
 import DriveAttachments from "./drive-attachments";
 import TaskDescription from "./task-description";
@@ -42,6 +43,7 @@ export default function TaskDetailsContent({
     useExternalLinks(taskId ?? "");
   const { data: relations = [] } = useGetTaskRelations(taskId ?? "");
   const { user } = useAuth();
+  const { canEditTasks } = useWorkspacePermission();
 
   const parentRelation = relations.find(
     (rel) => rel.relationType === "subtask" && rel.targetTaskId === taskId,
@@ -116,7 +118,9 @@ export default function TaskDetailsContent({
       <span className="text-sm font-medium text-muted-foreground h-[1px] bg-border w-full block shrink-0" />
       <div className="flex flex-col gap-4">
         <h1 className="text-md font-semibold">{t("tasks:detail.activity")}</h1>
-        {user?.id && taskId && <CommentInput taskId={taskId} />}
+        {user?.id && taskId && canEditTasks() && (
+          <CommentInput taskId={taskId} />
+        )}
         {activities.length > 0 ? (
           <Timeline>
             {activities.map((activity, index) => {

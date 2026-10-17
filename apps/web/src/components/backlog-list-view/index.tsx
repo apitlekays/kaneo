@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { priorityColorsTaskCard } from "@/constants/priority-colors";
 import { useUpdateTask } from "@/hooks/mutations/task/use-update-task";
 import { useRegisterShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
 import useBacklogBulkSelectionStore from "@/store/backlog-bulk-selection";
 import useProjectStore from "@/store/project";
@@ -33,6 +34,7 @@ import type { ProjectWithTasks } from "@/types/project";
 import type Task from "@/types/task";
 import BacklogBulkToolbar from "../bulk-selection/backlog-bulk-toolbar";
 import CreateTaskModal from "../shared/modals/create-task-modal";
+import { useMoveTaskGuard } from "../task/move-task-guard";
 import BacklogTaskRow from "./backlog-task-row";
 
 type BacklogListViewProps = {
@@ -46,6 +48,10 @@ function BacklogListView({
 }: BacklogListViewProps) {
   const { t } = useTranslation();
   const { mutate: updateTask } = useUpdateTask();
+  const { canEditTasks } = useWorkspacePermission();
+  const { guardMove, dialog: moveProhibitedDialog } = useMoveTaskGuard();
+  // Read-only users can't reorder or move rows at all.
+  const dragDisabled = disableDragDrop || !canEditTasks();
   const { setProject } = useProjectStore();
   const {
     setAvailableTasks,
@@ -120,11 +126,11 @@ function BacklogListView({
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
-      activationConstraint: { distance: disableDragDrop ? 999999 : 8 },
+      activationConstraint: { distance: dragDisabled ? 999999 : 8 },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: disableDragDrop ? 999999 : 200,
+        delay: dragDisabled ? 999999 : 200,
         tolerance: 8,
       },
     }),
@@ -187,6 +193,11 @@ function BacklogListView({
       } else {
         return;
       }
+    }
+
+    // Moving between Planned and Archived changes the task's status.
+    if (activeTask.status !== targetSection && !guardMove(activeTask)) {
+      return;
     }
 
     const updatedProject = produce(project, (draft) => {
@@ -464,6 +475,7 @@ function BacklogListView({
       />
 
       <BacklogBulkToolbar />
+      {moveProhibitedDialog}
     </DndContext>
   );
 }

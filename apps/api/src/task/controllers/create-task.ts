@@ -102,6 +102,7 @@ async function createTask({
       .values({
         projectId,
         userId: null,
+        createdBy: currentUserId || null,
         title: title || "",
         status: resolvedStatus,
         columnId: column?.id ?? null,

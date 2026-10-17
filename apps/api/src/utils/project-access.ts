@@ -5,10 +5,17 @@ import db, { schema } from "../database";
 // These aren't part of the curated `schema` object passed to drizzle, so
 // import them directly from the schema module.
 import {
+  activityTable,
   columnTable,
+  commentTable,
+  labelTable,
   projectMemberTable,
+  taskDriveAttachmentTable,
+  taskRelationTable,
+  timeEntryTable,
   workflowRuleTable,
 } from "../database/schema";
+import { hasWorkspacePermission } from "./require-workspace-permission";
 
 /**
  * Per-project access control.
@@ -16,7 +23,19 @@ import {
  * Visibility/access is project-scoped: only project members can access a
  * project's data. Workspace owners/admins (and instance admins) are "global
  * admins" who bypass project membership entirely.
+ *
+ * The workspace role is a ceiling on the project role: a project member or
+ * manager whose workspace role lacks `task:update` (the Viewer role) can read
+ * the project but change nothing in it.
  */
+
+type PermissionMap = Record<string, string[]>;
+
+/** The workspace permission that lets a project member change things. */
+const PROJECT_WRITE_PERMISSION: PermissionMap = { task: ["update"] };
+
+/** Creating tasks needs `task:create` rather than `task:update`. */
+export const TASK_CREATE_PERMISSION: PermissionMap = { task: ["create"] };
 
 export async function isInstanceAdminUser(userId: string): Promise<boolean> {
   const [row] = await db
@@ -106,14 +125,44 @@ export async function canAccessProject(
   return (await getProjectRole(userId, projectId)) !== null;
 }
 
-/** Creator/manager of the project, or a global admin. */
+/** A project member (or global admin) whose workspace role is not read-only. */
+export async function canWriteProject(
+  userId: string,
+  projectId: string,
+  workspaceId: string,
+  permission: PermissionMap = PROJECT_WRITE_PERMISSION,
+): Promise<boolean> {
+  if (await isGlobalAdmin(userId, workspaceId)) return true;
+  if ((await getProjectRole(userId, projectId)) === null) return false;
+  return hasWorkspacePermission(userId, workspaceId, permission);
+}
+
+/** Manager of the project whose workspace role is not read-only, or a global admin. */
 export async function canManageProjectMembers(
   userId: string,
   projectId: string,
   workspaceId: string,
 ): Promise<boolean> {
   if (await isGlobalAdmin(userId, workspaceId)) return true;
-  return (await getProjectRole(userId, projectId)) === "manager";
+  if ((await getProjectRole(userId, projectId)) !== "manager") return false;
+  return hasWorkspacePermission(userId, workspaceId, PROJECT_WRITE_PERMISSION);
+}
+
+/**
+ * Deleting a task: its creator, or a project manager / global admin. Tasks
+ * created before `created_by` existed (or by an integration) have no creator,
+ * so only managers can delete them.
+ */
+export async function canDeleteTask(
+  userId: string,
+  task: { projectId: string; createdBy: string | null },
+  workspaceId: string,
+): Promise<boolean> {
+  if (await canManageProjectMembers(userId, task.projectId, workspaceId)) {
+    return true;
+  }
+  if (task.createdBy !== userId) return false;
+  return canWriteProject(userId, task.projectId, workspaceId);
 }
 
 /**
@@ -332,3 +381,319 @@ export function requireProjectAccessFromTask(taskIdKey = "id") {
     return next();
   };
 }
+
+type TaskForAccess = {
+  id: string;
+  projectId: string;
+  workspaceId: string;
+  createdBy: string | null;
+  assigneeId: string | null;
+};
+
+async function loadTaskForAccess(taskId: string): Promise<TaskForAccess> {
+  const [row] = await db
+    .select({
+      id: schema.taskTable.id,
+      projectId: schema.taskTable.projectId,
+      workspaceId: schema.projectTable.workspaceId,
+      createdBy: schema.taskTable.createdBy,
+      assigneeId: schema.taskTable.userId,
+    })
+    .from(schema.taskTable)
+    .innerJoin(
+      schema.projectTable,
+      eq(schema.taskTable.projectId, schema.projectTable.id),
+    )
+    .where(eq(schema.taskTable.id, taskId))
+    .limit(1);
+  if (!row) throw new HTTPException(404, { message: "Task not found" });
+  return row;
+}
+
+async function isTaskAssignee(
+  userId: string,
+  task: TaskForAccess,
+): Promise<boolean> {
+  if (task.assigneeId === userId) return true;
+  const [row] = await db
+    .select({ id: schema.taskAssigneeTable.id })
+    .from(schema.taskAssigneeTable)
+    .where(
+      and(
+        eq(schema.taskAssigneeTable.taskId, task.id),
+        eq(schema.taskAssigneeTable.userId, userId),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * Changing a task's status (moving its card between columns, or to another
+ * project): its creator, anyone assigned to it, or a project manager / global
+ * admin. Other project members can edit the task but not move it.
+ */
+async function canMoveTask(
+  userId: string,
+  task: TaskForAccess,
+): Promise<boolean> {
+  if (await canManageProjectMembers(userId, task.projectId, task.workspaceId)) {
+    return true;
+  }
+  if (!(await canWriteProject(userId, task.projectId, task.workspaceId))) {
+    return false;
+  }
+  if (task.createdBy === userId) return true;
+  return isTaskAssignee(userId, task);
+}
+
+export const MOVE_TASK_FORBIDDEN_MESSAGE =
+  "Only the task's creator, its assignees or a project manager can move this task";
+
+export async function assertCanMoveTask(
+  userId: string,
+  taskId: string,
+): Promise<void> {
+  const task = await loadTaskForAccess(taskId);
+  if (!(await canMoveTask(userId, task))) {
+    throw new HTTPException(403, { message: MOVE_TASK_FORBIDDEN_MESSAGE });
+  }
+}
+
+export async function assertCanDeleteTask(
+  userId: string,
+  taskId: string,
+): Promise<void> {
+  const task = await loadTaskForAccess(taskId);
+  if (!(await canDeleteTask(userId, task, task.workspaceId))) {
+    throw new HTTPException(403, {
+      message:
+        "Only the task's creator or a project manager can delete this task",
+    });
+  }
+}
+
+/** Assert the user can write in the project a task is being moved into. */
+export async function assertCanWriteProjectById(
+  userId: string,
+  projectId: string,
+): Promise<void> {
+  const [project] = await db
+    .select({ workspaceId: schema.projectTable.workspaceId })
+    .from(schema.projectTable)
+    .where(eq(schema.projectTable.id, projectId))
+    .limit(1);
+  if (!project) throw new HTTPException(404, { message: "Project not found" });
+  if (!(await canWriteProject(userId, projectId, project.workspaceId))) {
+    throw new HTTPException(403, {
+      message: "You can't add tasks to that project",
+    });
+  }
+}
+
+/** Assert the user can write in the project of every given task. */
+export async function assertCanWriteTasks(
+  userId: string,
+  taskIds: string[],
+): Promise<void> {
+  if (taskIds.length === 0) return;
+  const rows = await db
+    .selectDistinct({
+      projectId: schema.taskTable.projectId,
+      workspaceId: schema.projectTable.workspaceId,
+    })
+    .from(schema.taskTable)
+    .innerJoin(
+      schema.projectTable,
+      eq(schema.taskTable.projectId, schema.projectTable.id),
+    )
+    .where(inArray(schema.taskTable.id, taskIds));
+
+  for (const row of rows) {
+    if (!(await canWriteProject(userId, row.projectId, row.workspaceId))) {
+      throw new HTTPException(403, {
+        message: "You can't change tasks in one of these projects",
+      });
+    }
+  }
+}
+
+/** Assert the user manages the project of every given task. */
+export async function assertCanManageTasks(
+  userId: string,
+  taskIds: string[],
+): Promise<void> {
+  if (taskIds.length === 0) return;
+  const rows = await db
+    .selectDistinct({
+      projectId: schema.taskTable.projectId,
+      workspaceId: schema.projectTable.workspaceId,
+    })
+    .from(schema.taskTable)
+    .innerJoin(
+      schema.projectTable,
+      eq(schema.taskTable.projectId, schema.projectTable.id),
+    )
+    .where(inArray(schema.taskTable.id, taskIds));
+
+  for (const row of rows) {
+    if (
+      !(await canManageProjectMembers(userId, row.projectId, row.workspaceId))
+    ) {
+      throw new HTTPException(403, {
+        message: "Only project managers can assign tasks",
+      });
+    }
+  }
+}
+
+type ProjectResource =
+  | "project"
+  | "task"
+  | "comment"
+  | "activity"
+  | "timeEntry"
+  | "taskRelation"
+  | "driveAttachment"
+  | "label";
+
+async function lookupProjectContext(
+  resource: ProjectResource,
+  id: string,
+): Promise<ProjectContext> {
+  const viaTask = async (taskId: string | null | undefined) =>
+    taskId ? resolveProjectFromTask(taskId) : null;
+
+  switch (resource) {
+    case "project": {
+      const [row] = await db
+        .select({
+          projectId: schema.projectTable.id,
+          workspaceId: schema.projectTable.workspaceId,
+        })
+        .from(schema.projectTable)
+        .where(eq(schema.projectTable.id, id))
+        .limit(1);
+      return row ?? null;
+    }
+    case "task":
+      return resolveProjectFromTask(id);
+    case "comment": {
+      const [row] = await db
+        .select({ taskId: commentTable.taskId })
+        .from(commentTable)
+        .where(eq(commentTable.id, id))
+        .limit(1);
+      return viaTask(row?.taskId);
+    }
+    case "activity": {
+      const [row] = await db
+        .select({ taskId: activityTable.taskId })
+        .from(activityTable)
+        .where(eq(activityTable.id, id))
+        .limit(1);
+      return viaTask(row?.taskId);
+    }
+    case "timeEntry": {
+      const [row] = await db
+        .select({ taskId: timeEntryTable.taskId })
+        .from(timeEntryTable)
+        .where(eq(timeEntryTable.id, id))
+        .limit(1);
+      return viaTask(row?.taskId);
+    }
+    case "taskRelation": {
+      const [row] = await db
+        .select({ taskId: taskRelationTable.sourceTaskId })
+        .from(taskRelationTable)
+        .where(eq(taskRelationTable.id, id))
+        .limit(1);
+      return viaTask(row?.taskId);
+    }
+    case "driveAttachment": {
+      const [row] = await db
+        .select({ taskId: taskDriveAttachmentTable.taskId })
+        .from(taskDriveAttachmentTable)
+        .where(eq(taskDriveAttachmentTable.id, id))
+        .limit(1);
+      return viaTask(row?.taskId);
+    }
+    case "label": {
+      const [row] = await db
+        .select({ taskId: labelTable.taskId })
+        .from(labelTable)
+        .where(eq(labelTable.id, id))
+        .limit(1);
+      return viaTask(row?.taskId);
+    }
+  }
+}
+
+async function readIdFromRequest(
+  c: Context,
+  idKey: string,
+): Promise<string | null> {
+  const fromUrl = c.req.param(idKey) || c.req.query(idKey);
+  if (fromUrl) return fromUrl;
+  const body = await c.req.json().catch(() => null);
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    const value = (body as Record<string, unknown>)[idKey];
+    if (typeof value === "string") return value;
+  }
+  return null;
+}
+
+function projectGuard(
+  mode: "read" | "write",
+  resource: ProjectResource,
+  idKey: string,
+  permission?: PermissionMap,
+) {
+  return async (c: Context, next: Next) => {
+    const userId = c.get("userId");
+    if (!userId) throw new HTTPException(401, { message: "Unauthorized" });
+
+    const id = await readIdFromRequest(c, idKey);
+    if (!id) {
+      throw new HTTPException(400, { message: "Missing project context" });
+    }
+
+    const ctx = await lookupProjectContext(resource, id);
+    if (!ctx) throw new HTTPException(404, { message: "Not found" });
+
+    if (!(await canAccessProject(userId, ctx.projectId, ctx.workspaceId))) {
+      throw new HTTPException(403, {
+        message: "You don't have access to this project",
+      });
+    }
+    if (
+      mode === "write" &&
+      !(await canWriteProject(
+        userId,
+        ctx.projectId,
+        ctx.workspaceId,
+        permission,
+      ))
+    ) {
+      throw new HTTPException(403, {
+        message: "Your role can only view this project",
+      });
+    }
+    return next();
+  };
+}
+
+/**
+ * Route guards keyed by any project-scoped resource. `read` needs project
+ * membership (or global admin); `write` also needs a workspace role that is
+ * not read-only. The id is read from the route param, query or JSON body.
+ */
+export const projectAccess = {
+  read: (resource: ProjectResource, idKey = "id") =>
+    projectGuard("read", resource, idKey),
+  write: (
+    resource: ProjectResource,
+    idKey = "id",
+    permission?: PermissionMap,
+  ) => projectGuard("write", resource, idKey, permission),
+};

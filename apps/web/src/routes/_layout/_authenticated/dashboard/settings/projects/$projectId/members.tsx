@@ -232,6 +232,14 @@ function RouteComponent() {
                   {member.email}
                 </p>
               </div>
+              {member.workspaceRole === "viewer" && (
+                <span
+                  className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground"
+                  title={t("settings:projectMembers.readOnlyHint")}
+                >
+                  {t("settings:projectMembers.readOnly")}
+                </span>
+              )}
               {isAdmin ? (
                 <Select
                   value={member.role === "manager" ? "manager" : "member"}

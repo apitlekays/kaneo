@@ -3,6 +3,8 @@ import { getApiUrl } from "@/fetchers/get-api-url";
 export type ProjectMember = {
   userId: string;
   role: string;
+  /** Workspace role; a "viewer" can only read, whatever `role` says. */
+  workspaceRole: string | null;
   name: string;
   email: string;
   image: string | null;

@@ -8,6 +8,7 @@ import { taskMomTable, taskTable, userTable } from "../database/schema";
 import createNotification from "../notification/controllers/create-notification";
 import {
   canManageProjectMembers,
+  projectAccess,
   requireProjectAccess,
   requireProjectAccessFromTask,
 } from "../utils/project-access";
@@ -95,7 +96,7 @@ const taskMom = new Hono<{
     validator("param", v.object({ taskId: v.string() })),
     validator("json", v.object({ data: momDataSchema })),
     workspaceAccess.fromTaskId("taskId"),
-    requireProjectAccessFromTask("taskId"),
+    projectAccess.write("task", "taskId"),
     async (c) => {
       const { taskId } = c.req.valid("param");
       const { data } = c.req.valid("json") as { data: MomData };

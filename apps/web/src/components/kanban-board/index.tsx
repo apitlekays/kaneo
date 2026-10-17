@@ -19,10 +19,12 @@ import { produce } from "immer";
 import { useEffect, useState } from "react";
 import { useUpdateTask } from "@/hooks/mutations/task/use-update-task";
 import { useRegisterShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import useBulkSelectionStore from "@/store/bulk-selection";
 import useProjectStore from "@/store/project";
 import type { ProjectWithTasks } from "@/types/project";
 import BulkToolbar from "../bulk-selection/bulk-toolbar";
+import { useMoveTaskGuard } from "../task/move-task-guard";
 import Column from "./column";
 import TaskCard from "./task-card";
 
@@ -44,6 +46,10 @@ function KanbanBoard({ project, disableDragDrop = false }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const { mutate: updateTask } = useUpdateTask();
   const navigate = useNavigate();
+  const { canEditTasks } = useWorkspacePermission();
+  const { guardMove, dialog: moveProhibitedDialog } = useMoveTaskGuard();
+  // Read-only users can't reorder or move cards at all.
+  const dragDisabled = disableDragDrop || !canEditTasks();
 
   useEffect(() => {
     if (project?.columns) {
@@ -91,11 +97,11 @@ function KanbanBoard({ project, disableDragDrop = false }: KanbanBoardProps) {
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
-      activationConstraint: { distance: disableDragDrop ? 999999 : 8 },
+      activationConstraint: { distance: dragDisabled ? 999999 : 8 },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: disableDragDrop ? 999999 : 250,
+        delay: dragDisabled ? 999999 : 250,
         tolerance: 10,
       },
     }),
@@ -126,6 +132,26 @@ function KanbanBoard({ project, disableDragDrop = false }: KanbanBoardProps) {
 
     const activeId = active.id.toString();
     const overId = over.id.toString();
+
+    // Moving a card to another column changes its status, which only the
+    // task's creator, assignees and project managers may do.
+    const fromColumn = project.columns.find((col) =>
+      col.tasks.some((task) => task.id === activeId),
+    );
+    const toColumn = project.columns.find(
+      (col) =>
+        col.id === overId || col.tasks.some((task) => task.id === overId),
+    );
+    const movingTask = fromColumn?.tasks.find((task) => task.id === activeId);
+    if (
+      fromColumn &&
+      toColumn &&
+      movingTask &&
+      fromColumn.id !== toColumn.id &&
+      !guardMove(movingTask)
+    ) {
+      return;
+    }
 
     const updatedProject = produce(project, (draft) => {
       const sourceColumn = draft?.columns?.find((col) =>
@@ -270,6 +296,7 @@ function KanbanBoard({ project, disableDragDrop = false }: KanbanBoardProps) {
       </DragOverlay>
 
       <BulkToolbar />
+      {moveProhibitedDialog}
     </DndContext>
   );
 }

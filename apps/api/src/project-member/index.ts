@@ -39,16 +39,26 @@ const projectMember = new Hono<{
         });
       }
 
+      // `workspaceRole` is the ceiling on `role`: a Viewer can only read,
+      // whatever their project role says.
       const members = await db
         .select({
           userId: projectMemberTable.userId,
           role: projectMemberTable.role,
+          workspaceRole: workspaceUserTable.role,
           name: userTable.name,
           email: userTable.email,
           image: userTable.image,
         })
         .from(projectMemberTable)
         .innerJoin(userTable, eq(projectMemberTable.userId, userTable.id))
+        .leftJoin(
+          workspaceUserTable,
+          and(
+            eq(workspaceUserTable.userId, projectMemberTable.userId),
+            eq(workspaceUserTable.workspaceId, workspaceId),
+          ),
+        )
         .where(eq(projectMemberTable.projectId, projectId));
 
       return c.json(members);

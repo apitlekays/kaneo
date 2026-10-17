@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import * as v from "valibot";
 import {
+  requireProjectAccess,
   requireProjectManager,
   requireProjectManagerFromColumn,
 } from "../utils/project-access";
@@ -34,6 +35,7 @@ const column = new Hono<{
     }),
     validator("param", v.object({ projectId: v.string() })),
     workspaceAccess.fromProject("projectId"),
+    requireProjectAccess("projectId"),
     async (c) => {
       const { projectId } = c.req.valid("param");
       const columns = await getColumns(projectId);

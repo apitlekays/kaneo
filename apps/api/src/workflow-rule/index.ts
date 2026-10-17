@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import * as v from "valibot";
 import {
+  requireProjectAccess,
   requireProjectManager,
   requireProjectManagerFromWorkflowRule,
 } from "../utils/project-access";
@@ -32,6 +33,7 @@ const workflowRule = new Hono<{
     }),
     validator("param", v.object({ projectId: v.string() })),
     workspaceAccess.fromProject("projectId"),
+    requireProjectAccess("projectId"),
     async (c) => {
       const { projectId } = c.req.valid("param");
       const rules = await getWorkflowRules(projectId);

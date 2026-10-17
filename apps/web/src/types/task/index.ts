@@ -51,6 +51,8 @@ type Task = {
   /** Everyone the task is offered to and who hasn't decided yet. */
   pendingAssignees?: TaskPendingAssignee[];
   projectId: string;
+  /** Who created the task; null for imported or pre-existing tasks. */
+  createdBy?: string | null;
   columnId?: string | null;
   labels?: TaskLabel[];
   externalLinks?: TaskExternalLink[];

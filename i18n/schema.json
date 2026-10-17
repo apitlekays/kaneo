@@ -3616,6 +3616,12 @@
 						"roleMember": {
 							"type": "string"
 						},
+						"readOnly": {
+							"type": "string"
+						},
+						"readOnlyHint": {
+							"type": "string"
+						},
 						"requestsTitle": {
 							"type": "string"
 						},

@@ -21,9 +21,10 @@ export function ColumnHeader({ column }: ColumnHeaderProps) {
   const { t } = useTranslation();
   const { project, setProject } = useProjectStore();
   const { mutate: updateTask } = useUpdateTask();
-  const { canCreateTasks, canEditTasks } = useWorkspacePermission();
+  const { canCreateTasks, canManageCurrentProject } = useWorkspacePermission();
   const canCreate = canCreateTasks();
-  const canArchive = canEditTasks();
+  // Archiving a whole column changes the status of other people's tasks.
+  const canArchive = canManageCurrentProject();
 
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);

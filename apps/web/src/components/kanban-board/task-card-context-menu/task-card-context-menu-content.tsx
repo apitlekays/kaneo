@@ -85,10 +85,13 @@ export default function TaskCardContextMenuContent({
   const { mutateAsync: updateTaskTitle } = useUpdateTaskTitle();
   const { mutateAsync: updateTaskDescription } = useUpdateTaskDescription();
   const { mutateAsync: updateTaskDueDate } = useUpdateTaskDueDate();
-  const { canEditTasks, canDeleteTasks, canAssignTasks } =
+  const { canEditTasks, canDeleteTask, canMoveTask, canAssignTasks } =
     useWorkspacePermission();
   const canEdit = canEditTasks();
-  const canDelete = canDeleteTasks();
+  const canDelete = canDeleteTask(task);
+  // Status changes (incl. archive) are limited to the creator, assignees and
+  // project managers; the board's drag-and-drop explains why in a dialog.
+  const canMove = canMoveTask(task);
   const canAssign = canAssignTasks();
 
   const projectMemberIds = useMemo(
@@ -210,7 +213,7 @@ export default function TaskCardContextMenuContent({
         </ContextMenuSub>
       )}
 
-      {canEdit && (
+      {canMove && (
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <span>{t("tasks:status.label")}</span>
@@ -357,7 +360,7 @@ export default function TaskCardContextMenuContent({
         </ContextMenuSub>
       )}
 
-      {canEdit && (
+      {canMove && (
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <span>{t("tasks:status.label")}</span>
@@ -501,7 +504,7 @@ export default function TaskCardContextMenuContent({
         </ContextMenuSub>
       )}
 
-      {canEdit && (
+      {canMove && (
         <>
           <ContextMenuSeparator />
 

@@ -9,7 +9,7 @@ import {
   taskDriveAttachmentTable,
   taskTable,
 } from "../database/schema";
-import { requireWorkspacePermission } from "../utils/require-workspace-permission";
+import { projectAccess } from "../utils/project-access";
 import { validateWorkspaceAccess } from "../utils/validate-workspace-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 
@@ -70,6 +70,7 @@ const driveAttachment = new Hono<{
     "/:taskId",
     validator("param", v.object({ taskId: v.string() })),
     workspaceAccess.fromTaskId("taskId"),
+    projectAccess.read("task", "taskId"),
     async (c) => {
       const { taskId } = c.req.valid("param");
       const rows = await db
@@ -94,7 +95,7 @@ const driveAttachment = new Hono<{
       }),
     ),
     workspaceAccess.fromTaskId("taskId"),
-    requireWorkspacePermission({ task: ["update"] }),
+    projectAccess.write("task", "taskId"),
     async (c) => {
       const { taskId } = c.req.valid("param");
       const body = c.req.valid("json");
@@ -133,6 +134,7 @@ const driveAttachment = new Hono<{
   .delete(
     "/:id",
     validator("param", v.object({ id: v.string() })),
+    projectAccess.write("driveAttachment", "id"),
     async (c) => {
       const { id } = c.req.valid("param");
       const userId = c.get("userId");

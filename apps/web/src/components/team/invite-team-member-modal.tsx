@@ -67,8 +67,9 @@ function InviteTeamMemberModal({ open, onClose }: Props) {
       return;
     }
     try {
-      // New members default to Viewer; project access is granted per-project.
-      await mutateAsync({ email, workspaceId, role: "viewer" });
+      // New people join as Members; what they can touch is still decided
+      // per project. Make someone a Viewer afterwards for read-only access.
+      await mutateAsync({ email, workspaceId, role: "member" });
       await queryClient.refetchQueries({
         queryKey: ["workspace-users", workspaceId],
       });

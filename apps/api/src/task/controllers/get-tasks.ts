@@ -138,6 +138,7 @@ async function getTasks(projectId: string, options: GetTasksOptions = {}) {
     position: taskTable.position,
     createdAt: taskTable.createdAt,
     userId: taskTable.userId,
+    createdBy: taskTable.createdBy,
     assigneeName: userTable.name,
     assigneeId: userTable.id,
     assigneeImage: userTable.image,
