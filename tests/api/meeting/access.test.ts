@@ -36,4 +36,10 @@ describe("canReadMeeting", () => {
       canReadMeeting({ ...base, confidential: true, attendeeUserIds: [] }),
     ).toBe(false);
   });
+
+  it("lets an archivist read a confidential past minute, and only a past one", () => {
+    const archivist = { ...base, confidential: true, isArchivist: true };
+    expect(canReadMeeting({ ...archivist, archived: true })).toBe(true);
+    expect(canReadMeeting({ ...archivist, archived: false })).toBe(false);
+  });
 });

@@ -2939,8 +2939,16 @@ export const meetingTable = pgTable(
     scheduledAt: timestamp("scheduled_at", { mode: "date" }),
     location: text("location"),
     confidential: boolean("confidential").notNull().default(false),
-    // draft | adopted
+    // draft | adopted | archived. `archived` is a past meeting uploaded for
+    // the record (Past Minutes): it never enters the draft-to-adoption flow,
+    // has no minute items of its own, and lives on its documents.
     status: text("status").notNull().default("draft"),
+    // Descriptive details recorded mostly for past minutes, where the
+    // documents are the minutes and these are what search and filters read.
+    // Free text: "Mesyuarat Kali ke-12" and "JK/2019/03" are both real.
+    referenceNo: text("reference_no"),
+    chairperson: text("chairperson"),
+    summary: text("summary"),
     adoptedAt: timestamp("adopted_at", { mode: "date" }),
     // The later meeting at which these minutes were adopted. Self-reference,
     // and it MUST be set null on delete: removing a later meeting must not
@@ -2958,6 +2966,41 @@ export const meetingTable = pgTable(
   (table) => [
     index("meeting_workspaceId_idx").on(table.workspaceId),
     index("meeting_bodyId_idx").on(table.bodyId),
+  ],
+);
+
+// The people allowed to upload, edit and remove Past Minutes (archived
+// meetings), alongside global admins. Global admins manage the list.
+export const meetingArchivistTable = pgTable(
+  "meeting_archivist",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaceTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => userTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("meeting_archivist_userId_idx").on(table.userId),
+    unique("meeting_archivist_ws_user_unique").on(
+      table.workspaceId,
+      table.userId,
+    ),
   ],
 );
 

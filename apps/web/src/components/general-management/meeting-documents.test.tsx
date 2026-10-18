@@ -292,7 +292,7 @@ describe("MeetingDocuments", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("rejects a non-PDF before any upload request is made", async () => {
+  it("rejects an unsupported file type before any upload request is made", async () => {
     renderDocuments();
     await screen.findByText("No documents uploaded yet.");
 
@@ -300,7 +300,7 @@ describe("MeetingDocuments", () => {
 
     await waitFor(() => {
       expect(mockToastError).toHaveBeenCalledWith(
-        "Only PDF files can be archived with a meeting",
+        "Only PDF, Word (.doc, .docx) or PowerPoint (.ppt, .pptx) files can be archived with a meeting",
       );
     });
     // The assertion that matters: nothing went out. A toast-only assertion
@@ -402,6 +402,25 @@ describe("MeetingDocuments", () => {
     expect("originalObjectKey" in body).toBe(false);
     expect(body.kind).toBe("minutes");
     expect(body.filename).toBe("digital.pdf");
+  });
+
+  it("uploads a Word file as it is, typed from its extension, without compressing", async () => {
+    const user = userEvent.setup();
+    renderDocuments();
+    await screen.findByText("No documents uploaded yet.");
+
+    // Browsers often report no type for Office files.
+    pickFile(new File(["docx bytes"], "Minit 2015.DOCX", { type: "" }));
+    await user.click(screen.getByRole("button", { name: /upload/i }));
+
+    await waitFor(() => expect(mockToastSuccess).toHaveBeenCalled());
+    expect(mockCompress).not.toHaveBeenCalled();
+    expect(
+      calls.filter((c) => c.url.startsWith("https://storage.test")),
+    ).toHaveLength(1);
+    expect(finalizeBody().mimeType).toBe(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
   });
 
   it("uploads BOTH copies when a scan was actually compressed", async () => {

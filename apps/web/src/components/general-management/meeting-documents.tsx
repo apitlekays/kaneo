@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileText, Loader2, RefreshCw, Upload } from "lucide-react";
+import {
+  Download,
+  FileText,
+  Loader2,
+  RefreshCw,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  deletePastMinuteDocument,
   listMeetingDocuments,
   type MeetingArchivalDocument,
   type MeetingDocumentKind,
@@ -20,9 +28,13 @@ import {
 } from "@/fetchers/meeting";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { usePdfCompression } from "@/hooks/use-pdf-compression";
+import {
+  ARCHIVAL_ACCEPT,
+  ARCHIVAL_TYPES_LABEL,
+  archivalMimeType,
+} from "@/lib/archival-upload";
 import type { CompressionResult } from "@/lib/compress-pdf";
 import { compressionLabel } from "@/lib/compression-label";
-import { isPdfUpload } from "@/lib/is-pdf-upload";
 import { toast } from "@/lib/toast";
 
 /**
@@ -98,10 +110,13 @@ export function MeetingDocuments({
   meetingId,
   workspaceId,
   canUpload,
+  canDelete = false,
 }: {
   meetingId: string;
   workspaceId: string;
   canUpload: boolean;
+  /** Past minutes only: their archivists may remove a wrong upload. */
+  canDelete?: boolean;
 }) {
   const qc = useQueryClient();
   const queryKey = meetingDocumentsKey(workspaceId, meetingId);
@@ -131,11 +146,14 @@ export function MeetingDocuments({
       // Driven here rather than inside the fetcher so the per-page progress
       // below has something to render; the result is handed on so the file
       // is never compressed twice.
-      let result: CompressionResult;
-      try {
-        result = await compression.run(picked);
-      } catch {
-        result = untouched(picked);
+      // Only a PDF is compressed; Word and PowerPoint go up as chosen.
+      let result: CompressionResult = untouched(picked);
+      if (archivalMimeType(picked) === "application/pdf") {
+        try {
+          result = await compression.run(picked);
+        } catch {
+          result = untouched(picked);
+        }
       }
       return uploadArchivalMeetingDocument(
         workspaceId,
@@ -179,14 +197,31 @@ export function MeetingDocuments({
     },
   });
 
+  const remove = useMutation({
+    mutationFn: (docId: string) =>
+      deletePastMinuteDocument(workspaceId, meetingId, docId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey });
+      qc.invalidateQueries({ queryKey: ["past-minutes", workspaceId] });
+      toast.success("Document removed");
+    },
+    onError: (error) => {
+      const reason =
+        error instanceof Error && error.message ? error.message : "";
+      toast.error(
+        `Couldn't remove that document${reason ? `: ${reason}` : ""}`,
+      );
+    },
+  });
+
   const documents = data ?? [];
 
   return (
     <div className="space-y-2">
       <h3 className="font-medium text-sm">Archival documents</h3>
       <p className="text-muted-foreground text-xs">
-        PDFs kept with this meeting. Their text is indexed, so a document is
-        only findable in search once it says indexed.
+        {ARCHIVAL_TYPES_LABEL} files kept with this meeting. Their text is
+        indexed, so a document is only findable in search once it says indexed.
       </p>
 
       {isLoading ? (
@@ -224,6 +259,9 @@ export function MeetingDocuments({
               canRetry={canUpload}
               retrying={retry.isPending && retry.variables === doc.id}
               onRetry={() => retry.mutate(doc.id)}
+              canDelete={canDelete}
+              deleting={remove.isPending && remove.variables === doc.id}
+              onDelete={() => remove.mutate(doc.id)}
             />
           ))}
         </ul>
@@ -256,16 +294,18 @@ export function MeetingDocuments({
             <input
               ref={inputRef}
               type="file"
-              accept="application/pdf,.pdf"
-              aria-label="Choose a PDF to archive"
+              accept={ARCHIVAL_ACCEPT}
+              aria-label="Choose a file to archive"
               className="text-xs"
               disabled={upload.isPending}
               onChange={(e) => {
                 const picked = e.target.files?.[0] ?? null;
                 // Before the network, not after: the input's `accept` is only
                 // a hint and drag-and-drop bypasses it.
-                if (picked && !isPdfUpload(picked)) {
-                  toast.error("Only PDF files can be archived with a meeting");
+                if (picked && !archivalMimeType(picked)) {
+                  toast.error(
+                    `Only ${ARCHIVAL_TYPES_LABEL} files can be archived with a meeting`,
+                  );
                   e.target.value = "";
                   setFile(null);
                   return;
@@ -325,6 +365,9 @@ function DocumentRow({
   canRetry,
   retrying,
   onRetry,
+  canDelete,
+  deleting,
+  onDelete,
 }: {
   doc: MeetingArchivalDocument;
   uploader: string;
@@ -332,6 +375,9 @@ function DocumentRow({
   canRetry: boolean;
   retrying: boolean;
   onRetry: () => void;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: () => void;
 }) {
   return (
     <li
@@ -358,6 +404,17 @@ function DocumentRow({
           >
             <Download className="h-4 w-4" />
           </a>
+          {canDelete && (
+            <button
+              type="button"
+              aria-label={`Remove ${doc.filename}`}
+              className="hover:text-destructive disabled:opacity-50"
+              disabled={deleting}
+              onClick={onDelete}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </span>
       </div>
       {doc.indexStatus === "pending" && (

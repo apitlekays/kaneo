@@ -1,17 +1,4 @@
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  ilike,
-  inArray,
-  isNull,
-  ne,
-  or,
-  type SQL,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -25,7 +12,6 @@ import {
   meetingAttendeeTable,
   meetingBodyMemberTable,
   meetingBodyTable,
-  meetingDocumentTable,
   meetingMinuteItemTable,
   meetingTable,
   meetingTypeTable,
@@ -47,39 +33,18 @@ import {
 } from "./access";
 import { canAdoptMeeting } from "./action-rules";
 import { registerActionUpdateRoutes } from "./action-updates";
+import { registerArchiveRoutes } from "./archive";
+import { ARCHIVED_STATUS } from "./archivists";
 import { registerMeetingDocumentRoutes } from "./documents";
-import {
-  clampLimit,
-  decodeCursor,
-  documentMatchCondition,
-  encodeCursor,
-  escapeLikePattern,
-  keysetCondition,
-  visibilityCondition,
-} from "./list-query";
+import { queryMeetingPage } from "./list-page";
 import { registerMemoRoutes } from "./memo-routes";
 import { validateImportRows } from "./minute-item-import";
-import { buildSnippet } from "./snippet";
 
 // Context variables populated by the auth + workspace-access middleware.
 type MeetingEnv = { Variables: { userId: string; workspaceId?: string } };
 type Row = Record<string, unknown>;
 
-/**
- * An archival document whose extracted text matched the list route's `q`
- * term, with the excerpt that explains the match. Exported for the web
- * fetcher's response type.
- *
- * A snippet is CONTENT. One of these is only ever built for a meeting that
- * has already passed `visibilityCondition` inside the list query — see the
- * list route.
- */
-export type MatchedDocument = {
-  id: string;
-  filename: string;
-  kind: string;
-  snippet: string;
-};
+export type { MatchedDocument } from "./list-page";
 
 const PAGE_SLUG = "general-management";
 const pageAccess = requireWorkspacePageAccess(PAGE_SLUG);
@@ -208,6 +173,20 @@ function assertMeetingEditable(meeting: { status: string }): void {
     throw new HTTPException(409, {
       message: "This meeting has been adopted; its minutes are read-only",
     });
+  assertNotArchived(meeting);
+}
+
+/**
+ * Past minutes (archived meetings) are a record of documents, not a live
+ * meeting: no attendees, minute items, actions or adoption. Their details
+ * are edited through the Past Minutes routes in `archive.ts`.
+ */
+function assertNotArchived(meeting: { status: string }): void {
+  if (meeting.status === ARCHIVED_STATUS)
+    throw new HTTPException(409, {
+      message:
+        "This is a past minute kept for the record; edit it from Past Minutes",
+    });
 }
 
 async function isWorkspaceMember(userId: string, workspaceId: string) {
@@ -276,207 +255,24 @@ app.get(
     const userId = c.get("userId") as string;
     const { limit: rawLimit, cursor: rawCursor, q } = c.req.valid("query");
 
-    const limit = clampLimit(rawLimit);
-    const admin = await isGlobalAdmin(userId, ws);
-
-    const conditions = [eq(meetingTable.workspaceId, ws)];
-
-    const visibility = visibilityCondition(userId, admin);
-    if (visibility) conditions.push(visibility);
-
-    if (rawCursor) {
-      const cursor = decodeCursor(rawCursor);
-      // A silent reset would re-serve page one forever and read as an
-      // infinite-scroll loop; say so instead.
-      if (!cursor) throw new HTTPException(400, { message: "Invalid cursor" });
-      conditions.push(keysetCondition(cursor));
-    }
-
-    const term = q?.trim();
-    // Hoisted out of the `if` below because the snippet query further down
-    // must match on exactly the same pattern the WHERE clause matched on.
-    const pattern = term ? `%${escapeLikePattern(term)}%` : "";
-    if (term) {
-      conditions.push(
-        or(
-          ilike(meetingTable.title, pattern),
-          ilike(meetingTable.location, pattern),
-          ilike(meetingTypeTable.label, pattern),
-          ilike(meetingBodyTable.name, pattern),
-          // Matching the text INSIDE the meeting's archival PDFs. An EXISTS
-          // subquery correlated on the meeting, so it sits inside this
-          // `or(...)` and is therefore ANDed with `visibilityCondition`
-          // above — the document match is constrained by confidentiality in
-          // this same query, never afterwards.
-          documentMatchCondition(term),
-        ) as SQL,
-      );
-    }
-
-    // Fetch one extra row: its existence is what distinguishes "there is
-    // another page" from "this is the last one", without a second COUNT.
-    const rows = await db
-      .select({
-        id: meetingTable.id,
-        workspaceId: meetingTable.workspaceId,
-        title: meetingTable.title,
-        meetingTypeId: meetingTable.meetingTypeId,
-        bodyId: meetingTable.bodyId,
-        scheduledAt: meetingTable.scheduledAt,
-        location: meetingTable.location,
-        confidential: meetingTable.confidential,
-        status: meetingTable.status,
-        adoptedAt: meetingTable.adoptedAt,
-        adoptedByMeetingId: meetingTable.adoptedByMeetingId,
-        createdBy: meetingTable.createdBy,
-        createdAt: meetingTable.createdAt,
-        updatedAt: meetingTable.updatedAt,
-        meetingTypeLabel: meetingTypeTable.label,
-        bodyName: meetingBodyTable.name,
-        // Cursor material ONLY — stripped from the response below. Both sort
-        // keys are read as Postgres timestamp text so the cursor carries
-        // them at the column's full microsecond precision; a JS `Date`
-        // holds milliseconds and silently loses rows (see the invariants
-        // above `keysetCondition`). Rendered with `to_char(..., 'YYYY-MM-DD
-        // HH24:MI:SS.US')` rather than `::text`: the latter renders per the
-        // server's `DateStyle` setting, so an operator who has configured a
-        // non-ISO `DateStyle` would get cursors `decodeCursor` rejects,
-        // breaking pagination — fails safe (400, not lost rows) but is an
-        // avoidable coupling to server config. `to_char` always emits a
-        // fixed-width six-digit fraction (`.000000` for a zero fraction,
-        // where `::text` would have dropped it), which `PG_TIMESTAMP`
-        // accepts, and returns NULL for a NULL input, which is exactly the
-        // undated cursor case.
-        createdAtText: sql<string>`to_char(${meetingTable.createdAt}, 'YYYY-MM-DD HH24:MI:SS.US')`,
-        scheduledAtText: sql<
-          string | null
-        >`to_char(${meetingTable.scheduledAt}, 'YYYY-MM-DD HH24:MI:SS.US')`,
-      })
-      .from(meetingTable)
-      .leftJoin(
-        meetingTypeTable,
-        eq(meetingTable.meetingTypeId, meetingTypeTable.id),
-      )
-      .leftJoin(meetingBodyTable, eq(meetingTable.bodyId, meetingBodyTable.id))
-      .where(and(...conditions))
-      .orderBy(
-        sql`${meetingTable.scheduledAt} DESC NULLS LAST`,
-        desc(meetingTable.createdAt),
-        desc(meetingTable.id),
-      )
-      .limit(limit + 1);
-
-    const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
-    const last = page.at(-1);
-    const nextCursor =
-      hasMore && last
-        ? encodeCursor({
-            scheduledAt: last.scheduledAtText,
-            createdAt: last.createdAtText,
-            id: last.id,
-          })
-        : null;
-
-    // Snippets for the page's meetings ONLY, and only now that `page` has
-    // been sliced to `limit`. Every id here has already passed
-    // `visibilityCondition` in the query above, so reading its documents'
-    // text discloses nothing new — but the ORDER of these two steps is
-    // load-bearing, and hoisting this above the slice would fetch (and a
-    // future refactor could return) text for a row about to be discarded.
-    let matched = new Map<string, MatchedDocument[]>();
-    if (term && page.length > 0) {
-      const documentRows = await db
-        .select({
-          id: meetingDocumentTable.id,
-          meetingId: meetingDocumentTable.meetingId,
-          filename: meetingDocumentTable.filename,
-          kind: meetingDocumentTable.kind,
-          extractedText: meetingDocumentTable.extractedText,
-        })
-        .from(meetingDocumentTable)
-        .where(
-          and(
-            inArray(
-              meetingDocumentTable.meetingId,
-              page.map((r) => r.id),
-            ),
-            // Same three predicates as `documentMatchCondition`, so a
-            // document that made the meeting a hit is the same document
-            // that gets a snippet.
-            isNull(meetingDocumentTable.actionUpdateId),
-            eq(meetingDocumentTable.indexStatus, "indexed"),
-            ilike(meetingDocumentTable.extractedText, pattern),
-          ),
-        );
-      matched = documentRows.reduce((acc, r) => {
-        const snippet = buildSnippet(r.extractedText ?? "", term);
-        // Null means the term is not actually in the text — should not
-        // happen given the ilike above, but omit the document rather than
-        // show an empty snippet.
-        if (!snippet) return acc;
-        const list = acc.get(r.meetingId) ?? [];
-        list.push({ id: r.id, filename: r.filename, kind: r.kind, snippet });
-        acc.set(r.meetingId, list);
-        return acc;
-      }, new Map<string, MatchedDocument[]>());
-    }
-
-    // The two `*Text` columns exist for the cursor alone; leaving them on
-    // the items would change the response shape the web types are built
-    // against.
-    const items = page.map(
-      ({
-        createdAtText: _createdAtText,
-        scheduledAtText: _scheduledAtText,
-        ...item
-      }) => ({
-        ...item,
-        // Always present, even without a `q`: the web types are built
-        // against a fixed shape.
-        matchedDocuments: matched.get(item.id) ?? [],
+    return c.json(
+      await queryMeetingPage({
+        workspaceId: ws,
+        userId,
+        scope: "live",
+        limit: rawLimit,
+        cursor: rawCursor,
+        q,
       }),
     );
-
-    // Spec D: a document still `pending` extraction is INVISIBLE to search,
-    // so a result set can be legitimately incomplete and the grid has to be
-    // able to say so. Without that, a user whose scan has not finished
-    // indexing concludes search is broken — the same failure class as this
-    // module's errored list once rendering identically to an empty one.
-    //
-    // Visibility-filtered like every other read here. A bare workspace count
-    // would tell a non-attendee that SOME confidential meeting is holding
-    // unindexed documents, which is exactly the kind of oblique disclosure
-    // this module has leaked through three times. Reuses the same
-    // `visibility` predicate already computed above, which is why this joins
-    // `meetingTable` rather than counting `meeting_document` alone.
-    //
-    // One indexed count per list request (`meeting_document_indexStatus_idx`),
-    // and only archival rows: a reply attachment sits at `pending` forever by
-    // design and must never inflate this.
-    const [pendingRow] = await db
-      .select({ n: count() })
-      .from(meetingDocumentTable)
-      .innerJoin(
-        meetingTable,
-        eq(meetingTable.id, meetingDocumentTable.meetingId),
-      )
-      .where(
-        and(
-          eq(meetingDocumentTable.workspaceId, ws),
-          isNull(meetingDocumentTable.actionUpdateId),
-          eq(meetingDocumentTable.indexStatus, "pending"),
-          ...(visibility ? [visibility] : []),
-        ),
-      );
-
-    return c.json({
-      items,
-      nextCursor,
-      pendingIndexCount: pendingRow?.n ?? 0,
-    });
   },
 );
+
+// ── Past Minutes ─────────────────────────────────────────────────────────
+// `/archive*`: archived meetings, their uploaders, and their own list. MUST
+// stay registered before the "/:id" routes below, for the same reason as
+// "/bodies*": Hono would otherwise read "archive" as a meeting id.
+registerArchiveRoutes(app);
 
 // ── Bodies ───────────────────────────────────────────────────────────────
 // Standing bodies (and their membership) determine adoption authority — see
@@ -1421,6 +1217,11 @@ app.post(
       });
     if (!(await idInWorkspace(meetingTable, adoptedByMeetingId, ws)))
       throw new HTTPException(400, { message: "Invalid adoptedByMeetingId" });
+    // A past minute is already a final record, and it is not a meeting that
+    // sat and can adopt anything either.
+    assertNotArchived(meeting);
+    const adopter = await loadMeeting(ws, adoptedByMeetingId);
+    if (adopter) assertNotArchived(adopter);
     const admin = await isGlobalAdmin(userId, ws);
     const bodyRole = await bodyRoleFor(meeting.bodyId, userId);
     if (!canAdoptMeeting({ isGlobalAdmin: admin, bodyRole }))
@@ -1520,6 +1321,7 @@ app.post(
     // here. See the module-level note near the route registration below for
     // the full reasoning.
     await assertMeetingWriteAccess(callerId, ws, meeting);
+    assertNotArchived(meeting);
     const description = b.description.trim();
     if (!description)
       throw new HTTPException(400, { message: "Description required" });

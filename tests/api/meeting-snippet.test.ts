@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildSnippet } from "../../apps/api/src/meeting/snippet";
+import {
+  buildSnippet,
+  buildSnippets,
+} from "../../apps/api/src/meeting/snippet";
 
 describe("buildSnippet", () => {
   it("centres the window on the match and ellipsises both sides", () => {
@@ -44,5 +47,23 @@ describe("buildSnippet", () => {
     const s = buildSnippet(`${text}quorum${text}`, "quorum", 30) as string;
     // 30 either side + the term + two ellipses.
     expect(s.length).toBeLessThanOrEqual(30 * 2 + "quorum".length + 2);
+  });
+});
+
+describe("buildSnippets", () => {
+  it("returns one excerpt per separate occurrence, up to the cap", () => {
+    const text = `quorum ${"x ".repeat(200)} quorum ${"y ".repeat(200)} quorum ${"z ".repeat(200)} quorum`;
+    expect(buildSnippets(text, "quorum", 3, 20)).toHaveLength(3);
+    expect(buildSnippets(text, "quorum", 2, 20)).toHaveLength(2);
+  });
+
+  it("skips occurrences already inside an earlier excerpt", () => {
+    const s = buildSnippets("quorum and quorum again", "quorum", 3, 40);
+    expect(s).toEqual(["quorum and quorum again"]);
+  });
+
+  it("returns nothing for an absent or empty term", () => {
+    expect(buildSnippets("no match here", "quorum")).toEqual([]);
+    expect(buildSnippets("anything", "  ")).toEqual([]);
   });
 });

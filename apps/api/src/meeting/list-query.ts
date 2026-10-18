@@ -165,10 +165,14 @@ export function clampLimit(raw: string | undefined): number {
 export function visibilityCondition(
   userId: string,
   isAdmin: boolean,
+  isArchivist = false,
 ): SQL | undefined {
   if (isAdmin) return undefined;
   return or(
     eq(meetingTable.confidential, false),
+    // Archivists read every past minute, confidential or not; see
+    // `canReadMeeting`.
+    isArchivist ? eq(meetingTable.status, "archived") : undefined,
     exists(
       db
         .select({ one: sql`1` })

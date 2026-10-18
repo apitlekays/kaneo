@@ -32,3 +32,33 @@ export function buildSnippet(
 
   return `${start > 0 ? "…" : ""}${core}${end < text.length ? "…" : ""}`;
 }
+
+/**
+ * Up to `max` excerpts, one per separate occurrence of `term`, so a result
+ * can show the term in each place it was used rather than only the first.
+ * Occurrences that would fall inside an excerpt already taken are skipped,
+ * so no two excerpts repeat the same text. Same plain-text, no-regex rules
+ * as `buildSnippet`, and the same caller obligation: a snippet is content.
+ */
+export function buildSnippets(
+  text: string,
+  term: string,
+  max = 3,
+  radius: number = DEFAULT_RADIUS,
+): string[] {
+  const needle = term.trim().toLowerCase();
+  if (!needle) return [];
+  const haystack = text.toLowerCase();
+  const out: string[] = [];
+  let from = 0;
+  while (out.length < max) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) break;
+    const start = Math.max(0, at - radius);
+    const end = Math.min(text.length, at + needle.length + radius);
+    const core = text.slice(start, end).replace(/\s+/g, " ").trim();
+    out.push(`${start > 0 ? "…" : ""}${core}${end < text.length ? "…" : ""}`);
+    from = end;
+  }
+  return out;
+}

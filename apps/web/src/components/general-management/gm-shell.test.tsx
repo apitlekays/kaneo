@@ -43,6 +43,10 @@ vi.mock("./correspondence", () => ({
   Correspondence: () => <div data-testid="correspondence-panel" />,
 }));
 
+vi.mock("./past-minutes", () => ({
+  PastMinutes: () => <div data-testid="past-minutes-panel" />,
+}));
+
 vi.mock("./settings", () => ({
   GeneralManagementSettings: () => <div data-testid="settings-panel" />,
 }));

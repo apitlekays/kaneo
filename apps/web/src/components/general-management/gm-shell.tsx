@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  Archive,
   LayoutDashboard,
   Mail,
   NotepadText,
@@ -27,6 +28,7 @@ import { cn } from "@/lib/cn";
 import { Committees } from "./committees";
 import { Correspondence } from "./correspondence";
 import { MinutesManager } from "./minutes-manager";
+import { PastMinutes } from "./past-minutes";
 import { GeneralManagementSettings } from "./settings";
 
 // `adminOnly` drives visibility below. Keeping it on the section itself means
@@ -49,6 +51,12 @@ const SECTIONS = [
     key: "minutes-manager",
     label: "Meeting Minutes",
     icon: NotepadText,
+    adminOnly: false,
+  },
+  {
+    key: "past-minutes",
+    label: "Past Minutes",
+    icon: Archive,
     adminOnly: false,
   },
   {
@@ -258,6 +266,9 @@ export function GeneralManagementShell({
         )}
         {currentKey === "minutes-manager" && (
           <MinutesManager workspaceId={workspaceId} />
+        )}
+        {currentKey === "past-minutes" && (
+          <PastMinutes workspaceId={workspaceId} />
         )}
         {currentKey === "committees" && (
           <Committees workspaceId={workspaceId} />

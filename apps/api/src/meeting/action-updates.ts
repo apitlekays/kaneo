@@ -20,6 +20,8 @@ import { buildContentDisposition } from "../utils/content-disposition";
 import { hasWorkspacePageAccess } from "../utils/page-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
 import { assertCanReadMeeting, loadMeeting } from "./access";
+import { ARCHIVED_STATUS, assertCanManageArchive } from "./archivists";
+import { isArchivalDocumentType } from "./document-types";
 import { enqueueDocumentIndexing } from "./indexing";
 import { canPostActionUpdate } from "./update-access";
 
@@ -122,13 +124,26 @@ function assertPdfOnly(mimeType: string): void {
 export async function assertCanAttachMeetingDocument(
   userId: string,
   workspaceId: string,
-  meeting: { id: string; confidential: boolean },
+  meeting: { id: string; confidential: boolean; status?: string },
   actionUpdateId: string | undefined,
   mimeType: string,
+  filename?: string,
 ): Promise<void> {
-  assertPdfOnly(mimeType);
+  // Reply attachments stay PDF-only. A meeting-level archival document may
+  // also be Word or PowerPoint, with the extension matching the type.
+  if (actionUpdateId) assertPdfOnly(mimeType);
+  else if (!isArchivalDocumentType(mimeType, filename))
+    throw new HTTPException(400, {
+      message: "Only PDF, Word (.doc, .docx) or PowerPoint (.ppt, .pptx) files",
+    });
   await assertCanReadMeeting(userId, workspaceId, meeting);
   if (!actionUpdateId) {
+    // A past minute's documents ARE the minutes: only the people who keep
+    // the archive may add to them, not every page holder.
+    if (meeting.status === ARCHIVED_STATUS) {
+      await assertCanManageArchive(userId, workspaceId);
+      return;
+    }
     if (!(await hasWorkspacePageAccess(userId, workspaceId, PAGE_SLUG)))
       throw new HTTPException(403, {
         message: "You don't have access to this page",
@@ -465,6 +480,7 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         meeting,
         b.actionUpdateId,
         b.mimeType,
+        b.filename,
       );
 
       const presigned = await createMeetingFileUploadUrl({
@@ -520,6 +536,7 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
         meeting,
         b.actionUpdateId,
         b.mimeType,
+        b.filename,
       );
       // Reject an objectKey pointed outside this meeting's owner segment —
       // otherwise finalize becomes a way to claim someone else's uploaded
@@ -644,11 +661,11 @@ export function registerActionUpdateRoutes(app: Hono<MeetingEnv>): void {
             "Cache-Control": "private, max-age=120",
             "Content-Type": object.contentType || doc.mimeType,
             "Content-Disposition": buildContentDisposition(doc.filename),
-            // The stored MIME type is always "application/pdf" (enforced by
-            // `assertPdfOnly`), but the bytes themselves are never verified
-            // to actually be a PDF — this stops a browser from sniffing and
-            // rendering/executing something else if they aren't, especially
-            // given the response is served `inline`.
+            // The stored MIME type is one of the archival types (PDF, Word,
+            // PowerPoint), but the bytes themselves are never verified to
+            // match it. This stops a browser from sniffing and rendering or
+            // executing something else, especially given the response is
+            // served `inline`.
             "X-Content-Type-Options": "nosniff",
           },
         });

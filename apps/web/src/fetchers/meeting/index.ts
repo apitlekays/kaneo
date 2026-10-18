@@ -1,4 +1,5 @@
 import { getApiUrl } from "@/fetchers/get-api-url";
+import { archivalMimeType } from "@/lib/archival-upload";
 import {
   type CompressionResult,
   compressPdfIfScanned,
@@ -135,9 +136,13 @@ export type Meeting = {
   scheduledAt: string | null;
   location: string | null;
   confidential: boolean;
-  status: "draft" | "adopted";
+  /** `archived` is a past minute, uploaded for the record (Past Minutes). */
+  status: "draft" | "adopted" | "archived";
   adoptedAt: string | null;
   adoptedByMeetingId: string | null;
+  referenceNo: string | null;
+  chairperson: string | null;
+  summary: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -209,6 +214,8 @@ export type MatchedDocument = {
   filename: string;
   kind: string;
   snippet: string;
+  /** Up to three excerpts, one per separate occurrence of the term. */
+  snippets: string[];
 };
 
 /**
@@ -224,6 +231,8 @@ export type MeetingListItem = Meeting & {
    * per matching archival document — the route deliberately returns every
    * match, so any cap on how many to show belongs in the UI. */
   matchedDocuments: MatchedDocument[];
+  /** How many archival documents the meeting holds. */
+  documentCount: number;
 };
 
 export type MeetingPage = {
@@ -672,6 +681,7 @@ async function putOne(
   id: string,
   file: File,
   actionUpdateId?: string,
+  opts: { contentType?: string } = {},
 ): Promise<{ key: string; contentType: string }> {
   // Given `isPdfUpload` upstream this resolves to "application/pdf" for
   // every file that reaches it: `file.type` is either that already, or empty
@@ -683,7 +693,7 @@ async function putOne(
   // `isPdfUpload`, not this line, that decides what may be uploaded, so if
   // that gate is ever widened the file's real type flows through instead of
   // a fabricated one. It is NOT a claim that the real type is sent today.
-  const contentType = file.type || "application/pdf";
+  const contentType = opts.contentType ?? (file.type || "application/pdf");
   const presign = await presignMeetingDocument(workspaceId, id, {
     filename: file.name,
     mimeType: contentType,
@@ -778,8 +788,23 @@ export async function uploadArchivalMeetingDocument(
   kind: MeetingDocumentKind,
   opts: { compression?: CompressionResult; engine?: PdfEngine } = {},
 ): Promise<MeetingDocument> {
-  if (!isPdfUpload(file)) {
-    throw new Error("Only PDF files can be attached");
+  const mimeType = archivalMimeType(file);
+  if (!mimeType) {
+    throw new Error("Only PDF, Word or PowerPoint files can be archived");
+  }
+  // Word and PowerPoint go up as they are: there is nothing to compress
+  // client-side, and the server extracts their text directly.
+  if (mimeType !== "application/pdf") {
+    const stored = await putOne(workspaceId, id, file, undefined, {
+      contentType: mimeType,
+    });
+    return finalizeMeetingDocument(workspaceId, id, {
+      objectKey: stored.key,
+      filename: file.name,
+      mimeType,
+      size: file.size,
+      kind,
+    });
   }
   const result =
     opts.compression ??
@@ -797,3 +822,111 @@ export async function uploadArchivalMeetingDocument(
     kind,
   });
 }
+
+// ── Past Minutes ────────────────────────────────────────────────────────
+// Archived meetings: past minutes uploaded for the record. See the server's
+// `apps/api/src/meeting/archive.ts`. Their documents use the same upload,
+// list, download and reindex routes as any meeting's.
+
+export type PastMinutesFilters = {
+  q?: string;
+  bodyId?: string;
+  meetingTypeId?: string;
+  /** Inclusive, `YYYY-MM-DD`. */
+  from?: string;
+  /** Inclusive, `YYYY-MM-DD`. */
+  to?: string;
+};
+
+export type PastMinutesPage = MeetingPage & {
+  /** Whether the caller may upload, edit and remove past minutes. The
+   * server enforces it on every write regardless. */
+  canManage: boolean;
+};
+
+export type PastMinuteInput = {
+  title?: string;
+  /** `YYYY-MM-DD`. */
+  scheduledAt?: string;
+  meetingTypeId?: string;
+  bodyId?: string;
+  location?: string;
+  confidential?: boolean;
+  referenceNo?: string;
+  chairperson?: string;
+  summary?: string;
+};
+
+export type MeetingArchivist = {
+  userId: string;
+  name: string;
+  email: string;
+  createdAt: string;
+};
+
+function del<T>(path: string, workspaceId: string): Promise<T> {
+  const sep = path.includes("?") ? "&" : "?";
+  return fetch(
+    url(`${path}${sep}workspaceId=${encodeURIComponent(workspaceId)}`),
+    { method: "DELETE", credentials: "include" },
+  ).then(jsonOrThrow<T>);
+}
+
+export async function listPastMinutes(
+  workspaceId: string,
+  opts: PastMinutesFilters & { cursor?: string; limit?: number } = {},
+): Promise<PastMinutesPage> {
+  const params = new URLSearchParams({ workspaceId });
+  for (const key of [
+    "cursor",
+    "q",
+    "bodyId",
+    "meetingTypeId",
+    "from",
+    "to",
+  ] as const) {
+    const value = opts[key];
+    if (value) params.set(key, value);
+  }
+  if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+  return jsonOrThrow(
+    await fetch(url(`archive?${params.toString()}`), {
+      credentials: "include",
+    }),
+  );
+}
+
+export const createPastMinute = (workspaceId: string, body: PastMinuteInput) =>
+  post<Meeting>("archive", workspaceId, body);
+
+export const updatePastMinute = (
+  workspaceId: string,
+  id: string,
+  body: PastMinuteInput,
+) => put<Meeting>(`archive/${id}`, workspaceId, body);
+
+export const deletePastMinute = (workspaceId: string, id: string) =>
+  del<{ id: string }>(`archive/${id}`, workspaceId);
+
+export const deletePastMinuteDocument = (
+  workspaceId: string,
+  id: string,
+  docId: string,
+) => del<{ id: string }>(`archive/${id}/documents/${docId}`, workspaceId);
+
+export async function listMeetingArchivists(
+  workspaceId: string,
+): Promise<MeetingArchivist[]> {
+  return jsonOrThrow(
+    await fetch(
+      url(`archive/archivists?workspaceId=${encodeURIComponent(workspaceId)}`),
+      { credentials: "include" },
+    ),
+  );
+}
+
+export const addMeetingArchivist = (workspaceId: string, userId: string) =>
+  post<{ userId: string }>("archive/archivists", workspaceId, { userId });
+
+export const removeMeetingArchivist = (workspaceId: string, userId: string) =>
+  del<{ userId: string }>(`archive/archivists/${userId}`, workspaceId);

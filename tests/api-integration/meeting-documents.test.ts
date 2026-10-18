@@ -15,8 +15,8 @@ import {
 import db, { schema } from "../../apps/api/src/database";
 import { createApp } from "../../apps/api/src/index";
 import {
-  resetPdfTextExtractor,
-  setPdfTextExtractor,
+  resetDocumentTextExtractor,
+  setDocumentTextExtractor,
 } from "../../apps/api/src/meeting/indexing";
 import { extractPdfText } from "../../apps/api/src/meeting/pdf-text";
 import { getPrivateObject } from "../../apps/api/src/storage/s3";
@@ -197,7 +197,7 @@ describe("API integration: meeting archival documents", () => {
       body: Readable.from([Buffer.from(key)]),
       contentType: "application/pdf",
     }));
-    setPdfTextExtractor(async () => ({
+    setDocumentTextExtractor(async () => ({
       text: FIXTURE_TEXT,
       source: "layer",
     }));
@@ -207,7 +207,7 @@ describe("API integration: meeting archival documents", () => {
     // Drain before swapping the extractor back, or a job still in flight
     // finishes against the real one.
     await settleBackgroundWork();
-    resetPdfTextExtractor();
+    resetDocumentTextExtractor();
   });
 
   it("1. a document begins pending and reaches indexed", async () => {
@@ -234,7 +234,7 @@ describe("API integration: meeting archival documents", () => {
   it("2. a failed extraction lands in failed with an error, and is retryable", async () => {
     const { ownerApp, meeting, workspaceId } = await seedMeeting();
 
-    setPdfTextExtractor(async () => {
+    setDocumentTextExtractor(async () => {
       throw new Error("poppler fell over");
     });
 
@@ -253,7 +253,7 @@ describe("API integration: meeting archival documents", () => {
     expect(failed?.indexError).not.toBeNull();
     expect(failed?.indexedAt).toBeNull();
 
-    setPdfTextExtractor(async () => ({
+    setDocumentTextExtractor(async () => ({
       text: FIXTURE_TEXT,
       source: "layer",
     }));
@@ -287,7 +287,7 @@ describe("API integration: meeting archival documents", () => {
     // `pending` is visible in the database even though the response was a
     // 403. Without this second assertion the test would pass against a
     // reindex that did the work and then failed to respond.
-    setPdfTextExtractor(async () => {
+    setDocumentTextExtractor(async () => {
       throw new Error("poppler fell over");
     });
     const res = await finalizeArchivalDocument(ownerApp, meeting.id, {
@@ -572,7 +572,7 @@ describe("API integration: meeting archival documents", () => {
       return new Promise<Call>((resolve) => waiters.push(resolve));
     }
 
-    setPdfTextExtractor(async (pdf) => {
+    setDocumentTextExtractor(async (pdf) => {
       // The storage stub hands back the object key as the body, so the
       // buffer names the document being indexed.
       const name = pdf.toString().split("/").pop() ?? "?";

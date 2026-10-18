@@ -5,6 +5,13 @@ import { getAvatarTone, getInitials } from "@/lib/avatar";
 import { cn } from "@/lib/cn";
 import { formatDateMedium } from "@/lib/format";
 
+const STATUS_LABELS: Record<MeetingListItem["status"], string> = {
+  draft: "Draft",
+  adopted: "Adopted",
+  // A past minute: final when it was uploaded, never adopted here.
+  archived: "Archived",
+};
+
 /**
  * One meeting, rendered as a document rather than a row: a portrait
  * rectangle suggesting a page, with the title inside it.
@@ -62,11 +69,18 @@ export function MeetingCard({
           {meeting.scheduledAt ? formatDateMedium(meeting.scheduledAt) : "—"}
         </span>
         <span className="truncate">{meeting.meetingTypeLabel ?? "—"}</span>
+        {meeting.referenceNo && (
+          <span className="truncate">{meeting.referenceNo}</span>
+        )}
         <Badge
-          variant={meeting.status === "adopted" ? "success" : "outline"}
+          variant={
+            meeting.status === "adopted" || meeting.status === "archived"
+              ? "success"
+              : "outline"
+          }
           className="w-fit text-xs"
         >
-          {meeting.status === "adopted" ? "Adopted" : "Draft"}
+          {STATUS_LABELS[meeting.status]}
         </Badge>
       </span>
     </button>

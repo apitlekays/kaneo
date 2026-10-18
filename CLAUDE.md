@@ -323,6 +323,17 @@ in `docs/superpowers/specs/2026-08-27-minutes-manager-refinements-REQUIREMENTS.m
   `use-workspace-permission.ts` (`canMoveTask`, `canDeleteTask`) and shows
   `move-task-guard.tsx`'s dialog on a refused drag. Tasks created before
   `task.created_by` existed were backfilled from their `created` activity.
+- **Past Minutes are meetings with status `archived`** (added 2026-10-18).
+  Minutes of meetings held before the system, uploaded as PDF, Word or
+  PowerPoint. They reuse `meeting_document`, the indexing queue, search
+  snippets and confidentiality, but never enter draft/adoption (attendees,
+  minute items, actions and adopt all 409). Routes live in
+  `meeting/archive.ts` under `/archive*`, registered before `/:id`. Only
+  global admins and the people in `meeting_archivist` may write them; a
+  confidential past minute is readable by archivists too (`canReadMeeting`
+  and its SQL twin `visibilityCondition`). Word/PowerPoint text is extracted
+  in-process (`meeting/office-text.ts`, no system binaries); only PDFs get the
+  OCR fallback. The main Meeting Minutes list excludes archived meetings.
 - **Asset disposal is an approval workflow, not a status.** `pending-disposal`,
   `approved-for-disposal` and `disposed` are set only by
   `asset-registry/disposals.ts` (custodian → disposal committee chair → CEO);

@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import db, { schema } from "../../apps/api/src/database";
 import { createApp } from "../../apps/api/src/index";
 import {
-  resetPdfTextExtractor,
-  setPdfTextExtractor,
+  resetDocumentTextExtractor,
+  setDocumentTextExtractor,
 } from "../../apps/api/src/meeting/indexing";
 import { getPrivateObject } from "../../apps/api/src/storage/s3";
 import { settleBackgroundWork } from "../../apps/api/src/utils/background-work";
@@ -158,7 +158,7 @@ async function addIndexedDocument(
     kind?: "transcript" | "minutes" | "other";
   },
 ): Promise<string> {
-  setPdfTextExtractor(async () => ({
+  setDocumentTextExtractor(async () => ({
     text: options.text,
     source: "layer" as const,
   }));
@@ -218,14 +218,17 @@ describe("API integration: archival document text search", () => {
       body: Readable.from([Buffer.from(key)]),
       contentType: "application/pdf",
     }));
-    setPdfTextExtractor(async () => ({ text: "placeholder", source: "layer" }));
+    setDocumentTextExtractor(async () => ({
+      text: "placeholder",
+      source: "layer",
+    }));
   });
 
   afterEach(async () => {
     // Drain before swapping the extractor back, or a job still in flight
     // finishes against the real one.
     await settleBackgroundWork();
-    resetPdfTextExtractor();
+    resetDocumentTextExtractor();
   });
 
   it("1. a word that exists only inside a PDF finds the meeting", async () => {
@@ -340,7 +343,7 @@ describe("API integration: archival document text search", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    setPdfTextExtractor(async () => {
+    setDocumentTextExtractor(async () => {
       await gate;
       return {
         text: `Usul khas: ${UNIQUE_WORD} dibincangkan.`,

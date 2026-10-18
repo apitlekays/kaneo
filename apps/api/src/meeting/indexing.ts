@@ -3,20 +3,23 @@ import db from "../database";
 import { meetingDocumentTable } from "../database/schema";
 import { getPrivateObject } from "../storage/s3";
 import { trackBackgroundWork } from "../utils/background-work";
-import { extractPdfText, type PdfTextExtractor } from "./pdf-text";
+import {
+  type DocumentTextExtractor,
+  extractDocumentText,
+} from "./document-text";
 
 /**
  * Swappable so the integration suite does not need poppler and tesseract
  * installed. Production never calls the setter.
  */
-let extractor: PdfTextExtractor = extractPdfText;
+let extractor: DocumentTextExtractor = extractDocumentText;
 
-export function setPdfTextExtractor(next: PdfTextExtractor): void {
+export function setDocumentTextExtractor(next: DocumentTextExtractor): void {
   extractor = next;
 }
 
-export function resetPdfTextExtractor(): void {
-  extractor = extractPdfText;
+export function resetDocumentTextExtractor(): void {
+  extractor = extractDocumentText;
 }
 
 /**
@@ -47,6 +50,9 @@ export function classifyExtractionError(raw: string): string {
     s.includes("not found")
   )
     return "The stored file could not be read";
+  if (s.includes("unsupported document type"))
+    return "This file type cannot be indexed";
+  if (s.includes("too large")) return "The document is too large to index";
   if (s.includes("timeout") || s.includes("etimedout"))
     return "Extraction timed out";
   if (s.includes("enoent") || s.includes("spawn"))
@@ -54,6 +60,16 @@ export function classifyExtractionError(raw: string): string {
   if (s.includes("maxbuffer")) return "The document is too large to index";
   if (s.includes("damaged") || s.includes("malformed") || s.includes("syntax"))
     return "The PDF could not be read";
+  // Word and PowerPoint parsers: a corrupt zip, a compound file with the
+  // wrong signature, or a file that is not what its extension says.
+  if (
+    s.includes("could not be read") ||
+    s.includes("unable to read") ||
+    s.includes("invalid zip") ||
+    s.includes("header signature") ||
+    s.includes("corrupt")
+  )
+    return "The document could not be read";
   return "Extraction failed";
 }
 
@@ -89,7 +105,7 @@ async function collectBody(body: unknown): Promise<Buffer> {
 }
 
 /**
- * Pull the PDF back out of storage and index it.
+ * Pull the document back out of storage and index it.
  *
  * Reads `originalObjectKey ?? objectKey` — the ORIGINAL, never the served
  * copy. `compressPdfIfScanned` only rasterises PDFs that have no text layer,
@@ -102,6 +118,7 @@ export async function indexDocumentNow(documentId: string): Promise<void> {
       id: meetingDocumentTable.id,
       objectKey: meetingDocumentTable.objectKey,
       originalObjectKey: meetingDocumentTable.originalObjectKey,
+      mimeType: meetingDocumentTable.mimeType,
     })
     .from(meetingDocumentTable)
     .where(eq(meetingDocumentTable.id, documentId))
@@ -114,7 +131,10 @@ export async function indexDocumentNow(documentId: string): Promise<void> {
     const object = await getPrivateObject(
       doc.originalObjectKey ?? doc.objectKey,
     );
-    const { text } = await extractor(await collectBody(object.body));
+    const { text } = await extractor(
+      await collectBody(object.body),
+      doc.mimeType,
+    );
 
     await db
       .update(meetingDocumentTable)
