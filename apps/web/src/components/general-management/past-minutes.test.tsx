@@ -122,24 +122,24 @@ describe("PastMinutes", () => {
     expect(screen.getByTestId("upload-open")).toBeInTheDocument();
   });
 
-  it("switches between thumbnail and list views and remembers the choice", async () => {
+  it("opens in list view and remembers a switch to thumbnails", async () => {
     const user = userEvent.setup();
     state.items = [pastMinute()];
     const { unmount } = renderPage();
 
-    expect(screen.getByTestId("meeting-thumbnail")).toBeInTheDocument();
-    expect(screen.getByText("Archived")).toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "List view" }));
     const table = screen.getByRole("table");
     expect(within(table).getByText("Board")).toBeInTheDocument();
     expect(within(table).getByText("MAT/2015/01")).toBeInTheDocument();
     expect(screen.queryByTestId("meeting-thumbnail")).not.toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "Thumbnail view" }));
+    expect(screen.getByTestId("meeting-thumbnail")).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
     unmount();
     renderPage();
-    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByTestId("meeting-thumbnail")).toBeInTheDocument();
   });
 
   it("shows each matching passage with the search term highlighted", async () => {
@@ -161,7 +161,6 @@ describe("PastMinutes", () => {
       }),
     ];
     renderPage();
-    await user.click(screen.getByRole("button", { name: "List view" }));
     await user.type(
       screen.getByRole("searchbox", { name: "Search Past Minutes" }),
       "bajet",
@@ -177,7 +176,6 @@ describe("PastMinutes", () => {
     const user = userEvent.setup();
     state.items = [pastMinute()];
     renderPage();
-    await user.click(screen.getByRole("button", { name: "List view" }));
     await user.click(
       screen.getByRole("button", { name: "Mesyuarat Agung Tahunan 2015" }),
     );

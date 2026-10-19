@@ -146,7 +146,7 @@ describe("API integration: Past Minutes", () => {
     officer = await addMember(workspaceId);
     const added = await as(owner).request(
       "/api/meeting/archive/archivists",
-      json("POST", { workspaceId, userId: archivist.id }),
+      json("POST", { workspaceId, userIds: [archivist.id] }),
     );
     expect(added.status).toBe(201);
   });
@@ -160,9 +160,44 @@ describe("API integration: Past Minutes", () => {
     it("only a global admin chooses archivists", async () => {
       const res = await as(archivist).request(
         "/api/meeting/archive/archivists",
-        json("POST", { workspaceId, userId: officer.id }),
+        json("POST", { workspaceId, userIds: [officer.id] }),
       );
       expect(res.status).toBe(403);
+    });
+
+    it("adds several archivists at once, all or nothing", async () => {
+      const second = await addMember(workspaceId);
+      // A member of some other workspace, not this one.
+      const outsider = (await createWorkspaceMember({ role: "owner" })).user;
+      const list = async () =>
+        (
+          (await (
+            await as(owner).request(
+              `/api/meeting/archive/archivists?workspaceId=${workspaceId}`,
+            )
+          ).json()) as { userId: string }[]
+        )
+          .map((a) => a.userId)
+          .sort();
+
+      const refused = await as(owner).request(
+        "/api/meeting/archive/archivists",
+        json("POST", { workspaceId, userIds: [second.id, outsider.id] }),
+      );
+      expect(refused.status).toBe(400);
+      expect(await list()).toEqual([archivist.id]);
+
+      const added = await as(owner).request(
+        "/api/meeting/archive/archivists",
+        json("POST", {
+          workspaceId,
+          userIds: [officer.id, second.id, archivist.id],
+        }),
+      );
+      expect(added.status).toBe(201);
+      expect(await list()).toEqual(
+        [archivist.id, officer.id, second.id].sort(),
+      );
     });
 
     it("lets an archivist record a past minute and refuses other page holders", async () => {

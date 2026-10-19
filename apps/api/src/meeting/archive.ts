@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute, validator } from "hono-openapi";
@@ -183,40 +183,57 @@ export function registerArchiveRoutes(app: Hono<MeetingEnv>): void {
     describeRoute({
       operationId: "addMeetingArchivist",
       tags: ["Meeting"],
-      description: "Allow a workspace member to manage Past Minutes",
+      description: "Allow one or more workspace members to manage Past Minutes",
     }),
     validator(
       "json",
-      v.object({ workspaceId: v.string(), userId: v.string() }),
+      v.object({
+        workspaceId: v.string(),
+        userIds: v.pipe(
+          v.array(v.pipe(v.string(), v.minLength(1))),
+          v.minLength(1),
+          v.maxLength(200),
+        ),
+      }),
     ),
     workspaceAccess.fromBody("workspaceId"),
     async (c) => {
       const ws = c.get("workspaceId") as string;
       const callerId = c.get("userId") as string;
-      const { userId } = c.req.valid("json");
+      const userIds = [...new Set(c.req.valid("json").userIds)];
       if (!(await isGlobalAdmin(callerId, ws)))
         throw new HTTPException(403, {
           message: "Only global admins can choose minutes archivists",
         });
-      const [member] = await db
-        .select({ id: workspaceUserTable.id })
+      const members = await db
+        .select({ userId: workspaceUserTable.userId })
         .from(workspaceUserTable)
         .where(
           and(
             eq(workspaceUserTable.workspaceId, ws),
-            eq(workspaceUserTable.userId, userId),
+            inArray(workspaceUserTable.userId, userIds),
           ),
-        )
-        .limit(1);
-      if (!member)
+        );
+      // All or nothing: a half-applied list is harder to reason about than
+      // a refusal naming the problem.
+      if (members.length !== userIds.length)
         throw new HTTPException(400, {
-          message: "That person is not a member of this workspace",
+          message:
+            userIds.length === 1
+              ? "That person is not a member of this workspace"
+              : "Some of those people are not members of this workspace",
         });
       await db
         .insert(meetingArchivistTable)
-        .values({ workspaceId: ws, userId, createdBy: callerId })
+        .values(
+          userIds.map((userId) => ({
+            workspaceId: ws,
+            userId,
+            createdBy: callerId,
+          })),
+        )
         .onConflictDoNothing();
-      return c.json({ userId }, 201);
+      return c.json({ userIds }, 201);
     },
   );
 

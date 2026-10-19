@@ -78,10 +78,10 @@ export function useArchivistMutations(workspaceId: string) {
   };
   return {
     add: useMutation({
-      mutationFn: (userId: string) =>
-        api.addMeetingArchivist(workspaceId, userId),
+      mutationFn: (userIds: string[]) =>
+        api.addMeetingArchivists(workspaceId, userIds),
       onSuccess: invalidate,
-      onError: errorToast("Couldn't add that archivist"),
+      onError: errorToast("Couldn't add those archivists"),
     }),
     remove: useMutation({
       mutationFn: (userId: string) =>

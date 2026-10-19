@@ -925,8 +925,8 @@ export async function listMeetingArchivists(
   );
 }
 
-export const addMeetingArchivist = (workspaceId: string, userId: string) =>
-  post<{ userId: string }>("archive/archivists", workspaceId, { userId });
+export const addMeetingArchivists = (workspaceId: string, userIds: string[]) =>
+  post<{ userIds: string[] }>("archive/archivists", workspaceId, { userIds });
 
 export const removeMeetingArchivist = (workspaceId: string, userId: string) =>
   del<{ userId: string }>(`archive/archivists/${userId}`, workspaceId);

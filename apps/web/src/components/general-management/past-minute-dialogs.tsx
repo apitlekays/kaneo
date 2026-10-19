@@ -616,14 +616,35 @@ export function ArchivistsDialog({
   );
   const { data: usersData } = useGetActiveWorkspaceUsers(workspaceId);
   const { add, remove } = useArchivistMutations(workspaceId);
-  const [picked, setPicked] = useState(NONE);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [filter, setFilter] = useState("");
 
   const candidates = (usersData?.members ?? []).filter(
     (m) => !archivists.some((a) => a.userId === m.userId),
   );
+  const needle = filter.trim().toLowerCase();
+  const shown = needle
+    ? candidates.filter((m) =>
+        [m.user?.name, m.user?.email].some((f) =>
+          f?.toLowerCase().includes(needle),
+        ),
+      )
+    : candidates;
+  const toggle = (userId: string, on: boolean) =>
+    setPicked((prev) =>
+      on ? [...prev, userId] : prev.filter((id) => id !== userId),
+    );
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (next) return;
+        setPicked([]);
+        setFilter("");
+        onClose();
+      }}
+    >
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Minutes archivists</DialogTitle>
@@ -631,29 +652,75 @@ export function ArchivistsDialog({
         <div className="space-y-4 px-6 pb-6">
           <p className="text-muted-foreground text-sm">
             Archivists can upload, edit and remove Past Minutes, including
-            confidential ones. Global admins can always do this.
+            confidential ones. Global admins can always do this. Tick as many
+            people as you need.
           </p>
-          <div className="flex gap-2">
-            <OptionSelect
-              label="Add a person"
-              value={picked}
-              onChange={setPicked}
-              placeholder="Choose a member"
-              options={candidates.map((m) => ({
-                value: m.userId,
-                label: m.user?.name ?? m.userId,
-              }))}
-            />
-            <Button
-              size="sm"
-              disabled={picked === NONE || add.isPending}
-              onClick={() =>
-                add.mutate(picked, { onSuccess: () => setPicked(NONE) })
-              }
-            >
-              Add
-            </Button>
-          </div>
+          {candidates.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-xs" htmlFor="archivist-filter">
+                Add people
+              </Label>
+              <Input
+                id="archivist-filter"
+                type="search"
+                placeholder="Filter by name or email"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+              <ul className="max-h-52 space-y-0.5 overflow-y-auto rounded-md border border-border p-1">
+                {shown.length === 0 ? (
+                  <li className="px-2 py-1.5 text-muted-foreground text-sm">
+                    No one matches.
+                  </li>
+                ) : (
+                  shown.map((m) => (
+                    <li key={m.userId}>
+                      {/* biome-ignore lint/a11y/noLabelWithoutControl: Base UI Checkbox renders the control inside */}
+                      <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent">
+                        <Checkbox
+                          aria-label={m.user?.name ?? m.userId}
+                          checked={picked.includes(m.userId)}
+                          onCheckedChange={(on) => toggle(m.userId, on)}
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate">
+                            {m.user?.name ?? m.userId}
+                          </span>
+                          {m.user?.email && (
+                            <span className="block truncate text-muted-foreground text-xs">
+                              {m.user.email}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    </li>
+                  ))
+                )}
+              </ul>
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={picked.length === 0 || add.isPending}
+                onClick={() =>
+                  add.mutate(picked, {
+                    onSuccess: () => {
+                      setPicked([]);
+                      setFilter("");
+                    },
+                  })
+                }
+              >
+                {picked.length === 0
+                  ? "Tick people to add"
+                  : `Add ${picked.length} ${picked.length === 1 ? "archivist" : "archivists"}`}
+              </Button>
+            </div>
+          )}
+          {archivists.length > 0 && (
+            <p className="font-medium text-xs">
+              Current archivists ({archivists.length})
+            </p>
+          )}
           {isLoading ? (
             <p className="text-muted-foreground text-sm" role="status">
               Loading…

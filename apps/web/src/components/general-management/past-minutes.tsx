@@ -50,12 +50,13 @@ const VIEW_KEY = "kaneo:past-minutes:view";
 const ALL = "all";
 
 // Remembering the view is a per-viewer convenience: storage can be missing
-// or blocked, and the page must work the same without it.
+// or blocked, and the page must work the same without it. List is the
+// default: an archive is scanned by date and reference, not by picture.
 function readView(): ViewMode {
   try {
-    return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid";
+    return localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list";
   } catch {
-    return "grid";
+    return "list";
   }
 }
 
