@@ -8,6 +8,7 @@ import { useAuth } from "@/components/providers/auth-provider/hooks/use-auth";
 import { KeyboardShortcutsHelp } from "./components/keyboard-shortcuts-help";
 import AuthProvider from "./components/providers/auth-provider";
 import { ThemeProvider } from "./components/providers/theme-provider";
+import { UpdateBanner } from "./components/update-banner";
 import { KeyboardShortcutsProvider } from "./hooks/use-keyboard-shortcuts";
 import { AppI18nProvider } from "./lib/i18n/provider";
 import { routeTree } from "./routeTree.gen";
@@ -56,6 +57,9 @@ if (!rootElement.innerHTML) {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
+          {/* Outside auth and the router: a stale build can break either,
+              and the banner is the way out. */}
+          <UpdateBanner />
           <AuthProvider>
             <AppI18nProvider>
               <KeyboardShortcutsProvider>

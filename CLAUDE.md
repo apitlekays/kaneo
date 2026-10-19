@@ -334,6 +334,18 @@ in `docs/superpowers/specs/2026-08-27-minutes-manager-refinements-REQUIREMENTS.m
   and its SQL twin `visibilityCondition`). Word/PowerPoint text is extracted
   in-process (`meeting/office-text.ts`, no system binaries); only PDFs get the
   OCR fallback. The main Meeting Minutes list excludes archived meetings.
+- **Web caching and the update banner** (added 2026-10-19). `nginx.kaneo.conf`
+  serves `index.html` (and every SPA URL) with `Cache-Control: no-cache` and
+  `/assets/*` as `immutable` with a real 404 for missing files. Before this,
+  browsers kept a per-URL copy of `index.html` naming chunks a deploy had
+  deleted; nginx answered those with `index.html` as `text/html`, `nosniff`
+  blocked it, and a refresh on any deep link showed a blank styled shell.
+  `lib/app-update.ts` compares the running `index-*.js` with the one in a
+  fresh `/`, pre-downloads the new build, then `UpdateBanner` (mounted in
+  `main.tsx`, outside auth and the router) offers a reload. **Caveat**:
+  `env.sh` rewrites `KANEO_API_URL` into the JS without renaming files, so
+  changing that env var with no code change leaves browsers on the old URL
+  until the next code deploy.
 - **Asset disposal is an approval workflow, not a status.** `pending-disposal`,
   `approved-for-disposal` and `disposed` are set only by
   `asset-registry/disposals.ts` (custodian → disposal committee chair → CEO);
