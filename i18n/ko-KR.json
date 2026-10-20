@@ -328,6 +328,7 @@
 			"emailPlaceholder": "이메일을 입력하세요",
 			"updateSuccess": "프로필이 업데이트되었습니다",
 			"updateError": "프로필 업데이트에 실패했습니다",
+			"saveName": "저장",
 			"validation": {
 				"nameRequired": "이름은 필수입니다",
 				"nameShort": "이름은 2자 이상이어야 합니다",

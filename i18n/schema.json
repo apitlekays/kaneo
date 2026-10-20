@@ -1313,6 +1313,9 @@
 						"updateError": {
 							"type": "string"
 						},
+						"saveName": {
+							"type": "string"
+						},
 						"validation": {
 							"type": "object",
 							"additionalProperties": false,
@@ -1349,6 +1352,7 @@
 						"emailPlaceholder",
 						"updateSuccess",
 						"updateError",
+						"saveName",
 						"validation"
 					]
 				},

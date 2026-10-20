@@ -327,6 +327,7 @@
 			"emailPlaceholder": "Voer je e-mailadres in",
 			"updateSuccess": "Profiel succesvol bijgewerkt",
 			"updateError": "Bijwerken profiel mislukt",
+			"saveName": "Opslaan",
 			"validation": {
 				"nameRequired": "Naam is verplicht",
 				"nameShort": "Naam moet minimaal 2 tekens bevatten",

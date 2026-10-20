@@ -328,6 +328,7 @@
 			"emailPlaceholder": "Entrez votre email",
 			"updateSuccess": "Profil mis à jour avec succès",
 			"updateError": "Échec de la mise à jour du profil",
+			"saveName": "Enregistrer",
 			"validation": {
 				"nameRequired": "Le nom est requis",
 				"nameShort": "Le nom doit contenir au moins 2 caractères",

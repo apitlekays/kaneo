@@ -327,6 +327,7 @@
 			"emailPlaceholder": "Introduce tu correo electrónico",
 			"updateSuccess": "Perfil actualizado correctamente",
 			"updateError": "Error al actualizar tu perfil",
+			"saveName": "Guardar",
 			"validation": {
 				"nameRequired": "El nombre es obligatorio",
 				"nameShort": "Tu nombre debe tener al menos 2 caracteres",

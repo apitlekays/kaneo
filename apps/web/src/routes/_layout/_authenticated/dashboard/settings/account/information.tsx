@@ -53,13 +53,10 @@ function RouteComponent() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { mutateAsync: updateProfile } = useUpdateUserProfile();
+  const { mutateAsync: updateProfile, isPending: isSavingName } =
+    useUpdateUserProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isSavingRef = useRef(false);
-  const queuedSaveRef = useRef<ProfileFormValues | null>(null);
-  const lastSavedRef = useRef<NormalizedProfileValues | null>(null);
   const profileSchema = z.object({
     name: z
       .string()
@@ -86,88 +83,27 @@ function RouteComponent() {
       name: user.name || "",
       email: user.email || "",
     };
-    lastSavedRef.current = normalizeProfileValues(nextValues);
-
     if (!profileForm.formState.isDirty) {
       profileForm.reset(nextValues);
     }
   }, [user, profileForm]);
 
-  const saveProfile = useCallback(
-    async (data: ProfileFormValues) => {
-      const normalizedData = normalizeProfileValues(data);
+  const saveProfile = async (data: ProfileFormValues) => {
+    const normalizedData = normalizeProfileValues(data);
 
-      if (lastSavedRef.current?.name === normalizedData.name) {
-        return;
-      }
-
-      if (isSavingRef.current) {
-        queuedSaveRef.current = data;
-        return;
-      }
-
-      isSavingRef.current = true;
-
-      try {
-        await updateProfile({
-          name: normalizedData.name,
-        });
-
-        profileForm.reset(normalizedData, { keepDirty: false });
-        lastSavedRef.current = normalizedData;
-        queuedSaveRef.current = null;
-
-        await queryClient.invalidateQueries({ queryKey: ["session"] });
-        toast.success(t("settings:informationPage.updateSuccess"));
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : t("settings:informationPage.updateError"),
-        );
-      } finally {
-        isSavingRef.current = false;
-
-        if (queuedSaveRef.current) {
-          const queuedData = queuedSaveRef.current;
-          queuedSaveRef.current = null;
-          await saveProfile(queuedData);
-        }
-      }
-    },
-    [t, updateProfile, queryClient, profileForm],
-  );
-
-  const debouncedSave = useCallback(
-    (data: ProfileFormValues) => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-
-      debounceTimeoutRef.current = setTimeout(() => {
-        saveProfile(data);
-      }, 1000);
-    },
-    [saveProfile],
-  );
-
-  useEffect(() => {
-    const subscription = profileForm.watch(() => {
-      if (profileForm.formState.isDirty && profileForm.formState.isValid) {
-        debouncedSave(profileForm.getValues());
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [profileForm, debouncedSave]);
-
-  useEffect(() => {
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-    };
-  }, []);
+    try {
+      await updateProfile({ name: normalizedData.name });
+      profileForm.reset(normalizedData);
+      await queryClient.invalidateQueries({ queryKey: ["session"] });
+      toast.success(t("settings:informationPage.updateSuccess"));
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t("settings:informationPage.updateError"),
+      );
+    }
+  };
 
   const handleAvatarFileChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -267,7 +203,10 @@ function RouteComponent() {
             <Separator />
 
             <Form {...profileForm}>
-              <form className="space-y-4">
+              <form
+                className="space-y-4"
+                onSubmit={profileForm.handleSubmit(saveProfile)}
+              >
                 <FormField
                   control={profileForm.control}
                   name="name"
@@ -279,15 +218,31 @@ function RouteComponent() {
                             {t("settings:informationPage.fullName")}
                           </FormLabel>
                         </div>
-                        <FormControl>
-                          <Input
-                            className="w-48"
-                            placeholder={t(
-                              "settings:informationPage.fullNamePlaceholder",
+                        <div className="flex items-center gap-2">
+                          <FormControl>
+                            <Input
+                              className="w-48"
+                              placeholder={t(
+                                "settings:informationPage.fullNamePlaceholder",
+                              )}
+                              {...field}
+                            />
+                          </FormControl>
+                          <Button
+                            type="submit"
+                            size="sm"
+                            disabled={
+                              !profileForm.formState.isDirty ||
+                              !profileForm.formState.isValid ||
+                              isSavingName
+                            }
+                          >
+                            {isSavingName && (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             )}
-                            {...field}
-                          />
-                        </FormControl>
+                            {t("settings:informationPage.saveName")}
+                          </Button>
+                        </div>
                       </div>
                       <FormMessage />
                     </FormItem>

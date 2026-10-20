@@ -328,6 +328,7 @@
 			"emailPlaceholder": "Внеси ја твојата е-пошта",
 			"updateSuccess": "Профилот е успешно ажуриран",
 			"updateError": "Неуспешно ажурирање на профилот",
+			"saveName": "Зачувај",
 			"validation": {
 				"nameRequired": "Името е задолжително",
 				"nameShort": "Името мора да има најмалку 2 знаци",

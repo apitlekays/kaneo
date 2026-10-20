@@ -328,6 +328,7 @@
 			"emailPlaceholder": "Gib deine E-Mail ein",
 			"updateSuccess": "Profil erfolgreich aktualisiert",
 			"updateError": "Profil konnte nicht aktualisiert werden",
+			"saveName": "Speichern",
 			"validation": {
 				"nameRequired": "Name ist erforderlich",
 				"nameShort": "Der Name muss mindestens 2 Zeichen lang sein",

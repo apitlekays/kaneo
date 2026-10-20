@@ -334,6 +334,7 @@
 			"emailPlaceholder": "Enter your email",
 			"updateSuccess": "Profile updated successfully",
 			"updateError": "Failed to update profile",
+			"saveName": "Save",
 			"validation": {
 				"nameRequired": "Name is required",
 				"nameShort": "Name must be at least 2 characters",
