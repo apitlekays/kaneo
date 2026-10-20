@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { relations, sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
   customType,
@@ -1018,9 +1019,18 @@ export const projectTable = pgTable(
     createdBy: text("created_by").references(() => userTable.id, {
       onDelete: "set null",
     }),
+    // "project" | "consultation". A consultation is a project in every
+    // respect except where it is listed, who may create it (global admins),
+    // and that reaching it needs the Consultations page grant.
+    kind: text("kind").notNull().default("project"),
+    // Money in sen (RM x 100). bigint because a 32-bit integer stops at
+    // about RM 21 million. Null means "not set", which is not RM 0.
+    budget: bigint("budget", { mode: "number" }),
+    revenue: bigint("revenue", { mode: "number" }),
   },
   (table) => [
     unique("project_workspace_id_id_unique").on(table.workspaceId, table.id),
+    index("project_workspace_kind_idx").on(table.workspaceId, table.kind),
   ],
 );
 
@@ -1759,6 +1769,46 @@ export const taskRelationTable = pgTable(
     index("task_relation_source_idx").on(table.sourceTaskId),
     index("task_relation_target_idx").on(table.targetTaskId),
   ],
+);
+
+/**
+ * One cost incurred on a task or subtask. A project's Actual Expenditure is
+ * the sum over its tasks, so the cost follows a task moved to another
+ * project and disappears with a deleted one. A subtask is its own task row,
+ * so summing per project counts each entry exactly once.
+ */
+export const taskCostTable = pgTable(
+  "task_cost",
+  {
+    id: text("id")
+      .$defaultFn(() => createId())
+      .primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => taskTable.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    description: text("description").notNull(),
+    // Sen, always above zero.
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    incurredOn: timestamp("incurred_on", { mode: "date" }).notNull(),
+    // Optional receipt in private object storage.
+    receiptKey: text("receipt_key"),
+    receiptFilename: text("receipt_filename"),
+    receiptMimeType: text("receipt_mime_type"),
+    receiptSize: integer("receipt_size"),
+    createdBy: text("created_by").references(() => userTable.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("task_cost_taskId_idx").on(table.taskId)],
 );
 
 export const apikeyTable = pgTable(

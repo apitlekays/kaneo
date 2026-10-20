@@ -16,9 +16,12 @@ import { nextRoleForGlobalAdmin } from "./global-admin-rules";
  * Canonical list of gateable "page" slugs (the business-domain sub-categories
  * in the sidebar). MUST stay in sync with the slugs in
  * apps/web/src/lib/sidebar-categories.ts. Home and Projects are always
- * available and are intentionally NOT gateable.
+ * available and are intentionally NOT gateable. "consultations" gates the
+ * Consultations section AND every consultation project behind it (see
+ * `ungrantedConsultationIds` in utils/project-access.ts).
  */
 export const ACCESS_PAGE_SLUGS = [
+  "consultations",
   "general-management",
   "human-resources",
   "legal-compliances",

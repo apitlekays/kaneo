@@ -26,6 +26,11 @@ import {
 import useGetProjects from "@/hooks/queries/project/use-get-projects";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
+import {
+  ProjectKindProvider,
+  projectKindOf,
+  withKind,
+} from "@/lib/project-kind";
 
 export const Route = createFileRoute(
   "/_layout/_authenticated/dashboard/settings/projects",
@@ -34,39 +39,14 @@ export const Route = createFileRoute(
 });
 
 function RouteComponent() {
-  const { t } = useTranslation();
+  const { t: baseT } = useTranslation();
   const { workspace, role } = useWorkspacePermission();
   const location = useLocation();
   const navigate = useNavigate();
-  const menuItems = [
-    {
-      title: t("settings:projectGeneral.title"),
-      icon: Settings,
-      segment: "general",
-    },
-    {
-      title: t("settings:projectMembers.title"),
-      icon: Users,
-      segment: "members",
-    },
-    {
-      title: t("settings:projectVisibility.title"),
-      icon: Eye,
-      segment: "visibility",
-    },
-    {
-      title: t("settings:projectIntegrations.title"),
-      icon: Plug,
-      segment: "integrations",
-    },
-    {
-      title: t("settings:projectWorkflow.title"),
-      icon: GitBranch,
-      segment: "workflow",
-    },
-  ];
+  // Projects and consultations share these settings pages.
   const { data: projects } = useGetProjects({
     workspaceId: workspace?.id || "",
+    kind: "all",
   });
 
   const workspaceInitials =
@@ -105,6 +85,35 @@ function RouteComponent() {
   const selectedProject = projects?.find(
     (project) => project.id === selectedProjectId,
   );
+  const kind = projectKindOf(selectedProject);
+  const t = withKind(baseT, kind);
+  const menuItems = [
+    {
+      title: t("settings:projectGeneral.title"),
+      icon: Settings,
+      segment: "general",
+    },
+    {
+      title: t("settings:projectMembers.title"),
+      icon: Users,
+      segment: "members",
+    },
+    {
+      title: t("settings:projectVisibility.title"),
+      icon: Eye,
+      segment: "visibility",
+    },
+    {
+      title: t("settings:projectIntegrations.title"),
+      icon: Plug,
+      segment: "integrations",
+    },
+    {
+      title: t("settings:projectWorkflow.title"),
+      icon: GitBranch,
+      segment: "workflow",
+    },
+  ];
 
   return (
     <div className="flex gap-6 h-full">
@@ -170,6 +179,11 @@ function RouteComponent() {
                       <span className="font-normal text-foreground">
                         {project.name}
                       </span>
+                      {project.kind === "consultation" && (
+                        <span className="ms-1.5 text-[10px] text-muted-foreground">
+                          {baseT("navigation:sidebar.consultation")}
+                        </span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -215,7 +229,9 @@ function RouteComponent() {
       </aside>
 
       <div className="flex-1 min-w-0 overflow-y-auto">
-        <Outlet />
+        <ProjectKindProvider kind={kind}>
+          <Outlet />
+        </ProjectKindProvider>
       </div>
     </div>
   );

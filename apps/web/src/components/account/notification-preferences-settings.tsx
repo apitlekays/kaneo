@@ -184,6 +184,7 @@ function WorkspaceRuleCard({
   const [isSaving, setIsSaving] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const { data: projects } = useGetProjects({
+    kind: "all",
     workspaceId:
       state.projectMode === "selected" ||
       (rule?.projectMode ?? "all") === "selected"

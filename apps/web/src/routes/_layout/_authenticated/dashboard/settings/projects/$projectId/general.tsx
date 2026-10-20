@@ -7,7 +7,6 @@ import {
 } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import PageTitle from "@/components/page-title";
 import { TasksImportExport } from "@/components/project/tasks-import-export.tsx";
@@ -43,6 +42,7 @@ import { useGetTasks } from "@/hooks/queries/task/use-get-tasks";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
+import { useKindTranslation } from "@/lib/project-kind";
 import { toast } from "@/lib/toast";
 import useProjectStore from "@/store/project.ts";
 
@@ -78,7 +78,7 @@ function normalizeProjectValues(
 }
 
 function RouteComponent() {
-  const { t } = useTranslation();
+  const { t } = useKindTranslation();
   const projectSchema = useMemo(
     () =>
       z.object({

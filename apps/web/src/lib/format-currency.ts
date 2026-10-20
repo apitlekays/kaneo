@@ -30,3 +30,14 @@ export function fromMinorUnits(minorUnits: number | null | undefined): string {
   if (minorUnits === null || minorUnits === undefined) return "";
   return (minorUnits / 100).toString();
 }
+
+const RM = new Intl.NumberFormat("en-MY", {
+  style: "currency",
+  currency: "MYR",
+});
+
+/** Sen as "RM 1,234.50", whatever the browser's locale. */
+export function formatRM(sen: number | null | undefined): string {
+  if (sen === null || sen === undefined) return "Not set";
+  return RM.format(sen / 100);
+}

@@ -1,13 +1,13 @@
 import { Lock } from "lucide-react";
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { requestProjectAccess } from "@/fetchers/project-member";
+import { useKindTranslation } from "@/lib/project-kind";
 import { toast } from "@/lib/toast";
 
 /** Shown when a workspace member opens a project they haven't been added to. */
 export default function ProjectLocked({ projectId }: { projectId: string }) {
-  const { t } = useTranslation();
+  const { t } = useKindTranslation();
   const [requested, setRequested] = useState(false);
   const [busy, setBusy] = useState(false);
 

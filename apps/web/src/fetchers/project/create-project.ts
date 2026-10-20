@@ -10,9 +10,10 @@ async function createProject({
   slug,
   workspaceId,
   icon,
+  kind,
 }: CreateProjectRequest) {
   const response = await client.project.$post({
-    json: { name, slug, icon, workspaceId },
+    json: { name, slug, icon, workspaceId, kind },
   });
 
   if (!response.ok) {

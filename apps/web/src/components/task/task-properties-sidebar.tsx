@@ -7,7 +7,6 @@ import {
   GitBranch,
   Plus,
 } from "lucide-react";
-import { useTranslation } from "react-i18next";
 import { AvatarStack } from "@/components/ui/avatar-stack";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +32,7 @@ import { dueDateStatusColors, getDueDateStatus } from "@/lib/due-date-status";
 import { formatDateShort } from "@/lib/format";
 import { getPriorityLabel, getStatusDisplayLabel } from "@/lib/i18n/domain";
 import { getPriorityIcon } from "@/lib/priority";
+import { useKindTranslation } from "@/lib/project-kind";
 import { assigneeSummary, taskPeople } from "@/lib/task-assignees";
 import { toast } from "@/lib/toast";
 import TaskAssigneePopover from "./task-assignee-popover";
@@ -80,14 +80,17 @@ export default function TaskPropertiesSidebar({
   className,
   compact = false,
 }: TaskPropertiesSidebarProps) {
-  const { t } = useTranslation();
+  const { t, kind } = useKindTranslation();
   const { data: task } = useGetTask(taskId ?? "");
   const { data: project } = useGetProject({ id: projectId, workspaceId });
   const { data: columns = [] } = useGetColumns(projectId);
   const { data: taskLabels = [] } = useGetLabelsByTask(taskId ?? "");
   const { data: githubIntegration } = useGetGithubIntegration(projectId);
   const { data: giteaIntegration } = useGetGiteaIntegration(projectId);
-  const { data: workspaceProjects = [] } = useGetProjects({ workspaceId });
+  const { data: workspaceProjects = [] } = useGetProjects({
+    workspaceId,
+    kind,
+  });
   const { canMoveTask: canChangeTaskStatus } = useWorkspacePermission();
   // Moving to another project changes the task's status too, so it follows
   // the same creator / assignee / project manager rule.

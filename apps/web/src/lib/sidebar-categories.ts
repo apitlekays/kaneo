@@ -64,10 +64,24 @@ export const SIDEBAR_CATEGORIES: SidebarCategory[] = [
   },
 ];
 
-// Flat list of every gateable sub-category slug, in sidebar order. Used by the
-// access-control layer (sidebar filtering, route guard, settings matrix). MUST
-// stay in sync with ACCESS_PAGE_SLUGS in apps/api/src/workspace-access/index.ts.
-export const ALL_CATEGORY_SLUGS = SIDEBAR_CATEGORIES.flatMap((category) =>
+// The access matrix's column groups: the Consultations section (which is
+// not a category page, but is gated the same way) and then every category.
+export const ACCESS_PAGE_GROUPS: SidebarCategory[] = [
+  {
+    titleKey: "navigation:sidebar.overview",
+    items: [
+      {
+        slug: "consultations",
+        titleKey: "navigation:sidebar.consultations",
+      },
+    ],
+  },
+  ...SIDEBAR_CATEGORIES,
+];
+
+// Flat list of every gateable page slug, in matrix order. MUST stay in sync
+// with ACCESS_PAGE_SLUGS in apps/api/src/workspace-access/index.ts.
+export const ALL_CATEGORY_SLUGS = ACCESS_PAGE_GROUPS.flatMap((category) =>
   category.items.map((item) => item.slug),
 );
 

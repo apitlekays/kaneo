@@ -14,6 +14,7 @@ import {
   taskRelationTable,
   timeEntryTable,
   workflowRuleTable,
+  workspacePageAccessTable,
 } from "../database/schema";
 import { hasWorkspacePermission } from "./require-workspace-permission";
 
@@ -78,6 +79,52 @@ export async function isGlobalAdmin(
   return isInstanceAdminUser(userId);
 }
 
+export const PROJECT_KIND = "project";
+export const CONSULTATION_KIND = "consultation";
+/** The access-matrix page that gates every consultation. */
+export const CONSULTATIONS_PAGE = "consultations";
+
+/**
+ * Of `projectIds`, the consultations this user holds no Consultations page
+ * grant for in that consultation's workspace.
+ *
+ * A consultation membership without the grant is DORMANT: it confers
+ * nothing. Applying that here, beneath `getProjectRole` and
+ * `getMemberProjectIds`, means every project-scoped route, list, search
+ * and pending-decision feed inherits it without knowing consultations
+ * exist. Global admins never reach this; every caller checks them first.
+ */
+export async function ungrantedConsultationIds(
+  userId: string,
+  projectIds: string[],
+): Promise<Set<string>> {
+  if (projectIds.length === 0) return new Set();
+  const rows = await db
+    .select({
+      id: schema.projectTable.id,
+      grant: workspacePageAccessTable.id,
+    })
+    .from(schema.projectTable)
+    .leftJoin(
+      workspacePageAccessTable,
+      and(
+        eq(
+          workspacePageAccessTable.workspaceId,
+          schema.projectTable.workspaceId,
+        ),
+        eq(workspacePageAccessTable.userId, userId),
+        eq(workspacePageAccessTable.pageSlug, CONSULTATIONS_PAGE),
+      ),
+    )
+    .where(
+      and(
+        inArray(schema.projectTable.id, projectIds),
+        eq(schema.projectTable.kind, CONSULTATION_KIND),
+      ),
+    );
+  return new Set(rows.filter((r) => !r.grant).map((r) => r.id));
+}
+
 export async function getProjectRole(
   userId: string,
   projectId: string,
@@ -92,7 +139,10 @@ export async function getProjectRole(
       ),
     )
     .limit(1);
-  return member?.role ?? null;
+  if (!member) return null;
+  if ((await ungrantedConsultationIds(userId, [projectId])).has(projectId))
+    return null;
+  return member.role;
 }
 
 /** Project ids the user is an explicit member of (within a workspace). */
@@ -113,7 +163,9 @@ export async function getMemberProjectIds(
         eq(schema.projectTable.workspaceId, workspaceId),
       ),
     );
-  return rows.map((r) => r.projectId);
+  const ids = rows.map((r) => r.projectId);
+  const dormant = await ungrantedConsultationIds(userId, ids);
+  return ids.filter((id) => !dormant.has(id));
 }
 
 export async function canAccessProject(
@@ -137,14 +189,28 @@ export async function canWriteProject(
   return hasWorkspacePermission(userId, workspaceId, permission);
 }
 
-/** Manager of the project whose workspace role is not read-only, or a global admin. */
+/**
+ * Who runs a project: a global admin, or a manager (Lead Consultant) or the
+ * project's creator, still in the project and with a workspace role that is
+ * not read-only. They edit the project's details ribbon, its people
+ * (including who the managers are) and anyone's cost entries.
+ */
 export async function canManageProjectMembers(
   userId: string,
   projectId: string,
   workspaceId: string,
 ): Promise<boolean> {
   if (await isGlobalAdmin(userId, workspaceId)) return true;
-  if ((await getProjectRole(userId, projectId)) !== "manager") return false;
+  const role = await getProjectRole(userId, projectId);
+  if (role === null) return false;
+  if (role !== "manager") {
+    const [project] = await db
+      .select({ createdBy: schema.projectTable.createdBy })
+      .from(schema.projectTable)
+      .where(eq(schema.projectTable.id, projectId))
+      .limit(1);
+    if (project?.createdBy !== userId) return false;
+  }
   return hasWorkspacePermission(userId, workspaceId, PROJECT_WRITE_PERMISSION);
 }
 

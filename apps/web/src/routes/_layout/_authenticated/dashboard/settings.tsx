@@ -24,6 +24,7 @@ function SettingsLayout() {
   const location = useLocation();
   const { data: workspace } = useActiveWorkspace();
   const { data: projects } = useGetProjects({
+    kind: "all",
     workspaceId: workspace?.id ?? "",
   });
 

@@ -54,6 +54,7 @@ import { initializePlugins } from "./plugins";
 import { migrateGitHubIntegration } from "./plugins/github/migration";
 import project from "./project";
 import { getPublicProject } from "./project/controllers/get-public-project";
+import { projectDetails, taskCosts } from "./project-finance";
 import projectMember from "./project-member";
 import { initializeScheduler, shutdownScheduler } from "./scheduler";
 import search from "./search";
@@ -577,6 +578,8 @@ export function createApp() {
   api.route("/google-calendar", googleCalendar);
   api.route("/drive-attachment", driveAttachment);
   api.route("/project-member", projectMember);
+  api.route("/project-details", projectDetails);
+  api.route("/task-cost", taskCosts);
   api.route("/user", user);
   api.route("/task-mom", taskMom);
   api.route("/workspace-access", workspaceAccess);

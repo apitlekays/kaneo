@@ -19,6 +19,10 @@ export const projectSchema = v.object({
   createdAt: v.date(),
   isPublic: v.nullable(v.boolean()),
   archivedAt: v.nullable(v.date()),
+  kind: v.picklist(["project", "consultation"]),
+  /** Sen; null when not set. */
+  budget: v.nullable(v.number()),
+  revenue: v.nullable(v.number()),
 });
 
 export const taskSchema = v.object({

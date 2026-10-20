@@ -15,6 +15,7 @@ import {
 import icons from "@/constants/project-icons";
 import useGetProjects from "@/hooks/queries/project/use-get-projects";
 import { cn } from "@/lib/cn";
+import { useProjectKind } from "@/lib/project-kind";
 
 type MobileProjectNavProps = {
   workspaceId: string;
@@ -39,7 +40,8 @@ export default function MobileProjectNav({
   onSelectProject,
   onAddProject,
 }: MobileProjectNavProps) {
-  const { data: projects = [] } = useGetProjects({ workspaceId });
+  const kind = useProjectKind();
+  const { data: projects = [] } = useGetProjects({ workspaceId, kind });
 
   return (
     <Popover>

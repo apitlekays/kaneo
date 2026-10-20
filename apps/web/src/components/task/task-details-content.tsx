@@ -15,6 +15,7 @@ import useGetTaskRelations from "@/hooks/queries/task-relation/use-get-task-rela
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import type { ExternalLink } from "@/types/external-link";
 import DriveAttachments from "./drive-attachments";
+import TaskCosts from "./task-costs";
 import TaskDescription from "./task-description";
 import TaskMom from "./task-mom";
 import TaskRelations from "./task-relations";
@@ -105,6 +106,11 @@ export default function TaskDetailsContent({
           workspaceId={workspaceId}
         />
       </div>
+      {taskId && (
+        <div className="mt-2">
+          <TaskCosts taskId={taskId} projectId={projectId} />
+        </div>
+      )}
       <div className="mt-2">
         <TaskRelations
           taskId={taskId}

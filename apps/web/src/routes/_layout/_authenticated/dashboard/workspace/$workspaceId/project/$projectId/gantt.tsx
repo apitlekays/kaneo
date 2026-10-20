@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import ProjectLayout from "@/components/common/project-layout";
 import { GanttTaskBar } from "@/components/gantt/gantt-task-bar";
 import PageTitle from "@/components/page-title";
+import { ProjectDetailsRibbon } from "@/components/project/project-details-ribbon";
 import TaskDetailsSheet from "@/components/task/task-details-sheet";
 import { AvatarStack } from "@/components/ui/avatar-stack";
 import { Button } from "@/components/ui/button";
@@ -216,6 +217,8 @@ function RouteComponent() {
             </Button>
           </div>
         </div>
+
+        <ProjectDetailsRibbon projectId={projectId} workspaceId={workspaceId} />
 
         {!timeline || parsedTasks.length === 0 ? (
           <div className="flex flex-1 items-center justify-center px-6">

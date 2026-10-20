@@ -18,7 +18,9 @@ import {
 import { usePendingInvitations } from "@/hooks/queries/invitation/use-pending-invitations";
 import { useNotificationFeed } from "@/hooks/queries/notification/use-notification-feed";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
+import { useMyPageAccess } from "@/hooks/queries/workspace-access/use-my-page-access";
 import { usePendingActions } from "@/hooks/use-pending-actions";
+import { CONSULTATIONS_PAGE } from "@/lib/project-kind";
 
 export function NavMain() {
   const { t } = useTranslation();
@@ -27,11 +29,17 @@ export function NavMain() {
   const { data: invitations = [] } = usePendingInvitations();
   const { data: feed = [] } = useNotificationFeed();
   const { hasAny: hasPendingActions } = usePendingActions();
+  const { data: access } = useMyPageAccess(workspace?.id ?? "");
 
   if (!workspace) return null;
 
   const pendingCount = invitations.length;
   const unreadFeedCount = feed.filter((item) => !item.isRead).length;
+
+  const canSeeConsultations = Boolean(
+    access?.isAdmin || access?.pages.includes(CONSULTATIONS_PAGE),
+  );
+  const consultationsUrl = `/dashboard/workspace/${workspace.id}/consultations`;
 
   const navItems = [
     {
@@ -51,6 +59,18 @@ export function NavMain() {
       bellCount: 0,
       hasDot: false,
     },
+    ...(canSeeConsultations
+      ? [
+          {
+            title: t("navigation:sidebar.consultations"),
+            url: consultationsUrl,
+            isActive: window.location.pathname === consultationsUrl,
+            badge: null,
+            bellCount: 0,
+            hasDot: false,
+          },
+        ]
+      : []),
     {
       title: t("navigation:sidebar.members"),
       url: `/dashboard/workspace/${workspace.id}/members`,

@@ -69,6 +69,7 @@ type ResolvedNotificationContext = {
   workspaceName: string;
   projectId: string | null;
   projectName: string | null;
+  projectKind: string | null;
   taskId: string | null;
   taskTitle: string | null;
   taskUrl: string | null;
@@ -104,6 +105,7 @@ function workspaceOnlyContext(
     workspaceName,
     projectId: null,
     projectName: null,
+    projectKind: null,
     taskId: null,
     taskTitle: null,
     taskUrl: url,
@@ -327,6 +329,7 @@ async function resolveNotificationContext(notification: {
         taskTitle: taskTable.title,
         projectId: projectTable.id,
         projectName: projectTable.name,
+        projectKind: projectTable.kind,
         workspaceId: workspaceTable.id,
         workspaceName: workspaceTable.name,
       })
@@ -348,6 +351,7 @@ async function resolveNotificationContext(notification: {
       workspaceName: task.workspaceName,
       projectId: task.projectId,
       projectName: task.projectName,
+      projectKind: task.projectKind,
       taskId: task.taskId,
       taskTitle: task.taskTitle,
       taskUrl: buildTaskUrl(task.workspaceId, task.projectId, task.taskId),
@@ -378,6 +382,7 @@ async function resolveNotificationContext(notification: {
       workspaceName: letter.workspaceName,
       projectId: null,
       projectName: null,
+      projectKind: null,
       taskId: null,
       taskTitle: letter.subject,
       taskUrl: buildLetterUrl(letter.letterId),
@@ -403,6 +408,7 @@ async function resolveNotificationContext(notification: {
       workspaceName: workspace.workspaceName,
       projectId: null,
       projectName: null,
+      projectKind: null,
       taskId: null,
       taskTitle: null,
       taskUrl: null,
@@ -698,6 +704,7 @@ export async function deliverNotification(
       ? {
           id: context.projectId,
           name: context.projectName,
+          kind: context.projectKind,
         }
       : null,
     task: context.taskId

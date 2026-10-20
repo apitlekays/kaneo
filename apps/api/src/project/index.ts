@@ -1,8 +1,12 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import * as v from "valibot";
 import { projectSchema } from "../schemas";
 import {
+  CONSULTATION_KIND,
+  isGlobalAdmin,
+  PROJECT_KIND,
   requireProjectAccess,
   requireProjectManager,
 } from "../utils/project-access";
@@ -78,19 +82,29 @@ const project = new Hono<{
         workspaceId: v.string(),
         icon: v.string(),
         slug: v.string(),
+        kind: v.optional(v.picklist([PROJECT_KIND, CONSULTATION_KIND])),
       }),
     ),
     workspaceAccess.fromBody(),
     requireWorkspacePermission({ project: ["create"] }),
     async (c) => {
-      const { name, icon, slug } = c.req.valid("json");
+      const { name, icon, slug, kind = PROJECT_KIND } = c.req.valid("json");
       const workspaceId = c.get("workspaceId");
+      const userId = c.get("userId");
+      if (
+        kind === CONSULTATION_KIND &&
+        !(await isGlobalAdmin(userId, workspaceId))
+      )
+        throw new HTTPException(403, {
+          message: "Only global admins can create consultations",
+        });
       const newProject = await createProjectCtrl(
         workspaceId,
         name,
         icon,
         slug,
-        c.get("userId"),
+        userId,
+        kind,
       );
       return c.json(newProject);
     },

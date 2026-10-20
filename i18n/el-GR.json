@@ -72,7 +72,14 @@
 				"keyHint": "Χρησιμοποιείται για IDs αιτημάτων (π.χ. {{example}}-123)",
 				"createButton": "Δημιουργία έργου",
 				"successToast": "Το έργο δημιουργήθηκε με επιτυχία",
-				"errorToast": "Αποτυχία δημιουργίας έργου"
+				"errorToast": "Αποτυχία δημιουργίας έργου",
+				"breadcrumbNew_consultation": "Create a new consultation",
+				"createButton_consultation": "Create Consultation",
+				"description_consultation": "Create a new consultation in your workspace by providing a name, key, and selecting an icon.",
+				"errorToast_consultation": "Failed to create consultation",
+				"projectName_consultation": "Consultation name",
+				"successToast_consultation": "Consultation created successfully",
+				"title_consultation": "Create a new consultation"
 			},
 			"createWorkspace": {
 				"breadcrumbKaneo": "MAPIMCORE",
@@ -591,10 +598,31 @@
 				"keyRequired": "Το κλειδί είναι υποχρεωτικό",
 				"keyShort": "Το κλειδί πρέπει να έχει τουλάχιστον 2 χαρακτήρες",
 				"keyMax": "Το κλειδί πρέπει να έχει το πολύ 8 χαρακτήρες",
-				"iconRequired": "Το εικονίδιο είναι υποχρεωτικό"
+				"iconRequired": "Το εικονίδιο είναι υποχρεωτικό",
+				"nameRequired_consultation": "Consultation name is required",
+				"nameShort_consultation": "Consultation name must be at least 2 characters"
 			},
 			"importExportTasks": "Εισαγωγή/Εξαγωγή",
-			"importExportTasksDescription": "Εισαγωγή/Εξαγωγή Εργασιών"
+			"importExportTasksDescription": "Εισαγωγή/Εξαγωγή Εργασιών",
+			"deleteModalConfirm_consultation": "Delete Consultation",
+			"deleteModalDescription_consultation": "This will permanently delete the consultation \"{{name}}\" and all its data. This action cannot be undone.",
+			"deleteModalTitle_consultation": "Delete Consultation?",
+			"deleteProject_consultation": "Delete consultation",
+			"deleteProjectDescription_consultation": "Schedule consultation to be permanently deleted",
+			"descriptionHint_consultation": "A brief description of your consultation",
+			"descriptionPlaceholder_consultation": "Enter consultation description",
+			"iconHint_consultation": "Displayed in the sidebar and consultation surfaces.",
+			"pageTitle_consultation": "Consultation Settings",
+			"projectInfoSubtitle_consultation": "Configure your consultation details and preferences.",
+			"projectInfoTitle_consultation": "Consultation Information",
+			"projectNameHint_consultation": "The name of your consultation",
+			"projectNameLabel_consultation": "Consultation name",
+			"projectNamePlaceholder_consultation": "Enter consultation name",
+			"subtitle_consultation": "Manage your consultation name, key, icon and description.",
+			"toastDeleted_consultation": "Consultation deleted successfully",
+			"toastDeleteError_consultation": "Failed to delete consultation",
+			"toastUpdated_consultation": "Consultation updated successfully",
+			"toastUpdateError_consultation": "Failed to update consultation"
 		},
 		"projectIntegrations": {
 			"pageTitle": "Ενσωματώσεις έργου",
@@ -611,7 +639,14 @@
 			"genericWebhookSectionTitle": "Γενικά Webhooks",
 			"genericWebhookSectionSubtitle": "Στείλτε γεγονότα εργασιών έργου σε οποιοδήποτε HTTP endpoint ως JSON.",
 			"slackSectionTitle": "Ενσωμάτωση Slack",
-			"slackSectionSubtitle": "Στείλτε ενημερώσεις εργασιών έργου σε κανάλι Slack μέσω εισερχόμενου webhook."
+			"slackSectionSubtitle": "Στείλτε ενημερώσεις εργασιών έργου σε κανάλι Slack μέσω εισερχόμενου webhook.",
+			"discordSectionSubtitle_consultation": "Send consultation task updates into a Discord channel with a webhook.",
+			"genericWebhookSectionSubtitle_consultation": "Send consultation task events to any HTTP endpoint as JSON.",
+			"pageTitle_consultation": "Consultation Integrations",
+			"slackSectionSubtitle_consultation": "Send consultation task updates into a Slack channel with an incoming webhook.",
+			"subtitle_consultation": "Connect your consultation with external tools and services to streamline your workflow.",
+			"telegramSectionSubtitle_consultation": "Send consultation task updates into a Telegram chat or topic with a bot.",
+			"title_consultation": "Consultation Integrations"
 		},
 		"projectVisibility": {
 			"pageTitle": "Ορατότητα έργου",
@@ -626,7 +661,11 @@
 			"copy": "Αντιγραφή",
 			"copiedToast": "Αντιγράφηκε",
 			"toastUpdated": "Η ορατότητα ενημερώθηκε",
-			"toastUpdateError": "Αποτυχία ενημέρωσης ορατότητας"
+			"toastUpdateError": "Αποτυχία ενημέρωσης ορατότητας",
+			"pageTitle_consultation": "Consultation Visibility",
+			"publicAccessHint_consultation": "Allow anyone with the URL to view this consultation",
+			"publicUrlHint_consultation": "Share this link if the consultation is public",
+			"subtitle_consultation": "Control who can view and access your consultation."
 		},
 		"projectWorkflow": {
 			"pageTitle": "Ρυθμίσεις ροής εργασίας",
@@ -635,11 +674,14 @@
 			"columnsTitle": "Στήλες",
 			"columnsDescription": "Διαχειριστείτε τις στήλες που εμφανίζονται στον πίνακά σας. Σύρετε για αναδιάταξη. Ενεργοποιήστε τη \"Στήλη ολοκλήρωσης\" για στάδια που αντιπροσωπεύουν ολοκληρωμένη εργασία.",
 			"automationTitle": "Κανόνες αυτοματοποίησης",
-			"automationDescription": "Αντιστοιχίστε γεγονότα ενσωμάτωσης σε στήλες. Όταν συμβαίνει ένα γεγονός, η συνδεδεμένη εργασία μετακινείται στην καθορισμένη στήλη."
+			"automationDescription": "Αντιστοιχίστε γεγονότα ενσωμάτωσης σε στήλες. Όταν συμβαίνει ένα γεγονός, η συνδεδεμένη εργασία μετακινείται στην καθορισμένη στήλη.",
+			"subtitle_consultation": "Configure board columns and automation rules for this consultation."
 		},
 		"projectSwitcher": {
 			"selectProject": "Επιλέξτε έργο",
-			"noProjects": "Δεν υπάρχουν έργα"
+			"noProjects": "Δεν υπάρχουν έργα",
+			"noProjects_consultation": "No consultations",
+			"selectProject_consultation": "Select consultation"
 		},
 		"columnEditor": {
 			"toastCreated": "Η στήλη δημιουργήθηκε",
@@ -1058,14 +1100,23 @@
 			"approve": "Approve",
 			"deny": "Deny",
 			"roleUpdated": "Role updated",
-			"roleUpdateError": "Couldn’t update role"
+			"roleUpdateError": "Couldn’t update role",
+			"readOnly": "Read-only",
+			"readOnlyHint": "Viewers can only read, whatever their project role",
+			"readOnlyHint_consultation": "Viewers can only read, whatever their consultation role",
+			"remove_consultation": "Remove from consultation",
+			"requestsSubtitle_consultation": "People requesting access to this consultation.",
+			"roleManager_consultation": "Consultation Manager",
+			"roleMember_consultation": "Consultation Member",
+			"subtitle_consultation": "Control who can access this consultation."
 		},
 		"workspaceAccess": {
 			"alwaysAvailable": "Home and Projects are always available to everyone.",
 			"description": "Choose which pages each member can access.",
 			"member": "Member",
 			"noAccessBody": "You need owner or admin permissions to manage access.",
-			"title": "Access Management"
+			"title": "Access Management",
+			"globalAdmin": "Global Admin"
 		}
 	},
 	"navigation": {
@@ -1112,7 +1163,10 @@
 				"operations": "Operations & Administration",
 				"revenue": "Revenue",
 				"sales": "Sales"
-			}
+			},
+			"consultation": "Consultation",
+			"consultations": "Consultations",
+			"projects_consultation": "Consultations"
 		},
 		"projectList": {
 			"viewProject": "Προβολή έργου",
@@ -1124,7 +1178,17 @@
 			"deleteConfirmDescription": "Αυτό θα αφαιρέσει οριστικά το έργο και όλα τα δεδομένα του. Δεν μπορείτε να αναιρέσετε αυτήν την ενέργεια.",
 			"deletedToast": "Το έργο διαγράφηκε",
 			"deleteProject": "Διαγραφή έργου",
-			"lockedTooltip": "You don’t have access to this project"
+			"lockedTooltip": "You don’t have access to this project",
+			"addProject_consultation": "Add consultation",
+			"deleteConfirmDescription_consultation": "This will permanently remove the consultation and all its data. You can't undo this action.",
+			"deleteConfirmTitle_consultation": "Delete Consultation?",
+			"deletedToast_consultation": "Consultation deleted",
+			"deleteProject_consultation": "Delete Consultation",
+			"linkCopied_consultation": "Consultation link copied to clipboard",
+			"lockedTooltip_consultation": "You don’t have access to this consultation",
+			"projectSettings_consultation": "Consultation settings",
+			"shareProject_consultation": "Share Consultation",
+			"viewProject_consultation": "View Consultation"
 		},
 		"search": {
 			"inputPlaceholder": "Αναζήτηση εργασιών, έργων, σχολίων...",
@@ -1163,7 +1227,8 @@
 			"settingsWorkspaceTab": "Χώρος εργασίας"
 		},
 		"projectSettings": {
-			"projectLabel": "Έργο"
+			"projectLabel": "Έργο",
+			"projectLabel_consultation": "Consultation"
 		},
 		"keyboardShortcuts": {
 			"title": "Συντομεύσεις πληκτρολογίου",
@@ -1223,12 +1288,30 @@
 			},
 			"task_assignee_changed": {
 				"title": "Σας ανατέθηκε εργασία",
-				"content": "Σας ανατέθηκε η εργασία: {{taskTitle}}"
+				"content": "Σας ανατέθηκε η εργασία: {{taskTitle}}",
+				"contentUnknown": "You were assigned to \"{{taskTitle}}\""
 			},
 			"time_entry_created": {
 				"title": "Η χρονομέτρηση ξεκίνησε",
 				"contentWithTask": "Η χρονομέτρηση ξεκίνησε για την εργασία: {{taskTitle}}",
 				"contentWithoutTask": "Η χρονομέτρηση ξεκίνησε για μια εργασία"
+			},
+			"due_date_reminder": {
+				"contentOneDay": "\"{{taskTitle}}\" is due in 1 day",
+				"contentOneHour": "\"{{taskTitle}}\" is due in 1 hour",
+				"title": "Task due soon"
+			},
+			"task_commented": {
+				"content": "{{actorName}} commented on \"{{taskTitle}}\"",
+				"title": "New comment"
+			},
+			"task_overdue": {
+				"content": "\"{{taskTitle}}\" is past its due date",
+				"title": "Task overdue"
+			},
+			"task_tagged": {
+				"content": "{{actorName}} tagged you in \"{{taskTitle}}\"",
+				"title": "You were tagged"
 			}
 		}
 	},
@@ -1513,12 +1596,17 @@
 			"statusHintAdjust": "Επιλέξτε την κατάσταση που θα χρησιμοποιηθεί στο έργο προορισμού.",
 			"action": "Μετακίνηση εργασίας",
 			"success": "Η εργασία μετακινήθηκε με επιτυχία",
-			"error": "Αποτυχία μετακίνησης εργασίας"
+			"error": "Αποτυχία μετακίνησης εργασίας",
+			"projectLabel_consultation": "Destination consultation",
+			"projectPlaceholder_consultation": "Select a consultation",
+			"statusHintAdjust_consultation": "Choose the status to use in the destination consultation.",
+			"statusHintKeep_consultation": "This consultation's workflow already supports the current status."
 		},
 		"popover": {
 			"assignee": {
 				"unassigned": "Χωρίς ανάθεση",
-				"updateError": "Αποτυχία ενημέρωσης ανάθεσης εργασίας"
+				"updateError": "Αποτυχία ενημέρωσης ανάθεσης εργασίας",
+				"awaiting": "Awaiting {{name}}"
 			},
 			"status": {
 				"updateError": "Αποτυχία ενημέρωσης κατάστασης εργασίας"
@@ -1664,7 +1752,18 @@
 		},
 		"assignee": {
 			"label": "Ανατεθειμένος",
-			"unassigned": "Χωρίς ανάθεση"
+			"unassigned": "Χωρίς ανάθεση",
+			"addError": "Failed to add assignee",
+			"awaiting": "Awaiting {{name}}",
+			"labelPlural": "Assignees",
+			"lead": "{{name}} (lead)",
+			"leadBadge": "Lead",
+			"leadError": "Failed to change the lead",
+			"makeLead": "Make lead",
+			"more": "{{count}} more",
+			"remove": "Remove from task",
+			"removeError": "Failed to remove assignee",
+			"withdraw": "Withdraw offer"
 		},
 		"dueDate": {
 			"label": "Ημερομηνία λήξης",
@@ -1740,7 +1839,10 @@
 			"requestAccess": "Request access",
 			"requested": "Access requested — a project manager will review it.",
 			"requestedShort": "Requested",
-			"requestError": "Couldn’t send request"
+			"requestError": "Couldn’t send request",
+			"description_consultation": "You haven’t been added to this consultation. Request access and a consultation manager can approve you.",
+			"requested_consultation": "Access requested, a consultation manager will review it.",
+			"title_consultation": "Consultation locked"
 		},
 		"mom": {
 			"absentees": "Absentees",
@@ -1810,7 +1912,12 @@
 				"inProgress": "Σε εξέλιξη"
 			},
 			"noDueDate": "Χωρίς ημερομηνία λήξης",
-			"emptyDescriptionReadOnly": "There are no projects in this workspace yet. Ask an admin to create one."
+			"emptyDescriptionReadOnly": "There are no projects in this workspace yet. Ask an admin to create one.",
+			"createProject_consultation": "Create consultation",
+			"emptyDescription_consultation": "Get started by creating your first consultation.",
+			"emptyDescriptionReadOnly_consultation": "There are no consultations in this workspace yet. Ask an admin to create one.",
+			"emptyTitle_consultation": "No consultations yet",
+			"pageTitle_consultation": "Consultations"
 		},
 		"search": {
 			"pageTitle": "Αναζήτηση",
@@ -1965,5 +2072,18 @@
 	},
 	"comingSoon": {
 		"description": "This section is coming soon. We are still building it."
+	},
+	"pendingDecisions": {
+		"accept": "Accept",
+		"alreadyHandled": "Already handled by someone else.",
+		"cancel": "Cancel",
+		"confirmRejection": "Confirm rejection",
+		"description": "Accept or reject each item to clear it from your queue.",
+		"genericError": "That didn't go through. Try again.",
+		"open": "Open",
+		"partialFailure": "Couldn't load items from: {{sources}}",
+		"reasonPlaceholder": "Why are you rejecting this?",
+		"reject": "Reject",
+		"title": "Waiting for your decision"
 	}
 }

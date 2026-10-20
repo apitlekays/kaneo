@@ -334,6 +334,33 @@ in `docs/superpowers/specs/2026-08-27-minutes-manager-refinements-REQUIREMENTS.m
   and its SQL twin `visibilityCondition`). Word/PowerPoint text is extracted
   in-process (`meeting/office-text.ts`, no system binaries); only PDFs get the
   OCR fallback. The main Meeting Minutes list excludes archived meetings.
+- **Consultations are projects with `kind = "consultation"`** (added
+  2026-10-20). Same tables, routes, board, tasks, assignment and
+  notifications; only global admins create them (`POST /project` with
+  `kind`). Reaching one needs the `consultations` page grant on top of
+  membership: `ungrantedConsultationIds` in `utils/project-access.ts` makes a
+  membership without the grant dormant, beneath `getProjectRole` and
+  `getMemberProjectIds`, so every project-scoped route inherits it. Global
+  search runs its own membership query and applies it explicitly; any new
+  direct `project_member` query must too. The web filters by kind in
+  `useGetProjects` (default `"project"`) and words shared screens through
+  i18next context: `useKindTranslation()` / `withKind()` look up
+  `key_consultation` and fall back to `key`.
+- **Project details ribbon and task costs** (added 2026-10-20). Every
+  project and consultation shows `ProjectDetailsRibbon` between the toolbar
+  and the tasks on Board, Backlog and Gantt: managers (Lead Consultants),
+  members (Consultants), description, budget, revenue and Actual
+  Expenditure. Money is sen in `bigint` columns (`project.budget`,
+  `project.revenue`, `task_cost.amount`). Expenditure is never stored: it is
+  `sum(task_cost.amount)` over the project's tasks, so it follows a moved
+  task, drops with a deleted one, and counts a subtask (its own task row)
+  once. Routes: `project-finance/index.ts` (`/project-details`,
+  `/task-cost`). `canManageProjectMembers` (global admin, manager, or the
+  creator while still a member) edits the ribbon, the people (including
+  appointing managers, no longer admin-only) and anyone's cost entry; task
+  writers add costs and edit their own. Changes broadcast
+  `PROJECT_DETAILS_UPDATED`, and every project WS message refreshes
+  `["project-details", id]`.
 - **Web caching and the update banner** (added 2026-10-19). `nginx.kaneo.conf`
   serves `index.html` (and every SPA URL) with `Cache-Control: no-cache` and
   `/assets/*` as `immutable` with a real 404 for missing files. Before this,

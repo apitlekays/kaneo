@@ -2,7 +2,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Check, Loader2, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { ColoredAvatar } from "@/components/ui/colored-avatar";
 import { useConfirm } from "@/components/ui/confirm";
@@ -25,6 +24,7 @@ import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { authClient } from "@/lib/auth-client";
+import { useKindTranslation } from "@/lib/project-kind";
 import { toast } from "@/lib/toast";
 
 export const Route = createFileRoute(
@@ -34,7 +34,7 @@ export const Route = createFileRoute(
 });
 
 function RouteComponent() {
-  const { t } = useTranslation();
+  const { t } = useKindTranslation();
   const confirm = useConfirm();
   const { projectId } = Route.useParams();
   const queryClient = useQueryClient();

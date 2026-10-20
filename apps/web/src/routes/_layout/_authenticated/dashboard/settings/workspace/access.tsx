@@ -9,7 +9,7 @@ import { useSetPageAccess } from "@/hooks/queries/workspace-access/use-set-page-
 import { useWorkspaceMembersList } from "@/hooks/queries/workspace-access/use-workspace-members-list";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
-import { SIDEBAR_CATEGORIES } from "@/lib/sidebar-categories";
+import { ACCESS_PAGE_GROUPS } from "@/lib/sidebar-categories";
 
 export const Route = createFileRoute(
   "/_layout/_authenticated/dashboard/settings/workspace/access",
@@ -85,7 +85,7 @@ function RouteComponent() {
                 >
                   {t("settings:workspaceAccess.globalAdmin")}
                 </th>
-                {SIDEBAR_CATEGORIES.map((category) => (
+                {ACCESS_PAGE_GROUPS.map((category) => (
                   <th
                     key={category.titleKey}
                     colSpan={category.items.length}
@@ -96,7 +96,7 @@ function RouteComponent() {
                 ))}
               </tr>
               <tr className="border-b border-border bg-muted/20">
-                {SIDEBAR_CATEGORIES.flatMap((category) =>
+                {ACCESS_PAGE_GROUPS.flatMap((category) =>
                   category.items.map((item, index) => (
                     <th
                       key={item.slug}
@@ -159,7 +159,7 @@ function RouteComponent() {
                         )}`}
                       />
                     </td>
-                    {SIDEBAR_CATEGORIES.flatMap((category) =>
+                    {ACCESS_PAGE_GROUPS.flatMap((category) =>
                       category.items.map((item, index) => {
                         const checked = isAdminRow
                           ? true

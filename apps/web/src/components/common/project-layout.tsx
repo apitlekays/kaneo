@@ -25,6 +25,7 @@ import useGetProject from "@/hooks/queries/project/use-get-project";
 import { useProjectWebSocket } from "@/hooks/use-project-websocket";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
+import { ProjectKindProvider, projectKindOf } from "@/lib/project-kind";
 
 type ProjectLayoutProps = {
   projectId: string;
@@ -48,9 +49,11 @@ export default function ProjectLayout({
   const { data: project } = useGetProject({ id: projectId, workspaceId });
   const [isCreateProjectModalOpen, setIsCreateProjectModalOpen] =
     useState(false);
-  const { canCreateProjects } = useWorkspacePermission();
+  const { canCreateProjects, isAdmin } = useWorkspacePermission();
+  const kind = projectKindOf(project);
   // Project creation is reserved for the SuperUser (owner) and Global Admins.
-  const canCreateProject = canCreateProjects();
+  const canCreateProject =
+    kind === "consultation" ? isAdmin : canCreateProjects();
   const handleAddProject = canCreateProject
     ? () => setIsCreateProjectModalOpen(true)
     : undefined;
@@ -111,123 +114,126 @@ export default function ProjectLayout({
   };
 
   return (
-    <Layout>
-      <Layout.Header className="h-11 border-border/80 px-2">
-        <div className="flex w-full items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <SidebarTrigger className="-ml-1 h-7 w-7 cursor-pointer text-foreground/85 hover:text-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p className="flex items-center gap-2 text-[10px]">
-                    Toggle sidebar
-                    <KbdSequence
-                      keys={[
-                        shortcuts.sidebar.prefix,
-                        shortcuts.sidebar.toggle,
-                      ]}
-                    />
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+    <ProjectKindProvider kind={kind}>
+      <Layout>
+        <Layout.Header className="h-11 border-border/80 px-2">
+          <div className="flex w-full items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <SidebarTrigger className="-ml-1 h-7 w-7 cursor-pointer text-foreground/85 hover:text-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="flex items-center gap-2 text-[10px]">
+                      Toggle sidebar
+                      <KbdSequence
+                        keys={[
+                          shortcuts.sidebar.prefix,
+                          shortcuts.sidebar.toggle,
+                        ]}
+                      />
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
-            <div className="h-4 w-px shrink-0 bg-border/80" />
+              <div className="h-4 w-px shrink-0 bg-border/80" />
 
-            <div className="hidden min-w-0 items-center gap-1 md:flex">
-              <WorkspaceCrumbSelect />
-              <span className="text-foreground/30 text-xs">/</span>
-              <ProjectCrumbSelect
-                workspaceId={workspaceId}
-                projectId={projectId}
-                projectName={project?.name}
-                onSelectProject={handleProjectSwitch}
-                onAddProject={handleAddProject}
-              />
-            </div>
-
-            <div className="md:hidden">
-              <MobileProjectNav
-                workspaceId={workspaceId}
-                projectId={projectId}
-                activeView={resolvedView}
-                onSelectBacklog={handleNavigateToBacklog}
-                onSelectBoard={handleNavigateToBoard}
-                onSelectGantt={handleNavigateToGantt}
-                onSelectMinutes={handleNavigateToMinutes}
-                onSelectProject={handleProjectSwitch}
-                onAddProject={handleAddProject}
-              />
-            </div>
-
-            {showViewSwitcher && (
-              <div className="hidden h-8 items-center gap-0.5 rounded-lg border border-border/80 bg-background p-0.5 sm:inline-flex">
-                <Button
-                  variant={resolvedView === "backlog" ? "secondary" : "ghost"}
-                  size="xs"
-                  onClick={handleNavigateToBacklog}
-                  className={cn(
-                    "h-6 gap-1.5 rounded-md px-2 text-xs",
-                    resolvedView !== "backlog" && "text-muted-foreground",
-                  )}
-                >
-                  <SquircleDashed className="size-3.5" />
-                  Backlog
-                </Button>
-                <Button
-                  variant={resolvedView === "board" ? "secondary" : "ghost"}
-                  size="xs"
-                  onClick={handleNavigateToBoard}
-                  className={cn(
-                    "h-6 gap-1.5 rounded-md px-2 text-xs",
-                    resolvedView !== "board" && "text-muted-foreground",
-                  )}
-                >
-                  <SquareKanban className="size-3.5" />
-                  Tasks
-                </Button>
-                <Button
-                  variant={resolvedView === "gantt" ? "secondary" : "ghost"}
-                  size="xs"
-                  onClick={handleNavigateToGantt}
-                  className={cn(
-                    "h-6 gap-1.5 rounded-md px-2 text-xs",
-                    resolvedView !== "gantt" && "text-muted-foreground",
-                  )}
-                >
-                  <CalendarDays className="size-3.5" />
-                  Gantt
-                </Button>
-                <Button
-                  variant={resolvedView === "minutes" ? "secondary" : "ghost"}
-                  size="xs"
-                  onClick={handleNavigateToMinutes}
-                  className={cn(
-                    "h-6 gap-1.5 rounded-md px-2 text-xs",
-                    resolvedView !== "minutes" && "text-muted-foreground",
-                  )}
-                >
-                  <FileText className="size-3.5" />
-                  Minutes
-                </Button>
+              <div className="hidden min-w-0 items-center gap-1 md:flex">
+                <WorkspaceCrumbSelect />
+                <span className="text-foreground/30 text-xs">/</span>
+                <ProjectCrumbSelect
+                  workspaceId={workspaceId}
+                  projectId={projectId}
+                  projectName={project?.name}
+                  onSelectProject={handleProjectSwitch}
+                  onAddProject={handleAddProject}
+                />
               </div>
-            )}
+
+              <div className="md:hidden">
+                <MobileProjectNav
+                  workspaceId={workspaceId}
+                  projectId={projectId}
+                  activeView={resolvedView}
+                  onSelectBacklog={handleNavigateToBacklog}
+                  onSelectBoard={handleNavigateToBoard}
+                  onSelectGantt={handleNavigateToGantt}
+                  onSelectMinutes={handleNavigateToMinutes}
+                  onSelectProject={handleProjectSwitch}
+                  onAddProject={handleAddProject}
+                />
+              </div>
+
+              {showViewSwitcher && (
+                <div className="hidden h-8 items-center gap-0.5 rounded-lg border border-border/80 bg-background p-0.5 sm:inline-flex">
+                  <Button
+                    variant={resolvedView === "backlog" ? "secondary" : "ghost"}
+                    size="xs"
+                    onClick={handleNavigateToBacklog}
+                    className={cn(
+                      "h-6 gap-1.5 rounded-md px-2 text-xs",
+                      resolvedView !== "backlog" && "text-muted-foreground",
+                    )}
+                  >
+                    <SquircleDashed className="size-3.5" />
+                    Backlog
+                  </Button>
+                  <Button
+                    variant={resolvedView === "board" ? "secondary" : "ghost"}
+                    size="xs"
+                    onClick={handleNavigateToBoard}
+                    className={cn(
+                      "h-6 gap-1.5 rounded-md px-2 text-xs",
+                      resolvedView !== "board" && "text-muted-foreground",
+                    )}
+                  >
+                    <SquareKanban className="size-3.5" />
+                    Tasks
+                  </Button>
+                  <Button
+                    variant={resolvedView === "gantt" ? "secondary" : "ghost"}
+                    size="xs"
+                    onClick={handleNavigateToGantt}
+                    className={cn(
+                      "h-6 gap-1.5 rounded-md px-2 text-xs",
+                      resolvedView !== "gantt" && "text-muted-foreground",
+                    )}
+                  >
+                    <CalendarDays className="size-3.5" />
+                    Gantt
+                  </Button>
+                  <Button
+                    variant={resolvedView === "minutes" ? "secondary" : "ghost"}
+                    size="xs"
+                    onClick={handleNavigateToMinutes}
+                    className={cn(
+                      "h-6 gap-1.5 rounded-md px-2 text-xs",
+                      resolvedView !== "minutes" && "text-muted-foreground",
+                    )}
+                  >
+                    <FileText className="size-3.5" />
+                    Minutes
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              {headerActions}
+            </div>
           </div>
+        </Layout.Header>
 
-          <div className="flex shrink-0 items-center gap-1.5">
-            {headerActions}
-          </div>
-        </div>
-      </Layout.Header>
+        <Layout.Content>{children}</Layout.Content>
 
-      <Layout.Content>{children}</Layout.Content>
-
-      <CreateProjectModal
-        open={isCreateProjectModalOpen}
-        onClose={() => setIsCreateProjectModalOpen(false)}
-      />
-    </Layout>
+        <CreateProjectModal
+          open={isCreateProjectModalOpen}
+          onClose={() => setIsCreateProjectModalOpen(false)}
+          kind={kind}
+        />
+      </Layout>
+    </ProjectKindProvider>
   );
 }

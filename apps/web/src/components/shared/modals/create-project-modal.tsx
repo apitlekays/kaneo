@@ -28,15 +28,22 @@ import useCreateProject from "@/hooks/mutations/project/use-create-project";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { cn } from "@/lib/cn";
 import generateProjectSlug from "@/lib/generate-project-id";
+import { type ProjectKind, withKind } from "@/lib/project-kind";
 import { toast } from "@/lib/toast";
 
 type CreateProjectModalProps = {
   open: boolean;
   onClose: () => void;
+  kind?: ProjectKind;
 };
 
-function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
-  const { t } = useTranslation();
+function CreateProjectModal({
+  open,
+  onClose,
+  kind = "project",
+}: CreateProjectModalProps) {
+  const { t: baseT } = useTranslation();
+  const t = withKind(baseT, kind);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("Layout");
@@ -49,6 +56,7 @@ function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
     slug,
     workspaceId: workspace?.id ?? "",
     icon: selectedIcon,
+    kind,
   });
   const SelectedIcon =
     icons[selectedIcon as keyof typeof icons] || icons.Layout;
@@ -72,7 +80,7 @@ function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
 
     try {
       const { id } = await mutateAsync();
-      toast.success("Project created successfully");
+      toast.success(t("common:modals.createProject.successToast"));
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
 
       navigate({

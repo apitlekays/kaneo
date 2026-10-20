@@ -572,6 +572,47 @@ export async function createMeetingFileUploadUrl(
   };
 }
 
+/** Owner-scoping segment every task-cost receipt key must contain. */
+export function taskCostReceiptKeyOwnerSegment(
+  workspaceId: string,
+  taskId: string,
+) {
+  return `workspace/${sanitizePathSegment(workspaceId)}/task-cost/${sanitizePathSegment(taskId)}/`;
+}
+
+/** Presigned PUT URL for a receipt on a task's cost entry. */
+export async function createTaskCostReceiptUploadUrl(context: {
+  workspaceId: string;
+  taskId: string;
+  filename: string;
+  contentType: string;
+}): Promise<TaskImageUploadUrl> {
+  const config = getStorageConfig();
+  const client = getClient(config);
+  const extension = getFileExtension(context.filename);
+  const baseName = sanitizePathSegment(
+    context.filename.replace(/\.[^/.]+$/, "") || "receipt",
+  ).slice(0, 64);
+  const fileName = `${baseName}-${Date.now()}-${createId()}${extension ? `.${extension}` : ""}`;
+  const key = applyKeyPrefix(
+    config.keyPrefix,
+    `${taskCostReceiptKeyOwnerSegment(context.workspaceId, context.taskId)}${fileName}`,
+  );
+  const command = new PutObjectCommand({
+    Bucket: config.bucket,
+    Key: key,
+    ContentType: context.contentType,
+  });
+  const uploadUrl = await presignPutObjectUrl(client, command, {
+    expiresIn: config.presignTtlSeconds,
+  });
+  return {
+    key,
+    uploadUrl,
+    headers: { "Content-Type": context.contentType },
+  };
+}
+
 export async function getPrivateObject(key: string): Promise<AssetObject> {
   const config = getStorageConfig();
   const client = getClient(config);

@@ -8,6 +8,7 @@ import ProjectLayout from "@/components/common/project-layout";
 import KanbanBoard from "@/components/kanban-board";
 import ListView from "@/components/list-view";
 import PageTitle from "@/components/page-title";
+import { ProjectDetailsRibbon } from "@/components/project/project-details-ribbon";
 import CreateTaskModal from "@/components/shared/modals/create-task-modal";
 import TaskDetailsSheet from "@/components/task/task-details-sheet";
 import { Input } from "@/components/ui/input";
@@ -253,6 +254,8 @@ function RouteComponent() {
           sort={sort}
           onSortChange={setSort}
         />
+
+        <ProjectDetailsRibbon projectId={projectId} workspaceId={workspaceId} />
 
         <div className="flex h-full flex-1 overflow-hidden bg-background">
           {sortedProject ? (

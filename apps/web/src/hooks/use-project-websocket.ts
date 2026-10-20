@@ -37,6 +37,18 @@ export function useProjectWebSocket(projectId: string) {
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          // Expenditure is tallied from the project's tasks, so any task
+          // change (a delete, a move) can change the details ribbon.
+          if (message.projectId)
+            queryClient.invalidateQueries({
+              queryKey: ["project-details", message.projectId],
+            });
+          if (message.type === "PROJECT_DETAILS_UPDATED") {
+            queryClient.invalidateQueries({
+              queryKey: ["project-members", message.projectId],
+            });
+            queryClient.invalidateQueries({ queryKey: ["task-costs"] });
+          }
           if (
             message.type === "TASK_UPDATED" ||
             message.type === "TASK_CREATED" ||

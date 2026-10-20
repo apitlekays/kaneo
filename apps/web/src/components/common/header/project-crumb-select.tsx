@@ -1,5 +1,4 @@
 import { ChevronsUpDown, Plus } from "lucide-react";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 import useGetProjects from "@/hooks/queries/project/use-get-projects";
+import { useKindTranslation } from "@/lib/project-kind";
 
 type ProjectCrumbSelectProps = {
   workspaceId: string;
@@ -27,8 +27,8 @@ export default function ProjectCrumbSelect({
   onSelectProject,
   onAddProject,
 }: ProjectCrumbSelectProps) {
-  const { t } = useTranslation();
-  const { data: projects = [] } = useGetProjects({ workspaceId });
+  const { t, kind } = useKindTranslation();
+  const { data: projects = [] } = useGetProjects({ workspaceId, kind });
 
   return (
     <DropdownMenu>

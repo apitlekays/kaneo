@@ -13,9 +13,14 @@ import {
 import {
   canAccessProject,
   canManageProjectMembers,
-  isGlobalAdmin,
 } from "../utils/project-access";
 import { workspaceAccess } from "../utils/workspace-access-middleware";
+import { broadcastToProject } from "../ws";
+
+/** The project's people changed: its details ribbon refreshes live. */
+function announcePeople(projectId: string) {
+  broadcastToProject(projectId, { type: "PROJECT_DETAILS_UPDATED", projectId });
+}
 
 const projectMember = new Hono<{
   Variables: { userId: string; workspaceId?: string };
@@ -91,37 +96,9 @@ const projectMember = new Hono<{
         });
       }
 
-      // Only Global Admins (and owners) can assign the Project Manager role.
-      if (role === "manager" && !(await isGlobalAdmin(userId, workspaceId))) {
-        throw new HTTPException(403, {
-          message: "Only global admins can assign project managers",
-        });
-      }
-
-      // Changing the Project Manager status of an EXISTING member — in either
-      // direction — is also reserved for Global Admins/owner. Plain project
-      // managers can still add/remove regular members, just not appoint or
-      // demote other managers.
-      const [existingMembership] = await db
-        .select({ role: projectMemberTable.role })
-        .from(projectMemberTable)
-        .where(
-          and(
-            eq(projectMemberTable.projectId, projectId),
-            eq(projectMemberTable.userId, targetUserId),
-          ),
-        )
-        .limit(1);
-      const nextRole = role ?? "member";
-      const isManagerRoleChange =
-        existingMembership !== undefined &&
-        existingMembership.role !== nextRole &&
-        (existingMembership.role === "manager" || nextRole === "manager");
-      if (isManagerRoleChange && !(await isGlobalAdmin(userId, workspaceId))) {
-        throw new HTTPException(403, {
-          message: "Only global admins can change project manager roles",
-        });
-      }
+      // Whoever may manage the members (global admin, manager, or the
+      // creator) may also appoint and demote managers: the project's people
+      // are edited from its details ribbon by those same three.
 
       // Only workspace members can be added to a project.
       const [member] = await db
@@ -148,6 +125,7 @@ const projectMember = new Hono<{
           set: { role: role ?? "member" },
         });
 
+      announcePeople(projectId);
       return c.json({ success: true });
     },
   )
@@ -179,6 +157,7 @@ const projectMember = new Hono<{
           ),
         );
 
+      announcePeople(projectId);
       return c.json({ success: true });
     },
   )
@@ -277,6 +256,7 @@ const projectMember = new Hono<{
           ),
         );
 
+      announcePeople(projectId);
       return c.json({ success: true });
     },
   )

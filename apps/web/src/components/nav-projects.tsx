@@ -35,8 +35,14 @@ import {
 import useDeleteProject from "@/hooks/mutations/project/use-delete-project";
 import useGetProjects from "@/hooks/queries/project/use-get-projects";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
+import { useMyPageAccess } from "@/hooks/queries/workspace-access/use-my-page-access";
 import { useWorkspacePermission } from "@/hooks/use-workspace-permission";
 import { cn } from "@/lib/cn";
+import {
+  CONSULTATIONS_PAGE,
+  type ProjectKind,
+  withKind,
+} from "@/lib/project-kind";
 import { toast } from "@/lib/toast";
 import type { ProjectWithTasks } from "@/types/project";
 import CreateProjectModal from "./shared/modals/create-project-modal";
@@ -51,17 +57,25 @@ import {
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
 
-export function NavProjects() {
-  const { t } = useTranslation();
+export function NavProjects({ kind = "project" }: { kind?: ProjectKind }) {
+  const { t: baseT } = useTranslation();
+  const t = withKind(baseT, kind);
+  const isConsultations = kind === "consultation";
   const { isMobile } = useSidebar();
   const { data: workspace } = useActiveWorkspace();
   const { data: projects } = useGetProjects({
     workspaceId: workspace?.id || "",
+    kind,
   });
+  const { data: access } = useMyPageAccess(
+    isConsultations ? (workspace?.id ?? "") : "",
+  );
   const queryClient = useQueryClient();
   const { mutateAsync: deleteProject } = useDeleteProject();
-  const { canCreateProjects, canDeleteProjects } = useWorkspacePermission();
-  const canCreate = canCreateProjects();
+  const { canCreateProjects, canDeleteProjects, isAdmin } =
+    useWorkspacePermission();
+  // Only global admins start a consultation.
+  const canCreate = isConsultations ? isAdmin : canCreateProjects();
   const canDeleteProject = canDeleteProjects();
   const navigate = useNavigate();
   const { workspaceId: currentWorkspaceId, projectId: currentProjectId } =
@@ -94,6 +108,11 @@ export function NavProjects() {
   };
 
   if (!workspace) return null;
+  if (
+    isConsultations &&
+    !(access?.isAdmin || access?.pages.includes(CONSULTATIONS_PAGE))
+  )
+    return null;
 
   return (
     <>
@@ -238,6 +257,7 @@ export function NavProjects() {
       <CreateProjectModal
         open={isCreateProjectModalOpen}
         onClose={() => setIsCreateProjectModalOpen(false)}
+        kind={kind}
       />
 
       <AlertDialog
@@ -269,7 +289,9 @@ export function NavProjects() {
                   queryKey: ["projects"],
                 });
                 navigate({
-                  to: "/dashboard/workspace/$workspaceId",
+                  to: isConsultations
+                    ? "/dashboard/workspace/$workspaceId/consultations"
+                    : "/dashboard/workspace/$workspaceId",
                   params: {
                     workspaceId: workspace?.id || "",
                   },

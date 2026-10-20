@@ -9,7 +9,10 @@ import {
   workspaceTable,
   workspaceUserTable,
 } from "../../database/schema";
-import { isGlobalAdmin } from "../../utils/project-access";
+import {
+  isGlobalAdmin,
+  ungrantedConsultationIds,
+} from "../../utils/project-access";
 
 type SearchParams = {
   query: string;
@@ -153,12 +156,18 @@ async function globalSearch(params: SearchParams): Promise<{
   for (const id of scopeWorkspaceIds) {
     if (await isGlobalAdmin(resolvedUserId, id)) adminWorkspaceIds.push(id);
   }
-  const memberProjectIds = (
+  const allMemberProjectIds = (
     await db
       .select({ projectId: projectMemberTable.projectId })
       .from(projectMemberTable)
       .where(eq(projectMemberTable.userId, resolvedUserId))
   ).map((row) => row.projectId);
+  // A consultation membership without the Consultations grant is dormant.
+  const dormant = await ungrantedConsultationIds(
+    resolvedUserId,
+    allMemberProjectIds,
+  );
+  const memberProjectIds = allMemberProjectIds.filter((id) => !dormant.has(id));
   const projectVisibility =
     adminWorkspaceIds.length === 0 && memberProjectIds.length === 0
       ? sql`false`

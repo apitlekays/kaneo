@@ -8,6 +8,7 @@ import BacklogListView from "@/components/backlog-list-view";
 import ProjectLayout from "@/components/common/project-layout";
 import SortControl from "@/components/common/sort-control";
 import PageTitle from "@/components/page-title";
+import { ProjectDetailsRibbon } from "@/components/project/project-details-ribbon";
 import CreateTaskModal from "@/components/shared/modals/create-task-modal";
 import TaskDetailsSheet from "@/components/task/task-details-sheet";
 import { Button } from "@/components/ui/button";
@@ -687,6 +688,8 @@ function RouteComponent() {
             </div>
           </div>
         </div>
+
+        <ProjectDetailsRibbon projectId={projectId} workspaceId={workspaceId} />
 
         <div className="flex-1 overflow-hidden bg-card h-full">
           {sortedProject ? (

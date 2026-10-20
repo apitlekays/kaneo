@@ -74,6 +74,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain />
         <NavCategories />
         <NavProjects />
+        <NavProjects kind="consultation" />
       </SidebarContent>
       <SidebarFooter>
         <div className="flex items-center justify-between">

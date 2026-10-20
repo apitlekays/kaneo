@@ -1,7 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowRightLeft } from "lucide-react";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,6 +20,7 @@ import useGetProjects from "@/hooks/queries/project/use-get-projects";
 import { useGetTasks } from "@/hooks/queries/task/use-get-tasks";
 import { cn } from "@/lib/cn";
 import { getStatusLabel } from "@/lib/i18n/domain";
+import { useKindTranslation } from "@/lib/project-kind";
 import type Task from "@/types/task";
 
 type TaskMovePopoverProps = {
@@ -34,13 +34,13 @@ export default function TaskMovePopover({
   workspaceId,
   triggerClassName,
 }: TaskMovePopoverProps) {
-  const { t } = useTranslation();
+  const { t, kind } = useKindTranslation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
-  const { data: projects = [] } = useGetProjects({ workspaceId });
+  const { data: projects = [] } = useGetProjects({ workspaceId, kind });
   const { mutateAsync: moveTask, isPending: isMovePending } = useMoveTask();
   const destinationProjectId = selectedProjectId || "";
   const {

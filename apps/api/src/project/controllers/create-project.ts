@@ -18,6 +18,7 @@ async function createProject(
   icon: string,
   slug: string,
   createdBy?: string,
+  kind = "project",
 ) {
   return db.transaction(async (tx) => {
     const [createdProject] = await tx
@@ -28,6 +29,7 @@ async function createProject(
         icon,
         slug,
         createdBy: createdBy ?? null,
+        kind,
       })
       .returning();
 

@@ -72,7 +72,14 @@
 				"keyHint": "티켓 ID에 사용됩니다 (예: {{example}}-123)",
 				"createButton": "프로젝트 만들기",
 				"successToast": "프로젝트가 생성되었습니다",
-				"errorToast": "프로젝트 생성에 실패했습니다"
+				"errorToast": "프로젝트 생성에 실패했습니다",
+				"breadcrumbNew_consultation": "Create a new consultation",
+				"createButton_consultation": "Create Consultation",
+				"description_consultation": "Create a new consultation in your workspace by providing a name, key, and selecting an icon.",
+				"errorToast_consultation": "Failed to create consultation",
+				"projectName_consultation": "Consultation name",
+				"successToast_consultation": "Consultation created successfully",
+				"title_consultation": "Create a new consultation"
 			},
 			"createWorkspace": {
 				"breadcrumbKaneo": "MAPIMCORE",
@@ -591,10 +598,31 @@
 				"keyRequired": "키는 필수입니다",
 				"keyShort": "키는 2자 이상이어야 합니다",
 				"keyMax": "키는 8자 이하여야 합니다",
-				"iconRequired": "아이콘은 필수입니다"
+				"iconRequired": "아이콘은 필수입니다",
+				"nameRequired_consultation": "Consultation name is required",
+				"nameShort_consultation": "Consultation name must be at least 2 characters"
 			},
 			"importExportTasks": "가져오기/내보내기",
-			"importExportTasksDescription": "작업을 가져오고 내보냅니다."
+			"importExportTasksDescription": "작업을 가져오고 내보냅니다.",
+			"deleteModalConfirm_consultation": "Delete Consultation",
+			"deleteModalDescription_consultation": "This will permanently delete the consultation \"{{name}}\" and all its data. This action cannot be undone.",
+			"deleteModalTitle_consultation": "Delete Consultation?",
+			"deleteProject_consultation": "Delete consultation",
+			"deleteProjectDescription_consultation": "Schedule consultation to be permanently deleted",
+			"descriptionHint_consultation": "A brief description of your consultation",
+			"descriptionPlaceholder_consultation": "Enter consultation description",
+			"iconHint_consultation": "Displayed in the sidebar and consultation surfaces.",
+			"pageTitle_consultation": "Consultation Settings",
+			"projectInfoSubtitle_consultation": "Configure your consultation details and preferences.",
+			"projectInfoTitle_consultation": "Consultation Information",
+			"projectNameHint_consultation": "The name of your consultation",
+			"projectNameLabel_consultation": "Consultation name",
+			"projectNamePlaceholder_consultation": "Enter consultation name",
+			"subtitle_consultation": "Manage your consultation name, key, icon and description.",
+			"toastDeleted_consultation": "Consultation deleted successfully",
+			"toastDeleteError_consultation": "Failed to delete consultation",
+			"toastUpdated_consultation": "Consultation updated successfully",
+			"toastUpdateError_consultation": "Failed to update consultation"
 		},
 		"projectIntegrations": {
 			"pageTitle": "프로젝트 연동",
@@ -611,7 +639,14 @@
 			"slackSectionTitle": "Slack 연동",
 			"slackSectionSubtitle": "수신 웹훅을 사용하여 프로젝트 작업 업데이트를 Slack 채널로 전송합니다.",
 			"telegramSectionTitle": "Telegram 연동",
-			"telegramSectionSubtitle": "봇을 사용하여 프로젝트 작업 업데이트를 Telegram 채팅 또는 토픽으로 전송합니다."
+			"telegramSectionSubtitle": "봇을 사용하여 프로젝트 작업 업데이트를 Telegram 채팅 또는 토픽으로 전송합니다.",
+			"discordSectionSubtitle_consultation": "Send consultation task updates into a Discord channel with a webhook.",
+			"genericWebhookSectionSubtitle_consultation": "Send consultation task events to any HTTP endpoint as JSON.",
+			"pageTitle_consultation": "Consultation Integrations",
+			"slackSectionSubtitle_consultation": "Send consultation task updates into a Slack channel with an incoming webhook.",
+			"subtitle_consultation": "Connect your consultation with external tools and services to streamline your workflow.",
+			"telegramSectionSubtitle_consultation": "Send consultation task updates into a Telegram chat or topic with a bot.",
+			"title_consultation": "Consultation Integrations"
 		},
 		"projectVisibility": {
 			"pageTitle": "프로젝트 공개 설정",
@@ -626,7 +661,11 @@
 			"copy": "복사",
 			"copiedToast": "복사됨",
 			"toastUpdated": "공개 설정이 업데이트되었습니다",
-			"toastUpdateError": "공개 설정 업데이트에 실패했습니다"
+			"toastUpdateError": "공개 설정 업데이트에 실패했습니다",
+			"pageTitle_consultation": "Consultation Visibility",
+			"publicAccessHint_consultation": "Allow anyone with the URL to view this consultation",
+			"publicUrlHint_consultation": "Share this link if the consultation is public",
+			"subtitle_consultation": "Control who can view and access your consultation."
 		},
 		"projectWorkflow": {
 			"pageTitle": "워크플로 설정",
@@ -635,11 +674,14 @@
 			"columnsTitle": "컬럼",
 			"columnsDescription": "보드에 표시되는 컬럼을 관리합니다. 드래그하여 순서를 바꿉니다. 완료된 작업을 나타내는 단계의 경우 \"완료 컬럼\"을 켜세요.",
 			"automationTitle": "자동화 규칙",
-			"automationDescription": "연동 이벤트를 컬럼에 매핑합니다. 이벤트가 발생하면 연결된 작업이 지정된 컬럼으로 이동합니다."
+			"automationDescription": "연동 이벤트를 컬럼에 매핑합니다. 이벤트가 발생하면 연결된 작업이 지정된 컬럼으로 이동합니다.",
+			"subtitle_consultation": "Configure board columns and automation rules for this consultation."
 		},
 		"projectSwitcher": {
 			"selectProject": "프로젝트 선택",
-			"noProjects": "프로젝트 없음"
+			"noProjects": "프로젝트 없음",
+			"noProjects_consultation": "No consultations",
+			"selectProject_consultation": "Select consultation"
 		},
 		"columnEditor": {
 			"toastCreated": "컬럼이 생성되었습니다",
@@ -1058,14 +1100,23 @@
 			"approve": "Approve",
 			"deny": "Deny",
 			"roleUpdated": "Role updated",
-			"roleUpdateError": "Couldn’t update role"
+			"roleUpdateError": "Couldn’t update role",
+			"readOnly": "Read-only",
+			"readOnlyHint": "Viewers can only read, whatever their project role",
+			"readOnlyHint_consultation": "Viewers can only read, whatever their consultation role",
+			"remove_consultation": "Remove from consultation",
+			"requestsSubtitle_consultation": "People requesting access to this consultation.",
+			"roleManager_consultation": "Consultation Manager",
+			"roleMember_consultation": "Consultation Member",
+			"subtitle_consultation": "Control who can access this consultation."
 		},
 		"workspaceAccess": {
 			"alwaysAvailable": "Home and Projects are always available to everyone.",
 			"description": "Choose which pages each member can access.",
 			"member": "Member",
 			"noAccessBody": "You need owner or admin permissions to manage access.",
-			"title": "Access Management"
+			"title": "Access Management",
+			"globalAdmin": "Global Admin"
 		}
 	},
 	"navigation": {
@@ -1112,7 +1163,10 @@
 				"operations": "Operations & Administration",
 				"revenue": "Revenue",
 				"sales": "Sales"
-			}
+			},
+			"consultation": "Consultation",
+			"consultations": "Consultations",
+			"projects_consultation": "Consultations"
 		},
 		"projectList": {
 			"viewProject": "프로젝트 보기",
@@ -1124,7 +1178,17 @@
 			"deleteConfirmDescription": "프로젝트와 모든 데이터가 영구적으로 제거됩니다. 이 작업은 취소할 수 없습니다.",
 			"deletedToast": "프로젝트가 삭제되었습니다",
 			"deleteProject": "프로젝트 삭제",
-			"lockedTooltip": "You don’t have access to this project"
+			"lockedTooltip": "You don’t have access to this project",
+			"addProject_consultation": "Add consultation",
+			"deleteConfirmDescription_consultation": "This will permanently remove the consultation and all its data. You can't undo this action.",
+			"deleteConfirmTitle_consultation": "Delete Consultation?",
+			"deletedToast_consultation": "Consultation deleted",
+			"deleteProject_consultation": "Delete Consultation",
+			"linkCopied_consultation": "Consultation link copied to clipboard",
+			"lockedTooltip_consultation": "You don’t have access to this consultation",
+			"projectSettings_consultation": "Consultation settings",
+			"shareProject_consultation": "Share Consultation",
+			"viewProject_consultation": "View Consultation"
 		},
 		"search": {
 			"inputPlaceholder": "작업, 프로젝트, 댓글 검색...",
@@ -1163,7 +1227,8 @@
 			"settingsWorkspaceTab": "워크스페이스"
 		},
 		"projectSettings": {
-			"projectLabel": "프로젝트"
+			"projectLabel": "프로젝트",
+			"projectLabel_consultation": "Consultation"
 		},
 		"keyboardShortcuts": {
 			"title": "키보드 단축키",
@@ -1223,12 +1288,30 @@
 			},
 			"task_assignee_changed": {
 				"title": "작업이 나에게 할당됨",
-				"content": "다음 작업이 할당되었습니다: {{taskTitle}}"
+				"content": "다음 작업이 할당되었습니다: {{taskTitle}}",
+				"contentUnknown": "You were assigned to \"{{taskTitle}}\""
 			},
 			"time_entry_created": {
 				"title": "시간 추적 시작됨",
 				"contentWithTask": "다음 작업의 시간 추적이 시작되었습니다: {{taskTitle}}",
 				"contentWithoutTask": "작업의 시간 추적이 시작되었습니다"
+			},
+			"due_date_reminder": {
+				"contentOneDay": "\"{{taskTitle}}\" is due in 1 day",
+				"contentOneHour": "\"{{taskTitle}}\" is due in 1 hour",
+				"title": "Task due soon"
+			},
+			"task_commented": {
+				"content": "{{actorName}} commented on \"{{taskTitle}}\"",
+				"title": "New comment"
+			},
+			"task_overdue": {
+				"content": "\"{{taskTitle}}\" is past its due date",
+				"title": "Task overdue"
+			},
+			"task_tagged": {
+				"content": "{{actorName}} tagged you in \"{{taskTitle}}\"",
+				"title": "You were tagged"
 			}
 		}
 	},
@@ -1513,12 +1596,17 @@
 			"statusHintAdjust": "대상 프로젝트에서 사용할 상태를 선택하세요.",
 			"action": "작업 이동",
 			"success": "작업이 이동되었습니다",
-			"error": "작업 이동에 실패했습니다"
+			"error": "작업 이동에 실패했습니다",
+			"projectLabel_consultation": "Destination consultation",
+			"projectPlaceholder_consultation": "Select a consultation",
+			"statusHintAdjust_consultation": "Choose the status to use in the destination consultation.",
+			"statusHintKeep_consultation": "This consultation's workflow already supports the current status."
 		},
 		"popover": {
 			"assignee": {
 				"unassigned": "미할당",
-				"updateError": "작업 담당자 업데이트에 실패했습니다"
+				"updateError": "작업 담당자 업데이트에 실패했습니다",
+				"awaiting": "Awaiting {{name}}"
 			},
 			"status": {
 				"updateError": "작업 상태 업데이트에 실패했습니다"
@@ -1664,7 +1752,18 @@
 		},
 		"assignee": {
 			"label": "담당자",
-			"unassigned": "미할당"
+			"unassigned": "미할당",
+			"addError": "Failed to add assignee",
+			"awaiting": "Awaiting {{name}}",
+			"labelPlural": "Assignees",
+			"lead": "{{name}} (lead)",
+			"leadBadge": "Lead",
+			"leadError": "Failed to change the lead",
+			"makeLead": "Make lead",
+			"more": "{{count}} more",
+			"remove": "Remove from task",
+			"removeError": "Failed to remove assignee",
+			"withdraw": "Withdraw offer"
 		},
 		"dueDate": {
 			"label": "마감일",
@@ -1740,7 +1839,10 @@
 			"requestAccess": "Request access",
 			"requested": "Access requested — a project manager will review it.",
 			"requestedShort": "Requested",
-			"requestError": "Couldn’t send request"
+			"requestError": "Couldn’t send request",
+			"description_consultation": "You haven’t been added to this consultation. Request access and a consultation manager can approve you.",
+			"requested_consultation": "Access requested, a consultation manager will review it.",
+			"title_consultation": "Consultation locked"
 		},
 		"mom": {
 			"absentees": "Absentees",
@@ -1810,7 +1912,12 @@
 				"inProgress": "진행 중"
 			},
 			"noDueDate": "마감일 없음",
-			"emptyDescriptionReadOnly": "There are no projects in this workspace yet. Ask an admin to create one."
+			"emptyDescriptionReadOnly": "There are no projects in this workspace yet. Ask an admin to create one.",
+			"createProject_consultation": "Create consultation",
+			"emptyDescription_consultation": "Get started by creating your first consultation.",
+			"emptyDescriptionReadOnly_consultation": "There are no consultations in this workspace yet. Ask an admin to create one.",
+			"emptyTitle_consultation": "No consultations yet",
+			"pageTitle_consultation": "Consultations"
 		},
 		"search": {
 			"pageTitle": "검색",
@@ -1965,5 +2072,18 @@
 	},
 	"comingSoon": {
 		"description": "This section is coming soon. We are still building it."
+	},
+	"pendingDecisions": {
+		"accept": "Accept",
+		"alreadyHandled": "Already handled by someone else.",
+		"cancel": "Cancel",
+		"confirmRejection": "Confirm rejection",
+		"description": "Accept or reject each item to clear it from your queue.",
+		"genericError": "That didn't go through. Try again.",
+		"open": "Open",
+		"partialFailure": "Couldn't load items from: {{sources}}",
+		"reasonPlaceholder": "Why are you rejecting this?",
+		"reject": "Reject",
+		"title": "Waiting for your decision"
 	}
 }
