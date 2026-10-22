@@ -396,7 +396,8 @@ in `docs/superpowers/specs/2026-08-27-minutes-manager-refinements-REQUIREMENTS.m
   calls them `tesseract-ocr-data-eng` / `tesseract-ocr-data-msa`, Ubuntu (CI
   runners) calls them `tesseract-ocr-eng` / `tesseract-ocr-msa`. Copying one
   form into the other file fails the build or the CI job. Verified 2026-09-15
-  against `node:20.20.2-alpine` and `ubuntu:24.04`; both list `eng` and
+  against `node:20.20.2-alpine` and `ubuntu:24.04`, and again 2026-10-23 against
+  `node:24.22.1-alpine` (Alpine 3.24); both list `eng` and
   `msa`, so OCR really does run `-l eng+msa` rather than degrading to
   English.
 
