@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.20.2
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
@@ -30,6 +30,10 @@ jobs:
 
       - name: Run Biome
         run: pnpm exec biome ci .
+
+      # Fails when .nvmrc or a Dockerfile pins Node.js below the security floor.
+      - name: Check Node.js security floor
+        run: node --test scripts/node-floor.test.mjs
 
   typecheck:
     runs-on: ubuntu-24.04
@@ -45,7 +49,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.20.2
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
@@ -68,7 +72,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.20.2
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
@@ -91,7 +95,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.20.2
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
@@ -135,7 +139,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.20.2
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
