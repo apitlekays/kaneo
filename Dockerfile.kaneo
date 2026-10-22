@@ -83,7 +83,7 @@ FROM node:24.22.1-alpine AS runtime
 # documents. poppler-utils gives pdftotext (text layer) and pdftoppm
 # (rasterise for OCR); tesseract does the OCR. Language data is baked in
 # rather than fetched at runtime so an offline container still works.
-RUN apk add --no-cache 'nginx=~1.28.3' \
+RUN apk add --no-cache 'nginx=~1.30.6' \
       poppler-utils \
       tesseract-ocr \
       tesseract-ocr-data-eng \
