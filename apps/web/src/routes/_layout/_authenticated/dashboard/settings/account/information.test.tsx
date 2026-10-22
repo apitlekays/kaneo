@@ -32,13 +32,16 @@ import { Route } from "./information";
 const RouteComponent = Route.options.component;
 if (!RouteComponent) throw new Error("information route has no component");
 
-function renderPage() {
+// An arrow function, not a function declaration: TypeScript keeps the
+// narrowing above only in closures created after it, and a declaration is
+// hoisted above the check.
+const renderPage = () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <RouteComponent />
     </QueryClientProvider>,
   );
-}
+};
 
 describe("Personal Information: saving the name", () => {
   beforeEach(() => updateProfile.mockClear());
